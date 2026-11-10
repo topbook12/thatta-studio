@@ -116,6 +116,13 @@ export interface SceneBeat {
   id: string;
   actorUid: string;
   action: ActionName;
+  /**
+   * absolute start time on the timeline (seconds).
+   * Optional only for old saved projects — normalizeScene() fills it in.
+   * Absolute starts enable parallel multi-track scenes: several characters
+   * can act at the same time (conversation overlap!).
+   */
+  start?: number;
   /** seconds */
   duration: number;
   /** dialogue line — shown as subtitle & sent to TTS */
@@ -165,16 +172,22 @@ export interface Pose {
 
 /** Callbacks for playback orchestration. */
 export interface StageCallbacks {
-  onBeat?: (index: number, beat: SceneBeat, offset: number) => void;
-  onTime?: (sceneTime: number, beatIndex: number) => void;
+  /** a beat window just became active (fired once per activation) */
+  onBeatStart?: (beat: SceneBeat, offset: number) => void;
+  /** an active beat window just ended */
+  onBeatEnd?: (beat: SceneBeat) => void;
+  onTime?: (sceneTime: number, activeCount: number) => void;
   onFinish?: () => void;
 }
 
-/** Character hit/drag interactions on the stage canvas. */
+/** Character/flag hit-drag interactions on the stage canvas. */
 export interface StageInteractions {
   onPick?: (uid: string | null) => void;
   onDrag?: (uid: string, xPct: number) => void;
   onDragEnd?: (uid: string, xPct: number) => void;
+  /** the walk-target flag of the edited beat is being dragged */
+  onDragTarget?: (xPct: number) => void;
+  onDragTargetEnd?: (xPct: number) => void;
 }
 
 export const STAGE_W = 1280;

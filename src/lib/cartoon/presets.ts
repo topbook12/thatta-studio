@@ -237,6 +237,39 @@ export function presetCast(): CharacterDesign[] {
   ];
 }
 
+// ---------------- Scene normalization (backward compatibility) ----------------
+
+/** sequential start for beat i when an old project has no absolute starts */
+function sequentialStart(beats: SceneBeat[], i: number): number {
+  let acc = 0;
+  for (let j = 0; j < i; j++) acc += Math.max(0.3, beats[j].duration);
+  return acc;
+}
+
+/**
+ * Fill in absolute `start` times for beats loaded from old projects and
+ * clamp walk/speed fields into safe ranges. Idempotent.
+ */
+export function normalizeScene(scene: Scene): Scene {
+  const beats = scene.beats.map((b, i) => {
+    const start =
+      typeof b.start === 'number' && b.start >= 0
+        ? Math.round(b.start * 100) / 100
+        : Math.round(sequentialStart(scene.beats, i) * 100) / 100;
+    return {
+      ...b,
+      start,
+      moveTo:
+        b.action === 'walk' || b.action === 'run' ? b.moveTo : undefined,
+      speed:
+        b.speed != null
+          ? Math.max(0.25, Math.min(2.5, b.speed))
+          : undefined,
+    };
+  });
+  return { ...scene, beats };
+}
+
 // ---------------- Starter scene (demo cartoon) ----------------
 
 export function starterScene(cast: CharacterDesign[]): Scene {
@@ -260,27 +293,36 @@ export function starterScene(cast: CharacterDesign[]): Scene {
   const beats: Array<Omit<SceneBeat, 'id' | 'actorUid'>> = [
     {
       action: 'wave',
+      start: 0,
       duration: 3,
       text: 'ওই মামা! কী রে, কাজে ধরলি আমারে?',
     },
     {
+      // parallel track — police starts while Gopal is still finishing 👥
       action: 'angry',
+      start: 2.6,
       duration: 4,
       text: 'তুই কলকের সেই নটকি গোপাল! বাজারে গন্ডগোল করস কেন?',
     },
     {
       action: 'laugh',
+      start: 6.4,
       duration: 3,
       text: 'হা হা হা! মামা, আসলে মজা করছিলাম শুধু!',
     },
     {
       action: 'point',
+      start: 9.2,
       duration: 3.5,
       text: 'এইবার দেখলাম তোকে! আর করলে থানায় যাবি!',
     },
     {
-      action: 'nod',
-      duration: 3,
+      // walk beat — the green destination flag can be dragged on the stage
+      action: 'walk',
+      start: 12.6,
+      duration: 3.2,
+      moveTo: 58,
+      easing: 'easeInOut',
       text: 'জ্যে মামা! ভুল করিনি আর কখনো, কথা দিলাম!',
     },
   ];

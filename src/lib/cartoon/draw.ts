@@ -5,7 +5,7 @@
 // height ≈ 200 units. The caller sets translation/scale/flip.
 // ============================================================
 
-import type { CharacterDesign, Pose, PropName } from './types';
+import type { CharacterDesign, FaceFx, Pose, PropName } from './types';
 import {
   BROW_Y,
   D,

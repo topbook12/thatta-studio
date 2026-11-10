@@ -120,6 +120,7 @@ export default function StudioTab({
     updateBeat,
     removeBeat,
     moveBeat,
+    moveBeatTo,
     setDesigns,
     setScene,
   } = useStudio();
@@ -131,12 +132,13 @@ export default function StudioTab({
   const recorderRef = useRef<MediaRecorder | null>(null);
   const exportingRef = useRef(false);
   const editorCardRef = useRef<HTMLDivElement | null>(null);
-  const currentAudioRef = useRef<HTMLAudioElement | null>(null);
+  const playingAudioRef = useRef<Map<string, HTMLAudioElement>>(new Map());
+  const selectedBeatIdRef = useRef<string | null>(null);
   const rateRef = useRef(1);
   const lastTimePushRef = useRef(0);
 
   const [playing, setPlaying] = useState(false);
-  const [activeBeatIdx, setActiveBeatIdx] = useState(-1);
+  const [activeBeatIds, setActiveBeatIds] = useState<Set<string>>(new Set());
   const [currentTime, setCurrentTime] = useState(0);
   const [playbackRate, setPlaybackRate] = useState(1);
   const [audioVersion, setAudioVersion] = useState(0);
@@ -153,6 +155,8 @@ export default function StudioTab({
   const [moveTo, setMoveTo] = useState(50);
   const [beatSpeed, setBeatSpeed] = useState(1);
   const [beatEasing, setBeatEasing] = useState<EasingName>("easeInOut");
+  // null = auto (end of this actor's track); number = pinned absolute start
+  const [beatStart, setBeatStart] = useState<number | null>(null);
 
   // projects
   const [saveOpen, setSaveOpen] = useState(false);
@@ -167,9 +171,17 @@ export default function StudioTab({
     const canvas = canvasRef.current;
     if (!canvas) return;
     const stage = new CartoonStage(canvas, {
-      onBeat: (i, beat, offset) => {
-        setActiveBeatIdx(i);
+      onBeatStart: (beat, offset) => {
+        setActiveBeatIds((prev) => new Set(prev).add(beat.id));
         playBeatAudio(beat, offset);
+      },
+      onBeatEnd: (beat) => {
+        setActiveBeatIds((prev) => {
+          const next = new Set(prev);
+          next.delete(beat.id);
+          return next;
+        });
+        stopBeatAudio(beat.id);
       },
       onTime: (t) => {
         // throttle React updates to ~20fps for the playhead
@@ -181,8 +193,8 @@ export default function StudioTab({
       },
       onFinish: () => {
         setPlaying(false);
-        setActiveBeatIdx(-1);
-        stopCurrentAudio();
+        setActiveBeatIds(new Set());
+        stopAllAudio();
         if (exportingRef.current) {
           recorderRef.current?.stop();
           recorderRef.current = null;
@@ -222,14 +234,36 @@ export default function StudioTab({
     stageRef.current?.setPlaybackRate(playbackRate);
   }, [playbackRate]);
 
-  // drag characters directly on the stage
+  // keep a ref of the selected beat for pointer callbacks
+  useEffect(() => {
+    selectedBeatIdRef.current = selectedBeatId;
+  }, [selectedBeatId]);
+
+  // drag characters + walk-target flag directly on the stage
   useEffect(() => {
     stageRef.current?.setInteractions({
-      onPick: (uid) => setSelectedBeatId(null),
+      onPick: (uid) => {
+        setSelectedBeatId(null);
+        stageRef.current?.setEditBeat(null);
+      },
       onDrag: (uid, pct) => updatePlaced(uid, { x: Math.round(pct * 10) / 10 }),
       onDragEnd: (uid, pct) => updatePlaced(uid, { x: Math.round(pct * 10) / 10 }),
+      onDragTarget: (pct) => {
+        if (selectedBeatIdRef.current) {
+          updateBeat(selectedBeatIdRef.current, {
+            moveTo: Math.round(pct * 10) / 10,
+          });
+        }
+      },
+      onDragTargetEnd: (pct) => {
+        if (selectedBeatIdRef.current) {
+          updateBeat(selectedBeatIdRef.current, {
+            moveTo: Math.round(pct * 10) / 10,
+          });
+        }
+      },
     });
-  }, [updatePlaced]);
+  }, [updatePlaced, updateBeat]);
 
   // space = play/pause shortcut
   useEffect(() => {
@@ -251,12 +285,21 @@ export default function StudioTab({
     return () => window.removeEventListener("keydown", onKey);
   }, [playing, scene.beats]);
 
-  const stopCurrentAudio = () => {
-    const el = currentAudioRef.current;
+  const stopBeatAudio = (beatId: string) => {
+    const el = playingAudioRef.current.get(beatId);
     if (el) {
       el.pause();
-      currentAudioRef.current = null;
+      el.onended = null;
+      playingAudioRef.current.delete(beatId);
     }
+  };
+
+  const stopAllAudio = () => {
+    for (const el of playingAudioRef.current.values()) {
+      el.pause();
+      el.onended = null;
+    }
+    playingAudioRef.current.clear();
   };
 
   const playBeatAudio = (beat: SceneBeat, offset = 0) => {
@@ -264,7 +307,7 @@ export default function StudioTab({
     if (!audio) return;
     // during scrubbing (paused) we stay silent — audio only when actually playing
     if (!stageRef.current?.isPlaying()) return;
-    stopCurrentAudio();
+    stopBeatAudio(beat.id);
     const el = new Audio(audio.url);
     el.playbackRate = rateRef.current;
     try {
@@ -279,7 +322,10 @@ export default function StudioTab({
         /* ignore */
       }
     }
-    currentAudioRef.current = el;
+    playingAudioRef.current.set(beat.id, el);
+    el.onended = () => {
+      playingAudioRef.current.delete(beat.id);
+    };
     if (exportingRef.current && audioCtxRef.current && destRef.current) {
       try {
         const src = audioCtxRef.current.createMediaElementSource(el);
@@ -298,9 +344,8 @@ export default function StudioTab({
     if (!stage) return;
     if (playing) {
       stage.pause();
-      stopCurrentAudio();
+      stopAllAudio();
       setPlaying(false);
-      setActiveBeatIdx(-1);
       return;
     }
     const ok = stage.play();
@@ -317,9 +362,9 @@ export default function StudioTab({
 
   const handleStop = () => {
     stageRef.current?.stop();
-    stopCurrentAudio();
+    stopAllAudio();
     setPlaying(false);
-    setActiveBeatIdx(-1);
+    setActiveBeatIds(new Set());
     setCurrentTime(0);
     if (exportingRef.current) {
       recorderRef.current?.stop();
@@ -333,10 +378,15 @@ export default function StudioTab({
     return Math.max(0.3, a ? Math.max(b.duration, a.duration + 0.3) : b.duration);
   };
 
-  const totalDuration = useMemo(
-    () => scene.beats.reduce((acc, b) => acc + effectiveDur(b), 0),
-    [scene.beats, audioVersion],
-  );
+  const totalDuration = useMemo(() => {
+    // multi-track: total = the furthest beat END (not the sum)
+    let total = 0;
+    for (const b of scene.beats) {
+      const st = typeof b.start === "number" && b.start >= 0 ? b.start : 0;
+      total = Math.max(total, st + effectiveDur(b));
+    }
+    return total;
+  }, [scene.beats, audioVersion]);
 
   const timelineActors: TimelineActor[] = useMemo(
     () =>
@@ -356,6 +406,7 @@ export default function StudioTab({
         return {
           id: b.id,
           actorUid: b.actorUid,
+          start: typeof b.start === "number" && b.start >= 0 ? b.start : 0,
           actorName:
             designs.find(
               (d) => d.id === scene.characters.find((c) => c.uid === b.actorUid)?.designId,
@@ -375,7 +426,7 @@ export default function StudioTab({
 
   const handleSeek = (t: number) => {
     if (exportingRef.current) return;
-    stopCurrentAudio();
+    stopAllAudio();
     stageRef.current?.seek(t);
     setCurrentTime(t);
   };
@@ -388,6 +439,10 @@ export default function StudioTab({
 
   const handleTimelineResize = (id: string, newDuration: number) => {
     updateBeat(id, { duration: Math.round(newDuration * 10) / 10 });
+  };
+
+  const handleTimelineMove = (id: string, newStart: number, newActorUid?: string) => {
+    moveBeatTo(id, newStart, newActorUid);
   };
 
   // ---------- voice generation ----------
@@ -531,6 +586,8 @@ export default function StudioTab({
     setMoveTo(50);
     setBeatSpeed(1);
     setBeatEasing("easeInOut");
+    setBeatStart(null);
+    stageRef.current?.setEditBeat(null);
   };
 
   const submitBeat = () => {
@@ -547,6 +604,12 @@ export default function StudioTab({
       action,
       duration,
       text: text.trim(),
+      // pinned start only when editing or when the user chose one;
+      // new beats otherwise auto-place at the end of the actor's track
+      start:
+        editingBeatId || beatStart != null
+          ? Math.max(0, beatStart ?? 0)
+          : undefined,
       moveTo: action === "walk" || action === "run" ? moveTo : undefined,
       speed: beatSpeed !== 1 ? beatSpeed : undefined,
       easing: action === "walk" || action === "run" ? beatEasing : undefined,
@@ -574,6 +637,11 @@ export default function StudioTab({
     setMoveTo(b.moveTo ?? 50);
     setBeatSpeed(b.speed ?? 1);
     setBeatEasing(b.easing ?? "easeInOut");
+    setBeatStart(b.start ?? 0);
+    // walk/run beats show the draggable destination flag on the stage
+    stageRef.current?.setEditBeat(
+      b.action === "walk" || b.action === "run" ? b.id : null,
+    );
     editorCardRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
   };
 
@@ -750,12 +818,12 @@ export default function StudioTab({
             <p className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900">
               {exporting
                 ? "🎥 রেকর্ড হচ্ছে — কার্টুন শেষ না হওয়া পর্যন্ত ট্যাব বদলাবেন না।"
-                : `▶ চলছে দৃশ্য ${bnNum(activeBeatIdx + 1)}/${bnNum(scene.beats.length)} — ${bnNum(currentTime.toFixed(1))} সে.`}
+                : `▶ চলছে — ${bnNum(currentTime.toFixed(1))} সে. • এখন অভিনয়ে: ${bnNum(activeBeatIds.size)}টি দৃশ্য`}
             </p>
           )}
           {!playing && !exporting && scene.characters.length > 0 && (
             <p className="rounded-lg border border-amber-200 bg-amber-50/60 px-3 py-2 text-xs text-amber-700">
-              ✋ টিপ: স্টেজে ক্যারেক্টারে চেপে ধরে টেনে সরানো যায় — স্লাইডার ছোঁয়ার দরকার নেই!
+              ✋ টিপ: ক্যারেক্টার টেনে সরান • টাইমলাইনে হাঁটার দৃশ্য বাছলে স্টেজে 🚩 সবুজ পতাকা টেনে গন্তব্য বদলান!
             </p>
           )}
         </CardContent>
@@ -772,6 +840,7 @@ export default function StudioTab({
         onSeek={handleSeek}
         onSelectBeat={handleTimelineSelect}
         onResizeBeat={handleTimelineResize}
+        onMoveBeat={handleTimelineMove}
       />
 
       <div className="grid gap-6 lg:grid-cols-[340px_1fr]">
@@ -970,7 +1039,7 @@ export default function StudioTab({
                     <div
                       key={b.id}
                       className={`rounded-xl border p-3 ${
-                        activeBeatIdx === i
+                        activeBeatIds.has(b.id)
                           ? "border-emerald-500 bg-emerald-50"
                           : "border-amber-200 bg-white"
                       }`}
@@ -1112,6 +1181,37 @@ export default function StudioTab({
                     </SelectContent>
                   </Select>
                 </div>
+              </div>
+
+              <div className="flex items-end gap-2 rounded-xl border border-amber-200 bg-amber-50/60 p-3">
+                <div className="flex-1 space-y-1.5">
+                  <Label className="text-sm font-semibold text-amber-900">
+                    শুরুর সময় (সেকেন্ড)
+                  </Label>
+                  <Input
+                    type="number"
+                    min={0}
+                    step={0.1}
+                    value={beatStart ?? ""}
+                    onChange={(e) => {
+                      const v = e.target.value;
+                      setBeatStart(v === "" ? null : Math.max(0, Number(v)));
+                    }}
+                    placeholder="স্বয়ংক্রিয় — ক্যারেক্টরের শেষ দৃশ্যের পরে"
+                    className="h-9 border-amber-300"
+                  />
+                  <p className="text-xs text-amber-600">
+                    টাইমলাইনে ব্লক টেনেও সময় বদলানো যায়। একই সময় দিলে একাধিক ক্যারেক্টর একসাথে অভিনয় করবে!
+                  </p>
+                </div>
+                <Button
+                  type="button"
+                  variant="outline"
+                  className="h-9 shrink-0 border-amber-300 text-xs"
+                  onClick={() => setBeatStart(Math.round(currentTime * 10) / 10)}
+                >
+                  প্লেহেডে বসান
+                </Button>
               </div>
 
               <div className="space-y-2">

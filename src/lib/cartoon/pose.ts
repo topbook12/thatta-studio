@@ -509,7 +509,7 @@ export function easingByName(name: EasingName): (x: number) => number {
     case 'easeIn':
       return (x) => x * x;
     case 'easeOut':
-      return 1 - (1 - x) * (1 - x);
+      return (x) => 1 - (1 - x) * (1 - x);
     case 'backOut':
       return (x) => {
         const c1 = 1.70158;

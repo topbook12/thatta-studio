@@ -4,7 +4,12 @@
 
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
-import { newId, presetCast, starterScene } from './cartoon/presets';
+import {
+  newId,
+  normalizeScene,
+  presetCast,
+  starterScene,
+} from './cartoon/presets';
 import type {
   BgName,
   CharacterDesign,
@@ -14,7 +19,7 @@ import type {
 } from './cartoon/types';
 
 const initialCast = presetCast();
-const initialScene = starterScene(initialCast);
+const initialScene = normalizeScene(starterScene(initialCast));
 
 export interface StudioState {
   designs: CharacterDesign[];
@@ -34,6 +39,8 @@ export interface StudioState {
   updateBeat: (id: string, patch: Partial<SceneBeat>) => void;
   removeBeat: (id: string) => void;
   moveBeat: (id: string, dir: -1 | 1) => void;
+  /** re-time a beat on the absolute timeline (and optionally reassign actor) */
+  moveBeatTo: (id: string, start: number, actorUid?: string) => void;
   setScene: (s: Scene) => void;
   clearBeats: () => void;
 }
@@ -99,9 +106,27 @@ export const useStudio = create<StudioState>()(
         })),
 
       addBeat: (beat) =>
-        set((s) => ({
-          scene: { ...s.scene, beats: [...s.scene.beats, { ...beat, id: newId() }] },
-        })),
+        set((s) => {
+          // default: place at the end of this actor's own track (parallel-safe)
+          let start = beat.start;
+          if (typeof start !== 'number' || start < 0) {
+            start = 0;
+            for (const b of s.scene.beats) {
+              if (b.actorUid !== beat.actorUid) continue;
+              const end = (b.start ?? 0) + Math.max(0.3, b.duration);
+              start = Math.max(start, end);
+            }
+          }
+          return {
+            scene: {
+              ...s.scene,
+              beats: [
+                ...s.scene.beats,
+                { ...beat, start: Math.round(start * 20) / 20, id: newId() },
+              ],
+            },
+          };
+        }),
       updateBeat: (id, patch) =>
         set((s) => ({
           scene: {
@@ -123,10 +148,33 @@ export const useStudio = create<StudioState>()(
           [beats[i], beats[j]] = [beats[j], beats[i]];
           return { scene: { ...s.scene, beats } };
         }),
-      setScene: (sc) => set({ scene: sc }),
+      moveBeatTo: (id, start, actorUid) =>
+        set((s) => ({
+          scene: {
+            ...s.scene,
+            beats: s.scene.beats.map((b) =>
+              b.id === id
+                ? {
+                    ...b,
+                    start: Math.max(0, Math.round(start * 20) / 20),
+                    ...(actorUid ? { actorUid } : {}),
+                  }
+                : b,
+            ),
+          },
+        })),
+      setScene: (sc) => set({ scene: normalizeScene(sc) }),
       clearBeats: () => set((s) => ({ scene: { ...s.scene, beats: [] } })),
     }),
-    { name: 'thatta-studio-v1' },
+    {
+      name: 'thatta-studio-v1',
+      onRehydrateStorage: () => (state) => {
+        // old saved scenes may lack absolute beat starts — normalize them
+        if (state?.scene) {
+          useStudio.setState({ scene: normalizeScene(state.scene) });
+        }
+      },
+    },
   ),
 );
 

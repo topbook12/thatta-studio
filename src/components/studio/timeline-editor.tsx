@@ -1,18 +1,21 @@
 "use client";
 
 /**
- * টাইমলাইন এডিটর (Timeline Editor) — ঠাট্টা স্টুডিও
+ * টাইমলাইন এডিটর v2 (Timeline Editor) — ঠাট্টা স্টুডিও
  *
- * Horizontal, beat-based timeline for visualizing and scrubbing a cartoon
- * scene like a video editor. Purely presentational: no store/engine imports,
- * React + Tailwind only.
+ * Multi-track timeline: every beat lives at an ABSOLUTE start time on its
+ * actor's row, so several characters can act at the same moment.
  *
  * Interactions:
  *  - Click / drag on the ruler or empty row space  → seek (onSeek)
- *  - Click on a beat block                          → select + seek to its start
- *  - Drag the right edge of a beat block            → resize (0.5s..20s, committed on pointerup)
- *  - Drag the red playhead knob                     → scrub
+ *  - Drag a beat block horizontally                → change its start time
+ *  - Drag a beat block onto another actor's row    → reassign the actor
+ *  - Drag the right edge of a beat block           → resize (0.5s..20s)
+ *  - Click on a beat block                         → select + seek to start
  *  - While `playing`, the view auto-follows the playhead
+ *
+ * Overlap safety: a moved/resized beat always snaps into the nearest free
+ * gap of its own actor's track (no two beats of the same actor collide).
  */
 
 import {
@@ -38,6 +41,7 @@ export interface TimelineBeat {
   actionEmoji: string;
   actionLabel: string; // Bengali label
   text: string; // dialogue (may be empty)
+  start: number; // absolute seconds on the timeline
   duration: number; // effective seconds (audio-aware)
   hasAudio: boolean;
   peaks: number[] | null; // audio waveform peaks 0..1 (~24/sec), null if no audio
@@ -52,19 +56,20 @@ export interface TimelineActor {
 export interface TimelineEditorProps {
   beats: TimelineBeat[];
   actors: TimelineActor[];
-  totalDuration: number; // seconds (sum of beat durations, min 6)
+  totalDuration: number; // seconds (max end over all beats)
   currentTime: number; // playhead seconds
   selectedBeatId: string | null;
   playing: boolean;
   onSeek: (t: number) => void;
   onSelectBeat: (id: string) => void;
-  onResizeBeat: (id: string, newDuration: number) => void; // drag right edge; clamp 0.5..20
+  onResizeBeat: (id: string, newDuration: number) => void;
+  onMoveBeat: (id: string, newStart: number, newActorUid?: string) => void;
   pxPerSec?: number; // default 56
 }
 
-/** A beat plus its computed sequential start time (seconds). */
+/** A beat as laid out (possibly with drag preview overrides applied). */
 interface LayoutBeat extends TimelineBeat {
-  start: number;
+  layoutStart: number;
 }
 
 interface BeatBlockProps {
@@ -72,8 +77,12 @@ interface BeatBlockProps {
   left: number; // px
   width: number; // px
   selected: boolean;
+  dragging: boolean;
   previewDuration: number | undefined; // local resize override, if any
   onSelect: (id: string, start: number) => void;
+  onMoveDown: (e: ReactPointerEvent<HTMLDivElement>, beat: LayoutBeat) => void;
+  onMoveMove: (e: ReactPointerEvent<HTMLDivElement>) => void;
+  onMoveEnd: (e: ReactPointerEvent<HTMLDivElement>) => void;
   onResizeDown: (e: ReactPointerEvent<HTMLDivElement>, id: string, baseDur: number) => void;
   onResizeMove: (e: ReactPointerEvent<HTMLDivElement>) => void;
   onResizeEnd: (e: ReactPointerEvent<HTMLDivElement>) => void;
@@ -84,7 +93,8 @@ interface BeatBlockProps {
 /* ------------------------------------------------------------------ */
 
 // Bengali numeral helper (same as elsewhere in the app).
-const bnNum = (n: number | string) => String(n).replace(/\d/g, (d) => "০১২৩৪৫৬৭৮৯"[+d]);
+const bnNum = (n: number | string) =>
+  String(n).replace(/\d/g, (d) => "০১২৩৪৫৬৭৮৯"[+d]);
 
 const clamp = (v: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, v));
 
@@ -92,6 +102,7 @@ const GUTTER_W = 112; // sticky-left actor-name column (matches w-28)
 const DEFAULT_PPS = 56; // px per second
 const MIN_DUR = 0.5; // seconds
 const MAX_DUR = 20; // seconds
+const MAX_START = 120; // seconds — hard timeline limit
 const RULER_H = 26; // px
 const ROW_H = 44; // px
 const WAVE_MIN_WIDTH = 48; // px — skip waveform on narrower blocks
@@ -103,6 +114,36 @@ const OTHERS_ACTOR: TimelineActor = {
   color: "#9ca3af",
 };
 
+/**
+ * Snap a moved/extended beat into the nearest free gap of its actor track,
+ * so two beats of the same character never overlap.
+ */
+function resolveOverlap(
+  movingId: string,
+  start: number,
+  dur: number,
+  all: TimelineBeat[],
+  actorUid: string,
+): number {
+  const others = all
+    .filter((b) => b.actorUid === actorUid && b.id !== movingId)
+    .map((b) => ({ s: b.start, e: b.start + Math.max(MIN_DUR, b.duration) }))
+    .sort((a, b) => a.s - b.s);
+  let s = Math.max(0, start);
+  for (let iter = 0; iter < 24; iter++) {
+    let collided = false;
+    for (const o of others) {
+      if (s < o.e && s + dur > o.s) {
+        // overlap → snap to the nearest side of the obstacle
+        s = s + dur / 2 <= (o.s + o.e) / 2 ? o.s - dur - 0.05 : o.e + 0.05;
+        collided = true;
+      }
+    }
+    if (!collided) break;
+  }
+  return Math.max(0, Math.round(s * 20) / 20);
+}
+
 /* ------------------------------------------------------------------ */
 /* Beat block (memoized — cheap during playhead re-renders)            */
 /* ------------------------------------------------------------------ */
@@ -112,8 +153,12 @@ const BeatBlock = memo(function BeatBlock({
   left,
   width,
   selected,
+  dragging,
   previewDuration,
   onSelect,
+  onMoveDown,
+  onMoveMove,
+  onMoveEnd,
   onResizeDown,
   onResizeMove,
   onResizeEnd,
@@ -141,12 +186,15 @@ const BeatBlock = memo(function BeatBlock({
 
   return (
     <div
-      className={`absolute top-1 h-[36px] select-none overflow-hidden rounded-lg text-white ${
+      className={`absolute top-1 h-[36px] select-none touch-none overflow-hidden rounded-lg text-white ${
         selected ? "z-10 ring-2 ring-emerald-500" : ""
-      }`}
+      } ${dragging ? "z-20 opacity-80 ring-2 ring-white/80" : "cursor-grab active:cursor-grabbing"}`}
       style={{ left, width }}
-      onPointerDown={(e) => e.stopPropagation()}
-      onClick={() => onSelect(beat.id, beat.start)}
+      onPointerDown={(e) => onMoveDown(e, beat)}
+      onPointerMove={onMoveMove}
+      onPointerUp={onMoveEnd}
+      onPointerCancel={onMoveEnd}
+      onClick={() => onSelect(beat.id, beat.layoutStart)}
     >
       {/* background tint (kept separate so text stays fully opaque) */}
       <div className="absolute inset-0" style={{ backgroundColor: beat.actorColor, opacity: 0.92 }} />
@@ -199,60 +247,85 @@ export default function TimelineEditor({
   onSeek,
   onSelectBeat,
   onResizeBeat,
+  onMoveBeat,
   pxPerSec,
 }: TimelineEditorProps) {
   const pps = pxPerSec && pxPerSec > 0 ? pxPerSec : DEFAULT_PPS;
 
   const scrollRef = useRef<HTMLDivElement | null>(null);
+  const rowsRef = useRef<HTMLDivElement | null>(null);
   // Coordinate reference for all pointer math: the ruler's timed area shares
   // its rect with every row's timed area (same origin/width), and
   // getBoundingClientRect already accounts for the scroll offset.
   const ticksRef = useRef<HTMLDivElement | null>(null);
   const scrubPointerRef = useRef<number | null>(null);
+
   const resizeDragRef = useRef<{
     id: string;
     startX: number;
     baseDur: number;
+    maxDur: number;
     pointerId: number;
   } | null>(null);
 
+  const moveDragRef = useRef<{
+    id: string;
+    startX: number;
+    startY: number;
+    origStart: number;
+    origActorUid: string;
+    dur: number;
+    pointerId: number;
+    rows: { uid: string; top: number; bottom: number }[];
+    moved: boolean;
+  } | null>(null);
+  const suppressClickRef = useRef(false);
+
   const [scrubbing, setScrubbing] = useState(false);
   const [resizePreview, setResizePreview] = useState<Record<string, number>>({});
+  const movePreviewRef = useRef<{
+    id: string;
+    start: number;
+    actorUid?: string;
+  } | null>(null);
+  const [movePreview, setMovePreview] = useState<{
+    id: string;
+    start: number;
+    actorUid?: string;
+  } | null>(null);
 
   const contentWidth = Math.max(totalDuration, 8) * pps + 80;
 
-  /* Sequential layout: beat i starts at the sum of previous effective durations. */
-  const layout = useMemo(
-    () =>
-      beats
-        .reduce<{ out: LayoutBeat[]; acc: number }>(
-          (state, b) => {
-            state.out.push({ ...b, start: state.acc });
-            state.acc += Math.max(MIN_DUR, b.duration);
-            return state;
-          },
-          { out: [], acc: 0 },
-        )
-        .out.slice(),
-    [beats],
-  );
+  /* Apply drag-preview overrides, then sort by start. */
+  const layout = useMemo<LayoutBeat[]>(() => {
+    const out = beats.map((b) => ({
+      ...b,
+      layoutStart: movePreview?.id === b.id ? movePreview.start : b.start,
+    }));
+    out.sort((a, b) => a.layoutStart - b.layoutStart);
+    return out;
+  }, [beats, movePreview]);
 
-  /* Group beats per actor; collect orphans (unknown actorUid) for the "অন্যান্য" row. */
+  /* Group beats per actor (with preview actor override); collect orphans. */
   const { byActor, orphanBeats } = useMemo(() => {
     const known = new Set(actors.map((a) => a.uid));
     const byActor = new Map<string, LayoutBeat[]>();
     const orphanBeats: LayoutBeat[] = [];
     for (const b of layout) {
-      if (known.has(b.actorUid)) {
-        const arr = byActor.get(b.actorUid);
+      const effUid =
+        movePreview?.id === b.id && movePreview.actorUid
+          ? movePreview.actorUid
+          : b.actorUid;
+      if (known.has(effUid)) {
+        const arr = byActor.get(effUid);
         if (arr) arr.push(b);
-        else byActor.set(b.actorUid, [b]);
+        else byActor.set(effUid, [b]);
       } else {
         orphanBeats.push(b);
       }
     }
     return { byActor, orphanBeats };
-  }, [layout, actors]);
+  }, [layout, actors, movePreview]);
 
   const displayActors = useMemo(
     () => (orphanBeats.length > 0 ? [...actors, OTHERS_ACTOR] : actors),
@@ -313,10 +386,21 @@ export default function TimelineEditor({
       e.stopPropagation();
       e.preventDefault();
       e.currentTarget.setPointerCapture(e.pointerId);
-      resizeDragRef.current = { id, startX: e.clientX, baseDur, pointerId: e.pointerId };
+      // cap the extension at the next same-actor beat's start
+      const self = beats.find((b) => b.id === id);
+      const nextStart = self
+        ? Math.min(
+            ...beats
+              .filter((b) => b.actorUid === self.actorUid && b.id !== id && b.start > self.start)
+              .map((b) => b.start)
+              .concat(MAX_DUR),
+          )
+        : MAX_DUR;
+      const maxDur = clamp(nextStart - (self?.start ?? 0), MIN_DUR, MAX_DUR);
+      resizeDragRef.current = { id, startX: e.clientX, baseDur, maxDur, pointerId: e.pointerId };
       setResizePreview((prev) => ({ ...prev, [id]: baseDur }));
     },
-    []
+    [beats]
   );
 
   const onResizeMove = useCallback(
@@ -324,7 +408,7 @@ export default function TimelineEditor({
       const st = resizeDragRef.current;
       if (!st || st.pointerId !== e.pointerId) return;
       const delta = (e.clientX - st.startX) / pps;
-      const next = clamp(st.baseDur + delta, MIN_DUR, MAX_DUR);
+      const next = clamp(st.baseDur + delta, MIN_DUR, st.maxDur);
       setResizePreview((prev) => ({ ...prev, [st.id]: next }));
     },
     [pps]
@@ -336,7 +420,7 @@ export default function TimelineEditor({
       if (!st || st.pointerId !== e.pointerId) return;
       resizeDragRef.current = null;
       const delta = (e.clientX - st.startX) / pps;
-      const next = clamp(st.baseDur + delta, MIN_DUR, MAX_DUR);
+      const next = Math.round(clamp(st.baseDur + delta, MIN_DUR, st.maxDur) * 10) / 10;
       setResizePreview((prev) => {
         if (prev[st.id] === undefined) return prev;
         const copy = { ...prev };
@@ -348,10 +432,109 @@ export default function TimelineEditor({
     [onResizeBeat, pps]
   );
 
+  /* ------------------------- moving (drag) ------------------------- */
+
+  const collectRows = useCallback(() => {
+    const el = rowsRef.current;
+    if (!el) return [];
+    const out: { uid: string; top: number; bottom: number }[] = [];
+    el.querySelectorAll<HTMLElement>("[data-actor]").forEach((row) => {
+      const uid = row.dataset.actor;
+      if (!uid) return;
+      const rect = row.getBoundingClientRect();
+      out.push({ uid, top: rect.top, bottom: rect.bottom });
+    });
+    return out;
+  }, []);
+
+  const onMoveDown = useCallback(
+    (e: ReactPointerEvent<HTMLDivElement>, beat: LayoutBeat) => {
+      if (e.pointerType === "mouse" && e.button !== 0) return;
+      e.stopPropagation();
+      e.preventDefault();
+      e.currentTarget.setPointerCapture(e.pointerId);
+      moveDragRef.current = {
+        id: beat.id,
+        startX: e.clientX,
+        startY: e.clientY,
+        origStart: beat.layoutStart,
+        origActorUid: beat.actorUid,
+        dur: Math.max(MIN_DUR, beat.duration),
+        pointerId: e.pointerId,
+        rows: collectRows(),
+        moved: false,
+      };
+    },
+    [collectRows]
+  );
+
+  const onMoveMove = useCallback(
+    (e: ReactPointerEvent<HTMLDivElement>) => {
+      const st = moveDragRef.current;
+      if (!st || st.pointerId !== e.pointerId) return;
+      if (!st.moved && Math.abs(e.clientX - st.startX) < 4 && Math.abs(e.clientY - st.startY) < 4) {
+        return; // treat as a click until real movement
+      }
+      st.moved = true;
+      suppressClickRef.current = true;
+      const dx = (e.clientX - st.startX) / pps;
+      let nextStart = clamp(st.origStart + dx, 0, MAX_START);
+      // which row are we over?
+      let targetUid = st.origActorUid;
+      for (const row of st.rows) {
+        if (e.clientY >= row.top && e.clientY <= row.bottom) {
+          targetUid = row.uid;
+          break;
+        }
+      }
+      if (targetUid === OTHERS_ACTOR.uid) targetUid = st.origActorUid;
+      // keep the same-actor track collision-free while previewing
+      nextStart = resolveOverlap(st.id, nextStart, st.dur, beats, targetUid);
+      movePreviewRef.current = {
+        id: st.id,
+        start: nextStart,
+        actorUid: targetUid !== st.origActorUid ? targetUid : undefined,
+      };
+      setMovePreview(movePreviewRef.current);
+    },
+    [beats, pps]
+  );
+
+  const onMoveEnd = useCallback(
+    (e: ReactPointerEvent<HTMLDivElement>) => {
+      const st = moveDragRef.current;
+      if (!st || st.pointerId !== e.pointerId) return;
+      moveDragRef.current = null;
+      window.setTimeout(() => {
+        suppressClickRef.current = false;
+      }, 0);
+      const preview = movePreviewRef.current;
+      movePreviewRef.current = null;
+      setMovePreview(null);
+      if (!st.moved) return;
+      if (preview && preview.id === st.id) {
+        const changed =
+          Math.abs(preview.start - st.origStart) > 0.01 ||
+          (preview.actorUid !== undefined && preview.actorUid !== st.origActorUid);
+        if (changed) {
+          onMoveBeat(
+            st.id,
+            preview.start,
+            preview.actorUid !== undefined && preview.actorUid !== st.origActorUid
+              ? preview.actorUid
+              : undefined,
+          );
+        }
+      }
+    },
+    [onMoveBeat]
+  );
+
   /* ------------------------- selecting ------------------------- */
 
   const onSelectBeatAt = useCallback(
     (id: string, start: number) => {
+      if (suppressClickRef.current) return;
       onSelectBeat(id);
       onSeek(start + 0.01);
     },
@@ -381,13 +564,15 @@ export default function TimelineEditor({
     <div className="overflow-hidden rounded-xl border border-amber-200 bg-white shadow-sm">
       {/* header */}
       <div className="flex items-center justify-between gap-2 px-3 pb-1.5 pt-2.5">
-        <h3 className="text-sm font-bold text-orange-800">🎞️ টাইমলাইন</h3>
+        <h3 className="text-sm font-bold text-orange-800">
+          🎞️ টাইমলাইন <span className="hidden text-[11px] font-medium text-amber-600 sm:inline">(মাল্টি-ট্র্যাক — সবাই একসাথে অভিনয় করতে পারে!)</span>
+        </h3>
         <div className="flex min-w-0 items-center gap-2">
           <span className="shrink-0 text-[11px] font-semibold text-amber-700">
             মোট: {bnNum(totalDuration.toFixed(1))} সে.
           </span>
-          <span className="hidden text-[11px] text-amber-600 sm:block">
-            ক্লিক = সময় বদল • কিনারা টেনে = দৈর্ঘ্য • ক্যারেক্টার টেনে = সরান
+          <span className="hidden text-[11px] text-amber-600 md:block">
+            ব্লক টেনে সময় বদলান • অন্য সারিতে টানলে ক্যারেক্টর বদলাবে • কিনারা টেনে দৈর্ঘ্য
           </span>
         </div>
       </div>
@@ -397,7 +582,8 @@ export default function TimelineEditor({
         <div className="px-3 pb-1.5">
           <span className="inline-block rounded-md bg-emerald-50 px-2 py-0.5 text-xs text-emerald-700">
             বাছাইকৃত: {selectedInfo.actionEmoji} {selectedInfo.actionLabel} —{" "}
-            {bnNum(selectedInfo.start.toFixed(1))} সে. থেকে শুরু
+            {bnNum(selectedInfo.layoutStart.toFixed(1))} সে. থেকে{" "}
+            {bnNum(Math.max(MIN_DUR, selectedInfo.duration).toFixed(1))} সে. ধরে
           </span>
         </div>
       )}
@@ -453,48 +639,59 @@ export default function TimelineEditor({
             </div>
 
             {/* actor rows */}
-            {displayActors.map((actor) => {
-              const rowBeats =
-                actor.uid === OTHERS_ACTOR.uid
-                  ? orphanBeats
-                  : (byActor.get(actor.uid) ?? []);
-              return (
-                <div key={actor.uid} className="flex border-t border-amber-100" style={{ height: ROW_H }}>
-                  {/* sticky name gutter */}
-                  <div className="sticky left-0 z-20 flex w-28 shrink-0 items-center gap-1.5 border-r border-amber-200 bg-white px-2">
-                    <span
-                      className="h-2.5 w-2.5 shrink-0 rounded-full ring-1 ring-black/10"
-                      style={{ backgroundColor: actor.color }}
-                    />
-                    <span className="truncate text-xs font-bold text-amber-900">{actor.name}</span>
-                  </div>
-                  {/* timed area */}
+            <div ref={rowsRef}>
+              {displayActors.map((actor) => {
+                const rowBeats =
+                  actor.uid === OTHERS_ACTOR.uid
+                    ? orphanBeats
+                    : (byActor.get(actor.uid) ?? []);
+                return (
                   <div
-                    className="relative shrink-0 touch-none"
-                    style={{ width: contentWidth }}
-                    onPointerDown={beginScrub}
-                    onPointerMove={moveScrub}
-                    onPointerUp={endScrub}
-                    onPointerCancel={endScrub}
+                    key={actor.uid}
+                    data-actor={actor.uid}
+                    className="flex border-t border-amber-100"
+                    style={{ height: ROW_H }}
                   >
-                    {rowBeats.map((b) => (
-                      <BeatBlock
-                        key={b.id}
-                        beat={b}
-                        left={b.start * pps}
-                        width={(resizePreview[b.id] ?? Math.max(MIN_DUR, b.duration)) * pps - 4}
-                        selected={b.id === selectedBeatId}
-                        previewDuration={resizePreview[b.id]}
-                        onSelect={onSelectBeatAt}
-                        onResizeDown={onResizeDown}
-                        onResizeMove={onResizeMove}
-                        onResizeEnd={onResizeEnd}
+                    {/* sticky name gutter */}
+                    <div className="sticky left-0 z-20 flex w-28 shrink-0 items-center gap-1.5 border-r border-amber-200 bg-white px-2">
+                      <span
+                        className="h-2.5 w-2.5 shrink-0 rounded-full ring-1 ring-black/10"
+                        style={{ backgroundColor: actor.color }}
                       />
-                    ))}
+                      <span className="truncate text-xs font-bold text-amber-900">{actor.name}</span>
+                    </div>
+                    {/* timed area */}
+                    <div
+                      className="relative shrink-0 touch-none"
+                      style={{ width: contentWidth }}
+                      onPointerDown={beginScrub}
+                      onPointerMove={moveScrub}
+                      onPointerUp={endScrub}
+                      onPointerCancel={endScrub}
+                    >
+                      {rowBeats.map((b) => (
+                        <BeatBlock
+                          key={b.id}
+                          beat={b}
+                          left={b.layoutStart * pps}
+                          width={(resizePreview[b.id] ?? Math.max(MIN_DUR, b.duration)) * pps - 4}
+                          selected={b.id === selectedBeatId}
+                          dragging={movePreview?.id === b.id}
+                          previewDuration={resizePreview[b.id]}
+                          onSelect={onSelectBeatAt}
+                          onMoveDown={onMoveDown}
+                          onMoveMove={onMoveMove}
+                          onMoveEnd={onMoveEnd}
+                          onResizeDown={onResizeDown}
+                          onResizeMove={onResizeMove}
+                          onResizeEnd={onResizeEnd}
+                        />
+                      ))}
+                    </div>
                   </div>
-                </div>
-              );
-            })}
+                );
+              })}
+            </div>
 
             {/* playhead */}
             <div
