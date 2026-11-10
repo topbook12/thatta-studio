@@ -1,11 +1,19 @@
 // ============================================================
-// ঠাট্টা স্টুডিও — Stage engine: scene rendering + playback
+// ঠাট্টা স্টুডিও — Stage engine v2: timeline playback + lip-sync
 // Canvas: 1280x720 internal resolution (also used for export)
+//
+// New in v2:
+//  • absolute scene-time clock → seek/scrub anywhere
+//  • global playback rate (0.5x–2x slow-mo / fast-forward)
+//  • per-beat speed multiplier + easing for walk paths
+//  • audio-envelope lip-sync (real mouth movement)
+//  • living backgrounds (ambient clouds/fireflies/water)
+//  • drag characters directly on the stage
 // ============================================================
 
-import { getBackgroundCanvas } from './backgrounds';
+import { drawAmbient, getBackgroundCanvas } from './backgrounds';
 import { drawCharacter } from './draw';
-import { basePose, computePose, easeInOut } from './pose';
+import { basePose, computePose, easingByName } from './pose';
 import {
   GROUND_Y,
   STAGE_H,
@@ -13,7 +21,9 @@ import {
   type CharacterDesign,
   type PlacedCharacter,
   type Scene,
+  type SceneBeat,
   type StageCallbacks,
+  type StageInteractions,
 } from './types';
 
 const D = Math.PI / 180;
@@ -48,14 +58,23 @@ export class CartoonStage {
   private ctx: CanvasRenderingContext2D;
   private scene: Scene | null = null;
   private designs = new Map<string, CharacterDesign>();
-  private durations: Record<string, number> = {}; // beatId -> seconds
+  private durations: Record<string, number> = {}; // beatId -> seconds (audio-aware)
+  private envelopes: Record<string, number[]> = {}; // beatId -> mouth amplitude @24fps
   private callbacks: StageCallbacks = {};
+  private interactions: StageInteractions = {};
   private playing = false;
-  private beatIdx = 0;
-  private beatStart = 0;
-  private raf = 0;
+  private rate = 1;
+  private sceneTime = 0;
+  private totalDuration = 0;
+  private beatIdx = -1;
   private animT = 0;
   private lastTs = 0;
+  private raf = 0;
+
+  // selection / dragging
+  private selectedUid: string | null = null;
+  private dragUid: string | null = null;
+  private dragMoved = false;
 
   constructor(canvas: HTMLCanvasElement, callbacks: StageCallbacks = {}) {
     this.canvas = canvas;
@@ -67,10 +86,12 @@ export class CartoonStage {
     this.callbacks = callbacks;
     this.lastTs = performance.now();
     this.raf = requestAnimationFrame(this.loop);
+    this.attachPointer();
   }
 
   dispose() {
     cancelAnimationFrame(this.raf);
+    this.detachPointer();
   }
 
   getCanvas(): HTMLCanvasElement {
@@ -81,69 +102,244 @@ export class CartoonStage {
     this.callbacks = cb;
   }
 
+  setInteractions(it: StageInteractions) {
+    this.interactions = it;
+  }
+
   setScene(scene: Scene, designs: CharacterDesign[]) {
     this.scene = scene;
     this.designs = new Map(designs.map((d) => [d.id, d]));
-    this.beatIdx = 0;
+    this.beatIdx = -1;
+    if (this.sceneTime > 0) this.seek(0);
+    this.recalcTotal();
   }
 
-  /** duration overrides per beat id (seconds) — used to sync TTS audio */
+  /** duration overrides per beat id (seconds) — keeps beats in sync with TTS audio */
   setDurations(map: Record<string, number>) {
     this.durations = map;
+    this.recalcTotal();
+    // if we are parked beyond the new end, pull back
+    if (!this.playing && this.sceneTime > this.totalDuration) {
+      this.seek(this.totalDuration);
+    }
+  }
+
+  /** mouth-amplitude envelopes per beat id (samples at 24 fps) */
+  setEnvelopes(map: Record<string, number[]>) {
+    this.envelopes = map;
+  }
+
+  /** global playback speed 0.5..2 */
+  setPlaybackRate(rate: number) {
+    this.rate = Math.max(0.25, Math.min(2.5, rate));
+  }
+
+  getPlaybackRate() {
+    return this.rate;
+  }
+
+  getSceneTime() {
+    return this.sceneTime;
+  }
+
+  getTotalDuration() {
+    return this.totalDuration;
   }
 
   isPlaying() {
     return this.playing;
   }
 
+  setSelected(uid: string | null) {
+    this.selectedUid = uid;
+  }
+
+  private recalcTotal() {
+    if (!this.scene) {
+      this.totalDuration = 0;
+      return;
+    }
+    this.totalDuration = this.scene.beats.reduce((acc, b) => {
+      const dur = this.durations[b.id] ?? b.duration;
+      return acc + Math.max(0.3, dur);
+    }, 0);
+  }
+
+  private beatStartTimes(): number[] {
+    if (!this.scene) return [];
+    const starts: number[] = [];
+    let acc = 0;
+    for (const b of this.scene.beats) {
+      starts.push(acc);
+      acc += Math.max(0.3, this.durations[b.id] ?? b.duration);
+    }
+    return starts;
+  }
+
+  /** Jump to an absolute scene time (works while playing or paused). */
+  seek(t: number) {
+    if (!this.scene || this.scene.beats.length === 0) return;
+    const clamped = Math.max(0, Math.min(this.totalDuration - 0.001, t));
+    const starts = this.beatStartTimes();
+    let idx = 0;
+    for (let i = 0; i < starts.length; i++) {
+      if (clamped >= starts[i]) idx = i;
+    }
+    this.sceneTime = clamped;
+    this.beatIdx = idx;
+    const beat = this.scene.beats[idx];
+    const offset = clamped - starts[idx];
+    this.callbacks.onTime?.(clamped, idx);
+    // let the app restart audio from the right offset
+    this.callbacks.onBeat?.(idx, beat, Math.max(0, offset));
+  }
+
   play(): boolean {
     if (!this.scene || this.scene.beats.length === 0) return false;
+    if (this.sceneTime >= this.totalDuration - 0.02) this.sceneTime = 0;
+    const starts = this.beatStartTimes();
+    let idx = 0;
+    for (let i = 0; i < starts.length; i++) {
+      if (this.sceneTime >= starts[i]) idx = i;
+    }
     this.playing = true;
-    this.beatIdx = 0;
-    this.beatStart = performance.now();
-    this.callbacks.onBeat?.(0, this.scene.beats[0]);
+    this.beatIdx = idx;
+    this.callbacks.onTime?.(this.sceneTime, idx);
+    this.callbacks.onBeat?.(
+      idx,
+      this.scene.beats[idx],
+      Math.max(0, this.sceneTime - starts[idx]),
+    );
     return true;
+  }
+
+  pause() {
+    this.playing = false;
   }
 
   stop() {
     this.playing = false;
+    this.sceneTime = 0;
+    this.beatIdx = -1;
+    this.callbacks.onTime?.(0, -1);
   }
 
-  private currentActor(): PlacedCharacter | null {
-    if (!this.scene || !this.playing) return null;
-    const beat = this.scene.beats[this.beatIdx];
-    if (!beat) return null;
-    return this.scene.characters.find((c) => c.uid === beat.actorUid) ?? null;
+  // ---------------- pointer interactions ----------------
+
+  private canvasX(e: PointerEvent): number {
+    const rect = this.canvas.getBoundingClientRect();
+    return ((e.clientX - rect.left) / rect.width) * STAGE_W;
   }
+
+  private canvasY(e: PointerEvent): number {
+    const rect = this.canvas.getBoundingClientRect();
+    return ((e.clientY - rect.top) / rect.height) * STAGE_H;
+  }
+
+  private hitCharacter(x: number, y: number): PlacedCharacter | null {
+    if (!this.scene) return null;
+    for (let i = this.scene.characters.length - 1; i >= 0; i--) {
+      const c = this.scene.characters[i];
+      const cx = (c.x / 100) * STAGE_W;
+      const s = c.scale;
+      if (Math.abs(x - cx) < 60 * s && y > GROUND_Y - 245 * s && y < GROUND_Y + 14) {
+        return c;
+      }
+    }
+    return null;
+  }
+
+  private attachPointer() {
+    this.canvas.addEventListener('pointerdown', this.onPointerDown);
+    this.canvas.addEventListener('pointermove', this.onPointerMove);
+    this.canvas.addEventListener('pointerup', this.onPointerUp);
+    this.canvas.addEventListener('pointercancel', this.onPointerUp);
+  }
+
+  private detachPointer() {
+    this.canvas.removeEventListener('pointerdown', this.onPointerDown);
+    this.canvas.removeEventListener('pointermove', this.onPointerMove);
+    this.canvas.removeEventListener('pointerup', this.onPointerUp);
+    this.canvas.removeEventListener('pointercancel', this.onPointerUp);
+  }
+
+  private onPointerDown = (e: PointerEvent) => {
+    const hit = this.hitCharacter(this.canvasX(e), this.canvasY(e));
+    if (hit) {
+      this.dragUid = hit.uid;
+      this.dragMoved = false;
+      this.selectedUid = hit.uid;
+      this.canvas.setPointerCapture(e.pointerId);
+      this.interactions.onPick?.(hit.uid);
+    } else {
+      this.selectedUid = null;
+      this.interactions.onPick?.(null);
+    }
+  };
+
+  private onPointerMove = (e: PointerEvent) => {
+    const x = this.canvasX(e);
+    const y = this.canvasY(e);
+    if (this.dragUid) {
+      this.dragMoved = true;
+      const pct = Math.max(4, Math.min(96, (x / STAGE_W) * 100));
+      this.interactions.onDrag?.(this.dragUid, pct);
+      this.canvas.style.cursor = 'grabbing';
+      return;
+    }
+    const hit = this.hitCharacter(x, y);
+    this.canvas.style.cursor = hit ? 'grab' : 'default';
+  };
+
+  private onPointerUp = (e: PointerEvent) => {
+    if (this.dragUid) {
+      try {
+        this.canvas.releasePointerCapture(e.pointerId);
+      } catch {
+        /* ignore */
+      }
+      const pct = Math.max(4, Math.min(96, (this.canvasX(e) / STAGE_W) * 100));
+      if (this.dragMoved) this.interactions.onDragEnd?.(this.dragUid, pct);
+      this.dragUid = null;
+      this.canvas.style.cursor = 'grab';
+    }
+  };
+
+  // ---------------- main loop ----------------
 
   private loop = (ts: number) => {
     this.raf = requestAnimationFrame(this.loop);
     const dt = Math.min(0.1, (ts - this.lastTs) / 1000);
     this.lastTs = ts;
-    this.animT += dt;
+    this.animT += dt * this.rate;
 
-    if (this.playing && this.scene) {
-      const beat = this.scene.beats[this.beatIdx];
-      if (!beat) {
+    if (this.playing && this.scene && this.scene.beats.length > 0) {
+      this.sceneTime += dt * this.rate;
+      if (this.sceneTime >= this.totalDuration) {
+        this.sceneTime = this.totalDuration;
+        this.beatIdx = this.scene.beats.length - 1;
         this.playing = false;
+        this.callbacks.onTime?.(this.sceneTime, this.beatIdx);
         this.callbacks.onFinish?.();
       } else {
-        const durMs = (this.durations[beat.id] ?? beat.duration) * 1000;
-        if (ts - this.beatStart >= durMs) {
-          this.beatIdx += 1;
-          this.beatStart = ts;
-          if (this.beatIdx >= this.scene.beats.length) {
-            this.playing = false;
-            this.callbacks.onFinish?.();
-          } else {
-            this.callbacks.onBeat?.(this.beatIdx, this.scene.beats[this.beatIdx]);
-          }
+        const starts = this.beatStartTimes();
+        let idx = 0;
+        for (let i = 0; i < starts.length; i++) {
+          if (this.sceneTime >= starts[i]) idx = i;
         }
+        if (idx !== this.beatIdx) {
+          this.beatIdx = idx;
+          const offset = this.sceneTime - starts[idx];
+          this.callbacks.onBeat?.(idx, this.scene.beats[idx], Math.max(0, offset));
+        }
+        this.callbacks.onTime?.(this.sceneTime, idx);
       }
     }
 
     this.render();
   };
+
+  // ---------------- rendering ----------------
 
   private render() {
     const ctx = this.ctx;
@@ -172,9 +368,20 @@ export class CartoonStage {
       ctx.fillRect(0, 0, STAGE_W, STAGE_H);
     }
 
-    const beat = this.playing ? this.scene.beats[this.beatIdx] : null;
-    const beatElapsed = beat ? (performance.now() - this.beatStart) / 1000 : 0;
-    const actor = this.currentActor();
+    // living background layer (clouds, fireflies, shimmer…)
+    try {
+      drawAmbient(ctx, this.scene.background, this.animT);
+    } catch {
+      /* ambient is decorative — never break the stage */
+    }
+
+    const starts = this.beatStartTimes();
+    const inScene = this.playing || this.sceneTime > 0;
+    const beat = inScene && this.beatIdx >= 0 ? this.scene.beats[this.beatIdx] : null;
+    const beatElapsed = beat ? Math.max(0, this.sceneTime - starts[this.beatIdx]) : 0;
+    const actor = beat
+      ? this.scene.characters.find((c) => c.uid === beat.actorUid) ?? null
+      : null;
 
     for (const placed of this.scene.characters) {
       const design = this.designs.get(placed.designId);
@@ -183,18 +390,37 @@ export class CartoonStage {
       const isActive = beat != null && actor != null && actor.uid === placed.uid;
       let worldX = (placed.x / 100) * STAGE_W;
       let flip = placed.flip;
-      let pose;
+      let pose = basePose();
       let t = this.animT;
 
       if (isActive && beat) {
-        t = beatElapsed;
-        const speaking = beat.text.trim().length > 0;
-        pose = computePose(beat.action, t, speaking);
-        if (beat.action === 'walk' && beat.moveTo != null) {
-          const progress = Math.min(1, t / Math.max(0.4, this.durations[beat.id] ?? beat.duration));
+        const speed = Math.max(0.25, Math.min(2.5, beat.speed ?? 1));
+        t = beatElapsed * speed;
+        pose = computePose(beat.action, t, beat.text.trim().length > 0);
+
+        // ---- real lip-sync: audio envelope drives the mouth ----
+        const env = this.envelopes[beat.id];
+        if (env && env.length > 0 && beat.text.trim().length > 0) {
+          const fi = beatElapsed * 24;
+          const i0 = Math.max(0, Math.min(env.length - 1, Math.floor(fi)));
+          const i1 = Math.max(0, Math.min(env.length - 1, i0 + 1));
+          const frac = fi - Math.floor(fi);
+          const amp = lerp(env[i0], env[i1], frac);
+          pose.mouthOpen = Math.max(0.06, Math.min(1, 0.12 + amp * 1.05));
+          // tiny speech head-bob for liveliness
+          pose.headNod += (amp - 0.35) * 2.2;
+        }
+
+        if (
+          (beat.action === 'walk' || beat.action === 'run') &&
+          beat.moveTo != null
+        ) {
+          const dur = Math.max(0.4, this.durations[beat.id] ?? beat.duration);
+          const progress = Math.min(1, beatElapsed / dur);
+          const eased = easingByName(beat.easing ?? 'easeInOut')(progress);
           const startX = (placed.x / 100) * STAGE_W;
           const targetX = (beat.moveTo / 100) * STAGE_W;
-          worldX = lerp(startX, targetX, easeInOut(progress));
+          worldX = lerp(startX, targetX, eased);
           flip = targetX < startX;
         }
       } else {
@@ -208,12 +434,24 @@ export class CartoonStage {
       drawCharacter(ctx, design, pose, t);
       ctx.restore();
 
+      // selection ring
+      if (this.selectedUid === placed.uid) {
+        ctx.save();
+        ctx.strokeStyle = 'rgba(234, 88, 12, 0.85)';
+        ctx.lineWidth = 3;
+        ctx.setLineDash([9, 7]);
+        ctx.beginPath();
+        ctx.ellipse(worldX, GROUND_Y + 4, 46 * s, 11 * s, 0, 0, Math.PI * 2);
+        ctx.stroke();
+        ctx.restore();
+      }
+
       if (isActive && beat) {
         this.drawSpeakerPill(design.name, worldX, s);
       }
     }
 
-    // subtitle
+    // subtitle (also visible while scrubbing)
     if (beat && beat.text.trim()) {
       this.drawSubtitle(beat.text);
     }

@@ -12,9 +12,35 @@ export type ActionName =
   | 'angry'
   | 'jump'
   | 'nod'
-  | 'cry';
+  | 'cry'
+  | 'run'
+  | 'slap'
+  | 'bow'
+  | 'think'
+  | 'surprise'
+  | 'dance'
+  | 'fall'
+  | 'push';
 
-export type BgName = 'village' | 'bazaar' | 'field' | 'room' | 'pond';
+export type BgName =
+  | 'village'
+  | 'bazaar'
+  | 'field'
+  | 'room'
+  | 'pond'
+  | 'rajcourt'
+  | 'school'
+  | 'ghat'
+  | 'night';
+
+/** Easing for beat-level movement (walk path etc.) */
+export type EasingName =
+  | 'linear'
+  | 'easeInOut'
+  | 'easeIn'
+  | 'easeOut'
+  | 'backOut'
+  | 'elasticOut';
 
 export type EyeState = 'open' | 'blink' | 'closed' | 'happy' | 'wide';
 export type BrowState = 'normal' | 'angry' | 'raised' | 'sad';
@@ -72,6 +98,10 @@ export interface SceneBeat {
   text: string;
   /** optional walk target x (0..100) */
   moveTo?: number;
+  /** animation speed multiplier for this beat (0.5..2, default 1) */
+  speed?: number;
+  /** easing used for the walk-to-target motion (default easeInOut) */
+  easing?: EasingName;
 }
 
 export interface Scene {
@@ -101,12 +131,22 @@ export interface Pose {
   browState: BrowState;
   expression: Expression;
   tears: boolean;
+  /** squash & stretch: -1 = stretched tall, +1 = squashed wide, 0 = normal */
+  squash: number;
 }
 
 /** Callbacks for playback orchestration. */
 export interface StageCallbacks {
-  onBeat?: (index: number, beat: SceneBeat) => void;
+  onBeat?: (index: number, beat: SceneBeat, offset: number) => void;
+  onTime?: (sceneTime: number, beatIndex: number) => void;
   onFinish?: () => void;
+}
+
+/** Character hit/drag interactions on the stage canvas. */
+export interface StageInteractions {
+  onPick?: (uid: string | null) => void;
+  onDrag?: (uid: string, xPct: number) => void;
+  onDragEnd?: (uid: string, xPct: number) => void;
 }
 
 export const STAGE_W = 1280;

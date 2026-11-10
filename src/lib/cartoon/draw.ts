@@ -9,6 +9,9 @@ import type { CharacterDesign, Pose } from './types';
 
 const D = Math.PI / 180;
 
+/** consistent cartoon outline color */
+const OUTLINE = '#4a352b';
+
 // ---------------- skeleton constants ----------------
 const HIP_Y = -88;
 const HIP_LX = -9;
@@ -64,13 +67,38 @@ function capsule(
   y1: number,
   w: number,
   color: string,
+  outline = true,
 ) {
+  ctx.lineCap = 'round';
+  if (outline) {
+    ctx.strokeStyle = OUTLINE;
+    ctx.lineWidth = w + 3.4;
+    ctx.beginPath();
+    ctx.moveTo(x0, y0);
+    ctx.lineTo(x1, y1);
+    ctx.stroke();
+  }
   ctx.strokeStyle = color;
   ctx.lineWidth = w;
-  ctx.lineCap = 'round';
   ctx.beginPath();
   ctx.moveTo(x0, y0);
   ctx.lineTo(x1, y1);
+  ctx.stroke();
+}
+
+function outlinedCircle(
+  ctx: CanvasRenderingContext2D,
+  x: number,
+  y: number,
+  r: number,
+  color: string,
+) {
+  ctx.fillStyle = color;
+  ctx.beginPath();
+  ctx.arc(x, y, r, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.strokeStyle = OUTLINE;
+  ctx.lineWidth = 2;
   ctx.stroke();
 }
 
@@ -99,7 +127,7 @@ function drawArm(
   ctx.translate(0, UPPER_ARM);
   ctx.rotate(elbow * D);
   capsule(ctx, 0, 0, 0, FOREARM, 9, foreColor);
-  circle(ctx, 0, FOREARM + 2, 6, foreColor);
+  outlinedCircle(ctx, 0, FOREARM + 2, 6, foreColor);
   ctx.restore();
 }
 
@@ -119,15 +147,16 @@ function drawLeg(
   ctx.translate(0, THIGH);
   ctx.rotate(knee * D);
   capsule(ctx, 0, 0, 0, SHIN, 12, shinColor);
-  if (shoeColor) {
-    ctx.save();
-    ctx.translate(0, SHIN - 2);
-    ctx.fillStyle = shoeColor;
-    ctx.beginPath();
-    ctx.ellipse(5, 2, 11, 6, -0.08, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.restore();
-  }
+  ctx.save();
+  ctx.translate(0, SHIN - 2);
+  ctx.fillStyle = shoeColor ?? shade(shinColor, -0.22);
+  ctx.beginPath();
+  ctx.ellipse(5, 2, 11, 6, -0.08, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.strokeStyle = OUTLINE;
+  ctx.lineWidth = 2;
+  ctx.stroke();
+  ctx.restore();
   ctx.restore();
 }
 
@@ -216,7 +245,8 @@ function drawBottom(
 function drawTorso(ctx: CanvasRenderingContext2D, d: CharacterDesign) {
   const dark = shade(d.topColor, -0.25);
   switch (d.topStyle) {
-    case 1: // পাঞ্জাবি (long kurta)
+    case 1: {
+      // পাঞ্জাবি (long kurta)
       ctx.fillStyle = d.topColor;
       ctx.beginPath();
       ctx.moveTo(-21, -150);
@@ -225,6 +255,19 @@ function drawTorso(ctx: CanvasRenderingContext2D, d: CharacterDesign) {
       ctx.quadraticCurveTo(27, -120, 21, -150);
       ctx.closePath();
       ctx.fill();
+      ctx.strokeStyle = OUTLINE;
+      ctx.lineWidth = 2.4;
+      ctx.stroke();
+      // subtle side shading
+      ctx.save();
+      ctx.clip();
+      const g1 = ctx.createLinearGradient(-26, 0, 26, 0);
+      g1.addColorStop(0, 'rgba(255,255,255,0.14)');
+      g1.addColorStop(0.55, 'rgba(255,255,255,0)');
+      g1.addColorStop(1, 'rgba(0,0,0,0.12)');
+      ctx.fillStyle = g1;
+      ctx.fillRect(-30, -155, 60, 90);
+      ctx.restore();
       ctx.strokeStyle = dark;
       ctx.lineWidth = 2;
       ctx.beginPath();
@@ -235,10 +278,14 @@ function drawTorso(ctx: CanvasRenderingContext2D, d: CharacterDesign) {
       ctx.stroke();
       for (let i = 0; i < 3; i++) circle(ctx, 2, -126 + i * 14, 1.8, dark);
       break;
+    }
     case 2: // শার্ট
       ctx.fillStyle = d.topColor;
       rr(ctx, -23, -148, 46, 62, 10);
       ctx.fill();
+      ctx.strokeStyle = OUTLINE;
+      ctx.lineWidth = 2.4;
+      ctx.stroke();
       ctx.fillStyle = shade(d.topColor, 0.25);
       ctx.beginPath();
       ctx.moveTo(-6, -148);
@@ -262,7 +309,8 @@ function drawTorso(ctx: CanvasRenderingContext2D, d: CharacterDesign) {
       ctx.closePath();
       ctx.stroke();
       break;
-    case 3: // কুর্তি
+    case 3: {
+      // কুর্তি
       ctx.fillStyle = d.topColor;
       ctx.beginPath();
       ctx.moveTo(-20, -150);
@@ -271,6 +319,18 @@ function drawTorso(ctx: CanvasRenderingContext2D, d: CharacterDesign) {
       ctx.quadraticCurveTo(30, -118, 20, -150);
       ctx.closePath();
       ctx.fill();
+      ctx.strokeStyle = OUTLINE;
+      ctx.lineWidth = 2.4;
+      ctx.stroke();
+      ctx.save();
+      ctx.clip();
+      const g2 = ctx.createLinearGradient(-29, 0, 29, 0);
+      g2.addColorStop(0, 'rgba(255,255,255,0.15)');
+      g2.addColorStop(0.55, 'rgba(255,255,255,0)');
+      g2.addColorStop(1, 'rgba(0,0,0,0.12)');
+      ctx.fillStyle = g2;
+      ctx.fillRect(-32, -155, 64, 98);
+      ctx.restore();
       ctx.strokeStyle = shade(d.topColor, -0.2);
       ctx.lineWidth = 2;
       ctx.beginPath();
@@ -279,10 +339,14 @@ function drawTorso(ctx: CanvasRenderingContext2D, d: CharacterDesign) {
       ctx.stroke();
       circle(ctx, 0, -124, 2.6, shade(d.topColor, -0.3));
       break;
+    }
     case 4: // ভেস্ট
       ctx.fillStyle = d.skin;
       rr(ctx, -22, -148, 44, 60, 12);
       ctx.fill();
+      ctx.strokeStyle = OUTLINE;
+      ctx.lineWidth = 2.4;
+      ctx.stroke();
       ctx.fillStyle = d.topColor;
       ctx.beginPath();
       ctx.moveTo(-23, -148);
@@ -291,6 +355,9 @@ function drawTorso(ctx: CanvasRenderingContext2D, d: CharacterDesign) {
       ctx.lineTo(-23, -90);
       ctx.closePath();
       ctx.fill();
+      ctx.strokeStyle = OUTLINE;
+      ctx.lineWidth = 2.2;
+      ctx.stroke();
       ctx.beginPath();
       ctx.moveTo(23, -148);
       ctx.lineTo(3, -148);
@@ -298,6 +365,7 @@ function drawTorso(ctx: CanvasRenderingContext2D, d: CharacterDesign) {
       ctx.lineTo(23, -90);
       ctx.closePath();
       ctx.fill();
+      ctx.stroke();
       ctx.strokeStyle = shade(d.topColor, -0.25);
       ctx.lineWidth = 2.4;
       ctx.beginPath();
@@ -309,6 +377,18 @@ function drawTorso(ctx: CanvasRenderingContext2D, d: CharacterDesign) {
       ctx.fillStyle = d.topColor;
       rr(ctx, -23, -148, 46, 62, 14);
       ctx.fill();
+      ctx.strokeStyle = OUTLINE;
+      ctx.lineWidth = 2.4;
+      ctx.stroke();
+      ctx.save();
+      ctx.clip();
+      const g0 = ctx.createLinearGradient(-23, 0, 23, 0);
+      g0.addColorStop(0, 'rgba(255,255,255,0.14)');
+      g0.addColorStop(0.55, 'rgba(255,255,255,0)');
+      g0.addColorStop(1, 'rgba(0,0,0,0.12)');
+      ctx.fillStyle = g0;
+      ctx.fillRect(-26, -152, 52, 70);
+      ctx.restore();
       ctx.strokeStyle = shade(d.topColor, -0.18);
       ctx.lineWidth = 2;
       ctx.beginPath();
@@ -682,11 +762,17 @@ function drawHead(ctx: CanvasRenderingContext2D, d: CharacterDesign, pose: Pose,
 
   // head
   circle(ctx, HEAD_CX, HEAD_CY, HEAD_R, d.skin);
-  ctx.strokeStyle = 'rgba(0,0,0,0.14)';
-  ctx.lineWidth = 1.4;
+  ctx.strokeStyle = OUTLINE;
+  ctx.lineWidth = 2.2;
   ctx.beginPath();
   ctx.arc(HEAD_CX, HEAD_CY, HEAD_R, 0, Math.PI * 2);
   ctx.stroke();
+
+  // soft top-left highlight for volume
+  ctx.fillStyle = 'rgba(255,255,255,0.16)';
+  ctx.beginPath();
+  ctx.ellipse(HEAD_CX - 10, HEAD_CY - 14, 12, 8, -0.5, 0, Math.PI * 2);
+  ctx.fill();
 
   drawHair(ctx, d);
   drawBeard(ctx, d);
@@ -717,11 +803,18 @@ export function drawCharacter(
   ctx.rotate(pose.bodyLean * D);
   ctx.translate(pose.xOff, -pose.yOff);
 
-  // ground shadow
-  ctx.fillStyle = 'rgba(0,0,0,0.16)';
+  // soft ground shadow (radial fade)
+  const sg = ctx.createRadialGradient(0, 2, 2, 0, 2, 38);
+  sg.addColorStop(0, 'rgba(0,0,0,0.24)');
+  sg.addColorStop(1, 'rgba(0,0,0,0)');
+  ctx.fillStyle = sg;
   ctx.beginPath();
-  ctx.ellipse(0, 2, 34, 7, 0, 0, Math.PI * 2);
+  ctx.ellipse(0, 2, 38, 9, 0, 0, Math.PI * 2);
   ctx.fill();
+
+  // squash & stretch about the ground point (cartoon physics)
+  const sq = Math.max(-0.9, Math.min(0.9, pose.squash ?? 0));
+  if (sq !== 0) ctx.scale(1 + sq * 0.16, 1 - sq * 0.14);
 
   // far arm behind torso
   const sleeveLong = d.topStyle === 1 || d.topStyle === 2 || d.topStyle === 3;

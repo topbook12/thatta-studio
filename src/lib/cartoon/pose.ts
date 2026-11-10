@@ -2,7 +2,7 @@
 // ঠাট্টা স্টুডিও — Pose computation (procedural actions)
 // ============================================================
 
-import type { ActionName, Pose } from './types';
+import type { ActionName, EasingName, Pose } from './types';
 
 const D = Math.PI / 180;
 
@@ -26,6 +26,7 @@ export function basePose(): Pose {
     browState: 'normal',
     expression: 'neutral',
     tears: false,
+    squash: 0,
   };
 }
 
@@ -81,7 +82,9 @@ export function computePose(action: ActionName, t: number, speaking: boolean): P
       p.elbowL = -12;
       p.elbowR = -12;
       p.yOff = Math.abs(Math.sin(ph)) * 3.5;
+      p.xOff = Math.sin(ph) * 1.5; // hip sway
       p.bodyLean = 3;
+      p.headNod = Math.sin(ph * 2) * 1.6; // counter-bob
       p.mouthOpen = speaking ? 0.15 + 0.7 * Math.abs(Math.sin(t * 12)) : 0;
       if (blinking(t)) p.eyeState = 'blink';
       break;
@@ -138,8 +141,23 @@ export function computePose(action: ActionName, t: number, speaking: boolean): P
     }
     case 'jump': {
       const cyc = (t % 1.15) / 1.15;
-      const arc = Math.sin(cyc * Math.PI);
-      p.yOff = arc * 58;
+      // anticipation → launch → air → land (squash & stretch)
+      let arc: number;
+      if (cyc < 0.18) {
+        // anticipation crouch
+        const k = cyc / 0.18;
+        arc = -k * 0.06;
+        p.squash = k * 0.7;
+      } else if (cyc < 0.78) {
+        arc = Math.sin(((cyc - 0.18) / 0.6) * Math.PI);
+        p.squash = -0.45 * Math.sin(((cyc - 0.18) / 0.6) * Math.PI);
+      } else {
+        // landing impact
+        const k = (cyc - 0.78) / 0.22;
+        arc = 0;
+        p.squash = Math.sin(k * Math.PI) * 0.85;
+      }
+      p.yOff = Math.max(0, arc) * 58;
       p.hipL = -18 - arc * 16;
       p.hipR = -14 - arc * 14;
       p.kneeL = 20 + arc * 30;
@@ -178,6 +196,197 @@ export function computePose(action: ActionName, t: number, speaking: boolean): P
       p.mouthOpen = 0.3 + 0.25 * Math.abs(Math.sin(t * 7));
       break;
     }
+    case 'run': {
+      const ph = t * TAU * 3.1;
+      p.hipL = Math.sin(ph) * 42;
+      p.hipR = Math.sin(ph + Math.PI) * 42;
+      p.kneeL = Math.max(0, Math.sin(ph + 1.1)) * 55;
+      p.kneeR = Math.max(0, Math.sin(ph + Math.PI + 1.1)) * 55;
+      p.shoulderL = 8 + Math.sin(ph + Math.PI) * 42;
+      p.shoulderR = 8 + Math.sin(ph) * 42;
+      p.elbowL = -68;
+      p.elbowR = -68;
+      p.yOff = Math.abs(Math.sin(ph)) * 6;
+      p.xOff = Math.sin(ph) * 2;
+      p.bodyLean = 10;
+      p.headNod = Math.sin(ph * 2) * 2.4;
+      p.expression = 'neutral';
+      p.mouthOpen = speaking ? 0.2 + 0.7 * Math.abs(Math.sin(t * 12)) : 0.18;
+      if (blinking(t)) p.eyeState = 'blink';
+      break;
+    }
+    case 'slap': {
+      // 1.1s cycle: windup → whoosh → hold
+      const cyc = (t % 1.1) / 1.1;
+      let swing: number;
+      let elbow: number;
+      if (cyc < 0.42) {
+        // anticipation: arm winds back
+        const k = cyc / 0.42;
+        swing = -k * 46;
+        elbow = -k * 66;
+        p.bodyLean = -k * 7;
+      } else if (cyc < 0.62) {
+        // fast strike
+        const k = (cyc - 0.42) / 0.2;
+        swing = -46 + k * 190;
+        elbow = -66 + k * 58;
+        p.bodyLean = -7 + k * 16;
+        p.squash = Math.sin(k * Math.PI) * 0.3;
+      } else {
+        // hold + recover
+        const k = (cyc - 0.62) / 0.38;
+        swing = 144 * (1 - k * 0.25);
+        elbow = -8;
+        p.bodyLean = 9 * (1 - k * 0.4);
+      }
+      p.shoulderR = 62 + swing;
+      p.elbowR = elbow;
+      p.shoulderL = -14;
+      p.elbowL = -34;
+      p.headNod = cyc < 0.62 ? Math.sin(cyc * 18) * 3 : 0;
+      p.browState = 'angry';
+      p.expression = 'angry';
+      p.eyeState = 'wide';
+      p.mouthOpen = speaking ? 0.25 + 0.6 * Math.abs(Math.sin(t * 13)) : 0.2;
+      break;
+    }
+    case 'bow': {
+      const cyc = (t % 2.4) / 2.4;
+      // lean down, hold, rise
+      const lean = Math.sin(Math.min(1, cyc * 1.6) * Math.PI) * 34;
+      p.bodyLean = lean;
+      p.headNod = lean * 0.55;
+      p.shoulderL = 18 + lean * 1.1;
+      p.shoulderR = 18 + lean * 1.1;
+      p.elbowL = -58 - lean * 0.5;
+      p.elbowR = -58 - lean * 0.5;
+      p.yOff = -lean * 0.35;
+      p.expression = 'smile';
+      p.mouthOpen = speaking ? 0.15 + 0.6 * Math.abs(Math.sin(t * 12)) : 0.08;
+      if (blinking(t)) p.eyeState = 'blink';
+      break;
+    }
+    case 'think': {
+      p.headTilt = 9 + Math.sin(t * 1.6) * 2.5;
+      p.shoulderR = 34 + Math.sin(t * 1.6) * 3;
+      p.elbowR = -122;
+      p.shoulderL = 6;
+      p.elbowL = -10;
+      p.yOff = Math.sin(t * 1.9) * 1.6;
+      p.browState = 'raised';
+      p.expression = 'neutral';
+      p.mouthOpen = speaking ? 0.12 + 0.55 * Math.abs(Math.sin(t * 11)) : 0.06;
+      if (blinking(t)) p.eyeState = 'blink';
+      break;
+    }
+    case 'surprise': {
+      const cyc = (t % 1.6) / 1.6;
+      const jolt = Math.exp(-cyc * 5) * Math.sin(cyc * 22);
+      p.yOff = Math.max(0, jolt) * 26;
+      p.squash = -Math.max(0, jolt) * 0.35;
+      p.shoulderL = 148 + jolt * 18;
+      p.shoulderR = 148 + jolt * 18;
+      p.elbowL = -12;
+      p.elbowR = -12;
+      p.headTilt = jolt * 6;
+      p.eyeState = 'wide';
+      p.browState = 'raised';
+      p.expression = 'surprised';
+      p.mouthOpen = 0.55 + Math.abs(jolt) * 0.3;
+      break;
+    }
+    case 'dance': {
+      const ph = t * TAU * 1.35;
+      p.xOff = Math.sin(ph) * 6;
+      p.yOff = Math.abs(Math.sin(ph * 2)) * 4.5;
+      p.bodyLean = Math.sin(ph) * 7;
+      p.headTilt = Math.sin(ph + 0.5) * 9;
+      p.shoulderL = 60 + Math.sin(ph) * 95;
+      p.shoulderR = 60 - Math.sin(ph) * 95;
+      p.elbowL = -34 + Math.cos(ph) * 22;
+      p.elbowR = -34 - Math.cos(ph) * 22;
+      p.hipL = Math.sin(ph) * 8;
+      p.hipR = Math.sin(ph) * 8;
+      p.expression = 'laugh';
+      p.eyeState = 'happy';
+      p.mouthOpen = 0.45 + Math.abs(Math.sin(ph * 2)) * 0.3;
+      break;
+    }
+    case 'fall': {
+      // comedic stumble-back cycle: wobble → tip → sit → recover
+      const cyc = (t % 2.2) / 2.2;
+      if (cyc < 0.3) {
+        const k = cyc / 0.3;
+        p.bodyLean = -k * 16;
+        p.shoulderL = 40 + k * 50;
+        p.shoulderR = 40 + k * 50;
+        p.elbowL = -100;
+        p.elbowR = -100;
+        p.eyeState = 'wide';
+      } else if (cyc < 0.55) {
+        const k = (cyc - 0.3) / 0.25;
+        p.bodyLean = -16 - k * 58;
+        p.yOff = -k * 34;
+        p.shoulderL = 90 + k * 80;
+        p.shoulderR = 90 + k * 80;
+        p.elbowL = -60;
+        p.elbowR = -60;
+        p.hipL = -30 * k;
+        p.hipR = -26 * k;
+        p.kneeL = 40 * k;
+        p.kneeR = 34 * k;
+        p.expression = 'surprised';
+        p.mouthOpen = 0.7;
+        p.eyeState = 'wide';
+      } else if (cyc < 0.85) {
+        // sitting on ground
+        p.bodyLean = -74;
+        p.yOff = -34;
+        p.shoulderL = 150;
+        p.shoulderR = 150;
+        p.elbowL = -40;
+        p.elbowR = -40;
+        p.hipL = -58;
+        p.hipR = -52;
+        p.kneeL = 58;
+        p.kneeR = 50;
+        p.expression = 'surprised';
+        p.mouthOpen = 0.5;
+        p.tears = false;
+      } else {
+        const k = (cyc - 0.85) / 0.15;
+        p.bodyLean = -74 * (1 - k);
+        p.yOff = -34 * (1 - k);
+        p.shoulderL = 150 - k * 120;
+        p.shoulderR = 150 - k * 120;
+        p.elbowL = -40 + k * 20;
+        p.elbowR = -40 + k * 20;
+        p.hipL = -58 * (1 - k);
+        p.hipR = -52 * (1 - k);
+        p.kneeL = 58 * (1 - k);
+        p.kneeR = 50 * (1 - k);
+        p.expression = 'frown';
+      }
+      break;
+    }
+    case 'push': {
+      const ph = Math.sin(t * 5.2);
+      p.bodyLean = 12 + ph * 3;
+      p.shoulderL = 84 + ph * 8;
+      p.shoulderR = 84 + ph * 8;
+      p.elbowL = -16 - ph * 10;
+      p.elbowR = -16 - ph * 10;
+      p.hipL = -12;
+      p.hipR = 8;
+      p.kneeL = 14;
+      p.kneeR = 6;
+      p.yOff = Math.abs(ph) * 1.6;
+      p.expression = 'neutral';
+      p.mouthOpen = speaking ? 0.2 + 0.6 * Math.abs(Math.sin(t * 12)) : 0.15;
+      if (blinking(t)) p.eyeState = 'blink';
+      break;
+    }
     default: {
       if (blinking(t)) p.eyeState = 'blink';
       break;
@@ -189,4 +398,31 @@ export function computePose(action: ActionName, t: number, speaking: boolean): P
 
 export function easeInOut(x: number): number {
   return x < 0.5 ? 2 * x * x : 1 - Math.pow(-2 * x + 2, 2) / 2;
+}
+
+/** Movement-quality easings for beat paths (walk/run targets). */
+export function easingByName(name: EasingName): (x: number) => number {
+  switch (name) {
+    case 'linear':
+      return (x) => x;
+    case 'easeIn':
+      return (x) => x * x;
+    case 'easeOut':
+      return (x) => 1 - (1 - x) * (1 - x);
+    case 'backOut':
+      return (x) => {
+        const c1 = 1.70158;
+        const c3 = c1 + 1;
+        return 1 + c3 * Math.pow(x - 1, 3) + c1 * Math.pow(x - 1, 2);
+      };
+    case 'elasticOut':
+      return (x) => {
+        if (x === 0 || x === 1) return x;
+        const c4 = (2 * Math.PI) / 3;
+        return Math.pow(2, -10 * x) * Math.sin((x * 10 - 0.75) * c4) + 1;
+      };
+    case 'easeInOut':
+    default:
+      return easeInOut;
+  }
 }

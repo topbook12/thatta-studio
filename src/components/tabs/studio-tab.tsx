@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -24,10 +24,25 @@ import {
 } from "@/components/ui/select";
 import { toast } from "@/hooks/use-toast";
 import { useStudio } from "@/lib/store";
-import { ACTION_OPTIONS, BG_OPTIONS } from "@/lib/cartoon/presets";
+import {
+  ACTION_OPTIONS,
+  BG_OPTIONS,
+  EASING_OPTIONS,
+  SPEED_OPTIONS,
+} from "@/lib/cartoon/presets";
 import { CartoonStage } from "@/lib/cartoon/engine";
 import { getCachedAudio, generateVoice, setCachedAudio } from "@/lib/tts-cache";
-import type { ActionName, CharacterDesign, Scene, SceneBeat } from "@/lib/cartoon/types";
+import type {
+  ActionName,
+  CharacterDesign,
+  EasingName,
+  Scene,
+  SceneBeat,
+} from "@/lib/cartoon/types";
+import TimelineEditor, {
+  type TimelineActor,
+  type TimelineBeat,
+} from "@/components/studio/timeline-editor";
 import {
   ArrowDown,
   ArrowUp,
@@ -52,6 +67,23 @@ interface ProjectMeta {
 }
 
 const bnNum = (n: number | string) => String(n).replace(/\d/g, (d) => "০১২৩৪৫৬৭৮৯"[+d]);
+
+/** ক্যারেক্টারপ্রতি টাইমলাইনের রঙ (টাইমলাইন ব্লক + রো) */
+const ACTOR_COLORS = [
+  "#ea580c",
+  "#0d9488",
+  "#7c3aed",
+  "#dc2626",
+  "#15803d",
+  "#b45309",
+  "#be185d",
+  "#4d7c0f",
+];
+
+function actorColorOf(uid: string, characters: { uid: string }[]): string {
+  const idx = characters.findIndex((c) => c.uid === uid);
+  return ACTOR_COLORS[(idx >= 0 ? idx : 0) % ACTOR_COLORS.length];
+}
 
 function pickMime(): { mime: string; ext: string } {
   const candidates = [
@@ -97,20 +129,28 @@ export default function StudioTab({
   const recorderRef = useRef<MediaRecorder | null>(null);
   const exportingRef = useRef(false);
   const editorCardRef = useRef<HTMLDivElement | null>(null);
+  const currentAudioRef = useRef<HTMLAudioElement | null>(null);
+  const rateRef = useRef(1);
+  const lastTimePushRef = useRef(0);
 
   const [playing, setPlaying] = useState(false);
   const [activeBeatIdx, setActiveBeatIdx] = useState(-1);
+  const [currentTime, setCurrentTime] = useState(0);
+  const [playbackRate, setPlaybackRate] = useState(1);
   const [audioVersion, setAudioVersion] = useState(0);
   const [genBusyId, setGenBusyId] = useState<string | null>(null);
   const [exporting, setExporting] = useState(false);
 
   // beat editor state
   const [editingBeatId, setEditingBeatId] = useState<string | null>(null);
+  const [selectedBeatId, setSelectedBeatId] = useState<string | null>(null);
   const [actorUid, setActorUid] = useState("");
   const [action, setAction] = useState<ActionName>("talk");
   const [duration, setDuration] = useState(3);
   const [text, setText] = useState("");
   const [moveTo, setMoveTo] = useState(50);
+  const [beatSpeed, setBeatSpeed] = useState(1);
+  const [beatEasing, setBeatEasing] = useState<EasingName>("easeInOut");
 
   // projects
   const [saveOpen, setSaveOpen] = useState(false);
@@ -125,13 +165,22 @@ export default function StudioTab({
     const canvas = canvasRef.current;
     if (!canvas) return;
     const stage = new CartoonStage(canvas, {
-      onBeat: (i, beat) => {
+      onBeat: (i, beat, offset) => {
         setActiveBeatIdx(i);
-        playBeatAudio(beat);
+        playBeatAudio(beat, offset);
+      },
+      onTime: (t) => {
+        // throttle React updates to ~20fps for the playhead
+        const now = performance.now();
+        if (now - lastTimePushRef.current > 50) {
+          lastTimePushRef.current = now;
+          setCurrentTime(t);
+        }
       },
       onFinish: () => {
         setPlaying(false);
         setActiveBeatIdx(-1);
+        stopCurrentAudio();
         if (exportingRef.current) {
           recorderRef.current?.stop();
           recorderRef.current = null;
@@ -149,19 +198,86 @@ export default function StudioTab({
     stageRef.current?.setScene(scene, designs);
   }, [scene, designs]);
 
+  // audio-aware durations + lip-sync envelopes + timeline data stay in sync
   useEffect(() => {
-    const map: Record<string, number> = {};
+    const durMap: Record<string, number> = {};
+    const envMap: Record<string, number[]> = {};
     for (const b of scene.beats) {
       const a = getCachedAudio(b.id);
-      if (a) map[b.id] = Math.max(b.duration, a.duration + 0.3);
+      if (a) {
+        durMap[b.id] = Math.max(b.duration, a.duration + 0.3);
+        if (a.envelope?.length) envMap[b.id] = a.envelope;
+      }
     }
-    stageRef.current?.setDurations(map);
+    const stage = stageRef.current;
+    stage?.setDurations(durMap);
+    stage?.setEnvelopes(envMap);
   }, [scene.beats, audioVersion]);
 
-  const playBeatAudio = (beat: SceneBeat) => {
+  // global playback speed
+  useEffect(() => {
+    rateRef.current = playbackRate;
+    stageRef.current?.setPlaybackRate(playbackRate);
+  }, [playbackRate]);
+
+  // drag characters directly on the stage
+  useEffect(() => {
+    stageRef.current?.setInteractions({
+      onPick: (uid) => setSelectedBeatId(null),
+      onDrag: (uid, pct) => updatePlaced(uid, { x: Math.round(pct * 10) / 10 }),
+      onDragEnd: (uid, pct) => updatePlaced(uid, { x: Math.round(pct * 10) / 10 }),
+    });
+  }, [updatePlaced]);
+
+  // space = play/pause shortcut
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.code !== "Space") return;
+      const el = e.target as HTMLElement | null;
+      if (
+        el &&
+        (el.tagName === "INPUT" ||
+          el.tagName === "TEXTAREA" ||
+          el.tagName === "SELECT" ||
+          el.isContentEditable)
+      )
+        return;
+      e.preventDefault();
+      handlePlay();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [playing, scene.beats]);
+
+  const stopCurrentAudio = () => {
+    const el = currentAudioRef.current;
+    if (el) {
+      el.pause();
+      currentAudioRef.current = null;
+    }
+  };
+
+  const playBeatAudio = (beat: SceneBeat, offset = 0) => {
     const audio = getCachedAudio(beat.id);
     if (!audio) return;
+    // during scrubbing (paused) we stay silent — audio only when actually playing
+    if (!stageRef.current?.isPlaying()) return;
+    stopCurrentAudio();
     const el = new Audio(audio.url);
+    el.playbackRate = rateRef.current;
+    try {
+      (el as HTMLAudioElement & { preservesPitch?: boolean }).preservesPitch = true;
+    } catch {
+      /* older browsers */
+    }
+    if (offset > 0.05) {
+      try {
+        el.currentTime = offset;
+      } catch {
+        /* ignore */
+      }
+    }
+    currentAudioRef.current = el;
     if (exportingRef.current && audioCtxRef.current && destRef.current) {
       try {
         const src = audioCtxRef.current.createMediaElementSource(el);
@@ -179,7 +295,8 @@ export default function StudioTab({
     const stage = stageRef.current;
     if (!stage) return;
     if (playing) {
-      stage.stop();
+      stage.pause();
+      stopCurrentAudio();
       setPlaying(false);
       setActiveBeatIdx(-1);
       return;
@@ -188,7 +305,7 @@ export default function StudioTab({
     if (!ok) {
       toast({
         title: "কোনো দৃশ্য নেই",
-        description: "আগে নিচের ফর্ম থেকে অন্তত একটি দৃশ্য (বিট) যোগ করুন।",
+        description: "আগে টাইমলাইনের নিচে ফর্ম থেকে অন্তত একটি দৃশ্য (বিট) যোগ করুন।",
         variant: "destructive",
       });
       return;
@@ -198,12 +315,77 @@ export default function StudioTab({
 
   const handleStop = () => {
     stageRef.current?.stop();
+    stopCurrentAudio();
     setPlaying(false);
     setActiveBeatIdx(-1);
+    setCurrentTime(0);
     if (exportingRef.current) {
       recorderRef.current?.stop();
       recorderRef.current = null;
     }
+  };
+
+  // ---------- timeline ----------
+  const effectiveDur = (b: SceneBeat) => {
+    const a = getCachedAudio(b.id);
+    return Math.max(0.3, a ? Math.max(b.duration, a.duration + 0.3) : b.duration);
+  };
+
+  const totalDuration = useMemo(
+    () => scene.beats.reduce((acc, b) => acc + effectiveDur(b), 0),
+    [scene.beats, audioVersion],
+  );
+
+  const timelineActors: TimelineActor[] = useMemo(
+    () =>
+      scene.characters.map((c) => ({
+        uid: c.uid,
+        name: designs.find((d) => d.id === c.designId)?.name ?? "অজানা",
+        color: actorColorOf(c.uid, scene.characters),
+      })),
+    [scene.characters, designs],
+  );
+
+  const timelineBeats: TimelineBeat[] = useMemo(
+    () =>
+      scene.beats.map((b) => {
+        const a = getCachedAudio(b.id);
+        const opt = ACTION_OPTIONS.find((o) => o.id === b.action);
+        return {
+          id: b.id,
+          actorUid: b.actorUid,
+          actorName:
+            designs.find(
+              (d) => d.id === scene.characters.find((c) => c.uid === b.actorUid)?.designId,
+            )?.name ?? "অজানা",
+          actorColor: actorColorOf(b.actorUid, scene.characters),
+          action: b.action,
+          actionEmoji: opt?.emoji ?? "🎬",
+          actionLabel: opt?.label ?? b.action,
+          text: b.text,
+          duration: effectiveDur(b),
+          hasAudio: !!a,
+          peaks: a?.peaks ?? null,
+        };
+      }),
+    [scene.beats, scene.characters, designs, audioVersion],
+  );
+
+  const handleSeek = (t: number) => {
+    if (exportingRef.current) return;
+    stopCurrentAudio();
+    stageRef.current?.seek(t);
+    setCurrentTime(t);
+  };
+
+  const handleTimelineSelect = (id: string) => {
+    setSelectedBeatId(id);
+    const b = scene.beats.find((x) => x.id === id);
+    if (b) startEditBeat(b);
+  };
+
+  const handleTimelineResize = (id: string, newDuration: number) => {
+    updateBeat(id, { duration: Math.round(newDuration * 10) / 10 });
   };
 
   // ---------- voice generation ----------
@@ -313,6 +495,8 @@ export default function StudioTab({
       rec.start(250);
       setExporting(true);
       exportingRef.current = true;
+      // always export from the very beginning
+      stage.stop();
       const ok = stage.play();
       if (!ok) {
         rec.stop();
@@ -337,11 +521,14 @@ export default function StudioTab({
   // ---------- beat editor ----------
   const resetBeatForm = () => {
     setEditingBeatId(null);
+    setSelectedBeatId(null);
     setActorUid("");
     setAction("talk");
     setDuration(3);
     setText("");
     setMoveTo(50);
+    setBeatSpeed(1);
+    setBeatEasing("easeInOut");
   };
 
   const submitBeat = () => {
@@ -358,7 +545,9 @@ export default function StudioTab({
       action,
       duration,
       text: text.trim(),
-      moveTo: action === "walk" ? moveTo : undefined,
+      moveTo: action === "walk" || action === "run" ? moveTo : undefined,
+      speed: beatSpeed !== 1 ? beatSpeed : undefined,
+      easing: action === "walk" || action === "run" ? beatEasing : undefined,
     };
     if (editingBeatId) {
       updateBeat(editingBeatId, payload);
@@ -375,11 +564,14 @@ export default function StudioTab({
 
   const startEditBeat = (b: SceneBeat) => {
     setEditingBeatId(b.id);
+    setSelectedBeatId(b.id);
     setActorUid(b.actorUid);
     setAction(b.action);
     setDuration(b.duration);
     setText(b.text);
     setMoveTo(b.moveTo ?? 50);
+    setBeatSpeed(b.speed ?? 1);
+    setBeatEasing(b.easing ?? "easeInOut");
     editorCardRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
   };
 
@@ -499,11 +691,29 @@ export default function StudioTab({
             <Button
               variant="outline"
               onClick={handleStop}
-              disabled={!playing}
+              disabled={!playing && currentTime === 0}
               className="border-amber-300"
             >
               <Square className="mr-2 h-4 w-4" /> রিসেট
             </Button>
+            <div className="flex items-center gap-1.5 rounded-xl border border-amber-300 bg-white px-2.5 py-1">
+              <span className="text-xs font-semibold text-amber-800">গতি</span>
+              <Select
+                value={String(playbackRate)}
+                onValueChange={(v) => setPlaybackRate(Number(v))}
+              >
+                <SelectTrigger className="h-8 w-[86px] border-amber-200 text-xs">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {SPEED_OPTIONS.map((s) => (
+                    <SelectItem key={s} value={String(s)}>
+                      ×{bnNum(s)}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
             <Button
               onClick={handleExport}
               disabled={playing || exporting}
@@ -538,11 +748,29 @@ export default function StudioTab({
             <p className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900">
               {exporting
                 ? "🎥 রেকর্ড হচ্ছে — কার্টুন শেষ না হওয়া পর্যন্ত ট্যাব বদলাবেন না।"
-                : `▶ চলছে দৃশ্য ${bnNum(activeBeatIdx + 1)}/${bnNum(scene.beats.length)}`}
+                : `▶ চলছে দৃশ্য ${bnNum(activeBeatIdx + 1)}/${bnNum(scene.beats.length)} — ${bnNum(currentTime.toFixed(1))} সে.`}
+            </p>
+          )}
+          {!playing && !exporting && scene.characters.length > 0 && (
+            <p className="rounded-lg border border-amber-200 bg-amber-50/60 px-3 py-2 text-xs text-amber-700">
+              ✋ টিপ: স্টেজে ক্যারেক্টারে চেপে ধরে টেনে সরানো যায় — স্লাইডার ছোঁয়ার দরকার নেই!
             </p>
           )}
         </CardContent>
       </Card>
+
+      {/* ---------- Timeline ---------- */}
+      <TimelineEditor
+        beats={timelineBeats}
+        actors={timelineActors}
+        totalDuration={totalDuration}
+        currentTime={currentTime}
+        selectedBeatId={selectedBeatId}
+        playing={playing}
+        onSeek={handleSeek}
+        onSelectBeat={handleTimelineSelect}
+        onResizeBeat={handleTimelineResize}
+      />
 
       <div className="grid gap-6 lg:grid-cols-[340px_1fr]">
         {/* ---------- Left: scene setup ---------- */}
@@ -886,11 +1114,11 @@ export default function StudioTab({
                 </p>
               </div>
 
-              {action === "walk" && (
+              {action === "walk" || action === "run" ? (
                 <div className="space-y-2">
                   <div className="flex justify-between">
                     <Label className="text-sm font-semibold text-amber-900">
-                      কোথা পর্যন্ত হাঁটবে (X)
+                      কোথা পর্যন্ত যাবে (X)
                     </Label>
                     <span className="text-sm text-amber-700">{bnNum(moveTo)}%</span>
                   </div>
@@ -901,8 +1129,49 @@ export default function StudioTab({
                     step={1}
                     onValueChange={(v) => setMoveTo(v[0])}
                   />
+                  <div className="space-y-2 pt-1">
+                    <Label className="text-sm font-semibold text-amber-900">
+                      গতিপথের ভাব (easing)
+                    </Label>
+                    <Select
+                      value={beatEasing}
+                      onValueChange={(v) => setBeatEasing(v as EasingName)}
+                    >
+                      <SelectTrigger className="border-amber-300">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {EASING_OPTIONS.map((e) => (
+                          <SelectItem key={e.id} value={e.id}>
+                            {e.label}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
                 </div>
-              )}
+              ) : null}
+
+              <div className="space-y-2">
+                <div className="flex justify-between">
+                  <Label className="text-sm font-semibold text-amber-900">
+                    অ্যানিমেশন স্পিড (এই দৃশ্যের)
+                  </Label>
+                  <span className="text-sm font-semibold text-orange-700">
+                    ×{bnNum(beatSpeed.toFixed(2).replace(/\.?0+$/, ""))}
+                  </span>
+                </div>
+                <Slider
+                  value={[beatSpeed]}
+                  min={0.5}
+                  max={2}
+                  step={0.05}
+                  onValueChange={(v) => setBeatSpeed(v[0])}
+                />
+                <p className="text-xs text-amber-600">
+                  কম = ধীর ও নাটকীয়, বেশি = দ্রুত ও কৌতুকপূর্ণ। ভয়েসের গতি বদলাবে না।
+                </p>
+              </div>
 
               <Button
                 onClick={submitBeat}

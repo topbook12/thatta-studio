@@ -2,7 +2,15 @@
 // ঠাট্টা স্টুডিও — Presets: palettes, part options, sample designs
 // ============================================================
 
-import type { ActionName, BgName, CharacterDesign, PlacedCharacter, Scene, SceneBeat } from './types';
+import type {
+  ActionName,
+  BgName,
+  CharacterDesign,
+  EasingName,
+  PlacedCharacter,
+  Scene,
+  SceneBeat,
+} from './types';
 
 export function newId(): string {
   if (typeof crypto !== 'undefined' && crypto.randomUUID) return crypto.randomUUID();
@@ -64,14 +72,35 @@ export const ACTION_OPTIONS: { id: ActionName; label: string; emoji: string }[] 
   { id: 'idle', label: 'দাঁড়িয়ে আছে', emoji: '🧍' },
   { id: 'talk', label: 'কথা বলছে', emoji: '💬' },
   { id: 'walk', label: 'হাঁটছে', emoji: '🚶' },
+  { id: 'run', label: 'দৌড়াচ্ছে', emoji: '🏃' },
   { id: 'wave', label: 'হাত নাড়ছে', emoji: '👋' },
   { id: 'laugh', label: 'হাসছে', emoji: '😂' },
   { id: 'point', label: 'ইশারা করছে', emoji: '👉' },
   { id: 'angry', label: 'রেগে আছে', emoji: '😠' },
+  { id: 'slap', label: 'চাপরাস মারছে', emoji: '🖐️' },
+  { id: 'bow', label: 'নমস্কার করছে', emoji: '🙏' },
+  { id: 'think', label: 'ভাবছে', emoji: '🤔' },
+  { id: 'surprise', label: 'অবাক হয়েছে', emoji: '😲' },
+  { id: 'dance', label: 'নাচছে', emoji: '💃' },
   { id: 'jump', label: 'লাফাচ্ছে', emoji: '🤸' },
+  { id: 'fall', label: 'পড়ে যাচ্ছে', emoji: '🤕' },
+  { id: 'push', label: 'ঠেলছে', emoji: '💪' },
   { id: 'nod', label: 'মাথা নাড়ছে', emoji: '🙂' },
   { id: 'cry', label: 'কাঁদছে', emoji: '😭' },
 ];
+
+/** walk/run এর গতিপথের easing অপশন */
+export const EASING_OPTIONS: { id: EasingName; label: string }[] = [
+  { id: 'easeInOut', label: 'মসৃণ (স্বাভাবিক)' },
+  { id: 'linear', label: 'সমান গতি' },
+  { id: 'easeIn', label: 'ধীরে শুরু' },
+  { id: 'easeOut', label: 'ধীরে শেষ' },
+  { id: 'backOut', label: 'একটু এগিয়ে-পিছিয়ে' },
+  { id: 'elasticOut', label: 'স্প্রিং এর মতো' },
+];
+
+/** গ্লোবাল প্লেব্যাক স্পিড অপশন */
+export const SPEED_OPTIONS = [0.5, 0.75, 1, 1.25, 1.5, 2] as const;
 
 export const BG_OPTIONS: { id: BgName; label: string }[] = [
   { id: 'village', label: '🏡 গ্রামের বাড়ি' },
@@ -79,6 +108,10 @@ export const BG_OPTIONS: { id: BgName; label: string }[] = [
   { id: 'field', label: '🌾 ধানখেত' },
   { id: 'room', label: '🛋️ ঘরের ভেতর' },
   { id: 'pond', label: '🛶 পুকুরপাড়' },
+  { id: 'rajcourt', label: '👑 রাজসভা' },
+  { id: 'school', label: '🏫 স্কুল' },
+  { id: 'ghat', label: '🛕 ঘাট' },
+  { id: 'night', label: '🌙 রাতের গ্রাম' },
 ];
 
 // ---------------- Design factory ----------------
