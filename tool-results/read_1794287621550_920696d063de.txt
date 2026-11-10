@@ -1,0 +1,685 @@
+     1→[
+     2→  {
+     3→    "topic": "Gopal Bhand Bangla comedy cartoon phenomenon (market validation)",
+     4→    "query": "গোপাল ভাঁড় কার্টুন বাংলা কমেডি অ্যানিমেশন ইউটিউব ভাইরাল সাবস্ক্রাইবার",
+     5→    "results": [
+     6→      {
+     7→        "name": "দাস চক্রে ভগবান ভূত | Fun Time With Gopal | Gopal Bhar",
+     8→        "url": "https://www.google.com/goto?url=CAESaAHEIkXX7Xmpw7oeCS-gFMFlHL_OkjkTCCfcghk9O_lE3MhMoW6yZS0PsSGO-N4IwA65e6m0ZAScQOonaWH3rhVp0DZ9HSjFyy_pykoyGgRjEB3Jku5gyt299g-S82QiIfsN-mllaMgb&gsessionid=XT0Xz9C58F7ZPzmxu6ub5ocGJUXCV63DZ-vIGGW4Z6jpm48q0xO2hQ",
+     9→        "snippet": "Gopal needs money for some purpose. ভগবান ভূত | Fun Time With Gopal | Gopal … 8.8M views1 year ago Comments 1.1K",
+    10→        "date": "",
+    11→        "host_name": "www.google.com"
+    12→      },
+    13→      {
+    14→        "name": "গোপাল শোনালো একটি গল্প | Gopal Bhar | Double Gopal",
+    15→        "url": "https://www.google.com/goto?url=CAESaAHEIkXXhePqKVCYtKwYWXXsvY6-0QZCLxmNCm3enrFPPkD8hD1romEIq5HGTY-Yy4YGN67nYgnVp6-e8Nc4tD4_7JHa9teBR_WqAwqDuvlLoEDuVfnUEwGt2hgQlQIIXe5cEdqBQ5oU&gsessionid=XT0Xz9C58F7ZPzmxu6ub5ocGJUXCV63DZ-vIGGW4Z6jpm48q0xO2hQ",
+    16→        "snippet": "Click to watch all the episodes of Gopal Bhar. Episode 106 - 107: গোপাল . Gopal Bhar | Double Gopal | Full Episode গোপাল . K likes 1.2M views 3y ago",
+    17→        "date": "",
+    18→        "host_name": "www.google.com"
+    19→      },
+    20→      {
+    21→        "name": "Gopal Bhar",
+    22→        "url": "https://www.youtube.com/channel/UCO-tSOFpeFsZ_CY8_4MzQQg",
+    23→        "snippet": "গোপাল-ই ভরসা | Gopal Bhar | Bangla Comedy · ছোট থেকে বড় | Gopal Bhar | Bangla Comedy · অমরত্ব | Gopal Bhar | Bangla Comedy. Read more",
+    24→        "date": "",
+    25→        "host_name": "www.youtube.com"
+    26→      },
+    27→      {
+    28→        "name": "দুষ্টু গোপাল | Gopal Bhar (Bengali) | Double Gopal",
+    29→        "url": "https://www.google.com/goto?url=CAESaAHEIkXXmUjqOlw3mS7cK5es7aqnqgZny4qOlCVawr-z0Spn6BbAOkZp7vNaNiPl4BXh5vGGnGvIvliENreC9WRHC0nKmfgyuM96L1u0sg1vpm-jIT4QoOWkCP0otiWRRiG8EuZVH9xq&gsessionid=XT0Xz9C58F7ZPzmxu6ub5ocGJUXCV63DZ-vIGGW4Z6jpm48q0xO2hQ",
+    30→        "snippet": "উলটপুরাণ | Gopal Bhar (Bengali) | Double Gopal · হাসির রাজা গোপাল ভাঁড় · Village Situation During a Flood | Bangla ...",
+    31→        "date": "",
+    32→        "host_name": "www.google.com"
+    33→      },
+    34→      {
+    35→        "name": "ঝাল খিচুড়ি | Gopal Bhar (Bengali) | Double Gopal",
+    36→        "url": "https://www.google.com/goto?url=CAESaAHEIkXX9y-uQweIS9YD-Vv_4BD2R4HjC6C3hC2bzpMAE-hkb1waNLoDVR-XkKdcyFZk_Ut59PjpRlv4MK7sIU0LQ_IsN578GgPiDNQD5O-oac_2op-3uy8Jcl5LsvH6DpaBogMBCQuF&gsessionid=XT0Xz9C58F7ZPzmxu6ub5ocGJUXCV63DZ-vIGGW4Z6jpm48q0xO2hQ",
+    37→        "snippet": "Click to watch all the episodes of Double Gopal. Gopal Bhar (Bengali) Full Episode Sony AATH•13M views 42:53",
+    38→        "date": "",
+    39→        "host_name": "www.google.com"
+    40→      },
+    41→      {
+    42→        "name": "এক এক্কে দুই | Gopal Bhar | Episode - 1201",
+    43→        "url": "https://www.google.com/goto?url=CAESaAHEIkXXPrdcuxjwO59FPpkvHJW0RbpmdqKlX-ZvUiZ13I0X5fMSj_lP2SiOLv_XinLJR9COsBpW_wsowwhRtPHVRKXk6oBvkUTURIFdeABu2OUIOvHVoN_rxSGpp__fH9JdtcvqhSOu&gsessionid=XT0Xz9C58F7ZPzmxu6ub5ocGJUXCV63DZ-vIGGW4Z6jpm48q0xO2hQ",
+    44→        "snippet": "পুজোর দিনে গোপাল ভাঁড়ের বাড়িতে জমজমাট ভোজ! | Gopal Bhar Full Movies | Gopal Bhand | 2026. Gopal ...",
+    45→        "date": "",
+    46→        "host_name": "www.google.com"
+    47→      },
+    48→      {
+    49→        "name": "Gopal Bhar (Bangla) | গোপাল ভাঁড় | Full Episodes",
+    50→        "url": "https://www.youtube.com/playlist?list=PL5O3zv2ZcAShUXWjPDFfHkuRXVXSCqlAe",
+    51→        "snippet": "Learn more Gopal vs Ghost | Gopal Bhar (Bangla ) | গোপাল ভাঁড় | Full Episodes. Sony AATH Playlist•27 videos•944,579 views. ATH 562K views • 3 years ago",
+    52→        "date": "",
+    53→        "host_name": "www.youtube.com"
+    54→      },
+    55→      {
+    56→        "name": "বরিশাইল্লা গোপাল ভাঁড় | Gopal Bhar | Bangla Funny Video",
+    57→        "url": "https://www.google.com/goto?url=CAESaAHEIkXXjyMflE4psbHUSKe8DHAgl_VNtDC0lrZjp26N-mnnqTvgE9Ts6bJ34gcybfvdLwLQMSmd47HuvIA9zBAh80TzL6gEZ7x4jcbfpQ5FPIvWsWT07vHkHmTE-ccfK3YbJv_PZnjI&gsessionid=XT0Xz9C58F7ZPzmxu6ub5ocGJUXCV63DZ-vIGGW4Z6jpm48q0xO2hQ",
+    58→        "snippet": "গোপাল ভাঁড় | Gopal Bhar | Bangla Funny Video | Family Entertainment Bd | Desi Cid | Full Episode&nbsp;... 166K likes 11M views 4y ago",
+    59→        "date": "",
+    60→        "host_name": "www.google.com"
+    61→      }
+    62→    ]
+    63→  },
+    64→  {
+    65→    "topic": "Existing no-code cartoon animation platforms (competitors)",
+    66→    "query": "Animaker vs Vyond vs Toonly no-code 2D cartoon animation platform features pricing 2025",
+    67→    "results": [
+    68→      {
+    69→        "name": "Online Animation Makers: 7 Tools You Must Know (in 2024) - YouTube",
+    70→        "url": "https://www.google.com/url?opi=89978449&q=CAESZgHEIkXXlVh7AQCBPp5HR7jz-t6HUjt9RqXnlMUucA1XV1OEN7Easa_ELdQzQkUGa9OjaMMr5QRlSkLPLhZh42QEKC6NfdgWtMKaYXis1XAoD8kT3d-RumVr-WB3_QcdUFBbdO0utA&sa=U&uoh=3&ved=2ahUKEwj72uiP0vyXAxWfieEIHYfrKTgQFnoECAoQAQ&usg=AOvVaw38nj9MuWKFfxtlZR0Dv3hN",
+    71→        "snippet": "Jan 17, 2024 · .com/animation-makers This is a complete review of Vyond, Biteable, CreateStudio, VideoScribe, Powtoon, Animaker, and Doodly. What animation ...",
+    72→        "date": "",
+    73→        "host_name": "www.google.com"
+    74→      },
+    75→      {
+    76→        "name": "Animaker vs Vyond: AI animation and team production | ngram.com",
+    77→        "url": "https://www.ngram.com/blog/animaker-vs-vyond",
+    78→        "snippet": "Oct 18, 2026 · Vyond pricing: Enterprise and Agency are annual offers at $1,649 and $1,999 per user/year, with multi-seat pricing available. Starter includes ...",
+    79→        "date": "",
+    80→        "host_name": "www.ngram.com"
+    81→      },
+    82→      {
+    83→        "name": "The Best Vyond Alternative - Animaker",
+    84→        "url": "https://www.animaker.com/vyond-alternatives",
+    85→        "snippet": "Animaker is the best Vyond alternative. An all-in-one AI video creation studio that helps you design, animate, and publish videos faster than ever. Try now!",
+    86→        "date": "",
+    87→        "host_name": "www.animaker.com"
+    88→      },
+    89→      {
+    90→        "name": "Vyond, Videoscribe, Powtoon, or Animaker? : r/instructionaldesign",
+    91→        "url": "https://www.reddit.com/r/instructionaldesign/comments/1ejz5zk/vyond_videoscribe_powtoon_or_animaker",
+    92→        "snippet": "Aug 4, 2024 · It's more cost effective and personally I like the look of their characters better than Vyond. They've added more animations and expressions to ...",
+    93→        "date": "",
+    94→        "host_name": "www.reddit.com"
+    95→      },
+    96→      {
+    97→        "name": "Vyond vs. Animaker: 5 Crucial Factors to Consider - Rued Riis",
+    98→        "url": "https://www.ruedriis.com/blog/vyond-vs-animaker",
+    99→        "snippet": "Apr 15, 2021 · In general, I think Vyond is better for explainer videos, and Animaker is better for short social media clips. Vyond is a more full-fledged ...",
+   100→        "date": "",
+   101→        "host_name": "www.ruedriis.com"
+   102→      },
+   103→      {
+   104→        "name": "Vyond AI Video Creation Platform for Business | Vyond",
+   105→        "url": "https://www.vyond.com",
+   106→        "snippet": "Vyond is the #1 enterprise-ready video creation platform. Companies worldwide use Vyond to easily create engaging videos in minutes, helping them sell, train, ...",
+   107→        "date": "",
+   108→        "host_name": "www.vyond.com"
+   109→      },
+   110→      {
+   111→        "name": "Animation Programs: Vyond vs Animaker - LSNTAP",
+   112→        "url": "https://www.lsntap.org/tools-resources/articles/animation-programs-vyond-vs-animaker",
+   113→        "snippet": "Yvond Pricing: · Vyond Essential Plan: $49 a month or $299 a year · Vyond Premium Plan $89 a month or $649 a year ALL features including high resolution exports, ...",
+   114→        "date": "",
+   115→        "host_name": "www.lsntap.org"
+   116→      },
+   117→      {
+   118→        "name": "15 Best Animation Software for Beginners in 2025 [Free & Paid]",
+   119→        "url": "https://visme.co/blog/best-animation-software",
+   120→        "snippet": "Dec 18, 2024 · Animators use software like Visme, Adobe Animate, Toon Boom and Animaker for 2D animation. For 3D animation, popular tools include Blender and ...",
+   121→        "date": "",
+   122→        "host_name": "visme.co"
+   123→      }
+   124→    ],
+   125→    "error": "Function invoke failed with status 500: {\"result\":null,\"error\":\"Search failed: request failed with status 422: {\\\"code\\\":422,\\\"data\\\":null,\\\"message\\\":\\\"No search results available for query Animaker vs Vyond vs Toonly no-code 2D cartoon animation platform features pricing 2025\\\",\\\"name\\\":\\\"AssertionFailureError\\\",\\\"readableMessage\\\":\\\"AssertionFailureError: No search results available for query Animaker vs Vyond vs Toonly no-code 2D cartoon animation platform features pricing 2025\\\",\\\"status\\\":42206}\\n\"}"
+   126→  },
+   127→  {
+   128→    "topic": "Browser-based 2D character animation technology stack",
+   129→    "query": "browser based 2D character animation library Rive PixiJS Konva canvas WebGL skeletal rigging",
+   130→    "results": [
+   131→      {
+   132→        "name": "Rive vs Spine: 2D character animation compared",
+   133→        "url": "https://rive.app/rive-vs-spine",
+   134→        "snippet": "Oct 28, 2026 — Rive and Spine both rig 2D characters with bones, meshes, and IK . Play games made with RiveEach one runs on web, mobile, desktop, and consoles. ...",
+   135→        "date": "Oct 28, 2026",
+   136→        "host_name": "rive.app"
+   137→      },
+   138→      {
+   139→        "name": "PixiJS | The HTML5 Creation Engine | PixiJS",
+   140→        "url": "https://pixijs.com",
+   141→        "snippet": "PixiJS - The HTML5 Creation Engine. Create beautiful games, apps, and interactive digital content with the fastest 2D WebGPU/WebGL renderer.",
+   142→        "date": "",
+   143→        "host_name": "pixijs.com"
+   144→      },
+   145→      {
+   146→        "name": "Best JavaScript Canvas Library in 2026 — How to Choose",
+   147→        "url": "https://konvajs.org/docs/guides/best-canvas-library.html",
+   148→        "snippet": "Use PixiJS . It's a WebGL rendering engine — GPU-accelerated, built for high frame rates with many moving objects. Konva uses Canvas 2D and can't match WebGL ... Read more",
+   149→        "date": "",
+   150→        "host_name": "konvajs.org"
+   151→      },
+   152→      {
+   153→        "name": "Fabric.js vs Konva vs PixiJS: Canvas & 2D Graphics 2026",
+   154→        "url": "https://www.pkgpulse.com/guides/fabricjs-vs-konva-vs-pixijs-canvas-2d-graphics-2026",
+   155→        "snippet": "Mar 9, 2026 — Compare Fabric.js, Konva , and PixiJS for canvas - based 2D graphics in JavaScript. Object model, event handling, WebGL rendering, and which canvas ... Read more",
+   156→        "date": "Mar 9, 2026",
+   157→        "host_name": "www.pkgpulse.com"
+   158→      },
+   159→      {
+   160→        "name": "Free open-source tool to instantly rig and animate your",
+   161→        "url": "https://www.reddit.com/r/StableDiffusion/comments/1sjj7ta/free_opensource_tool_to_instantly_rig_and_animate",
+   162→        "snippet": "It takes a single static anime image and decomposes it into 23 separate layers ready for rigging and animation . It's a huge deal for anyone who ...",
+   163→        "date": "",
+   164→        "host_name": "www.reddit.com"
+   165→      },
+   166→      {
+   167→        "name": "CreaturePack: High Performance 2D WebGL Character",
+   168→        "url": "https://medium.com/@kestrelm/creaturepack-high-performance-2d-webgl-character-animation-with-webassembly-72c436bec86c",
+   169→        "snippet": "Creature is a 100% mesh- based high quality Procedural 2D Character Animation solution. PixiJS is a high performance 2D WebGL - based Game Engine",
+   170→        "date": "",
+   171→        "host_name": "medium.com"
+   172→      },
+   173→      {
+   174→        "name": "10 Best UI Animation Libraries for Beginners 2026 |",
+   175→        "url": "https://daily.dev/blog/10-best-ui-animation-libraries-for-beginners-2024",
+   176→        "snippet": "May 18, 2024 — Three.js is a JavaScript library for creating 3D graphics in the browser using WebGL . It offers a high-level API, making it easier to create 3D ... Read more",
+   177→        "date": "May 18, 2024",
+   178→        "host_name": "daily.dev"
+   179→      },
+   180→      {
+   181→        "name": "A list of awesome web animation libraries, books, apps etc.",
+   182→        "url": "https://github.com/sergey-pimenov/awesome-web-animation",
+   183→        "snippet": "PixiJS - Fast 2D WebGL renderer for interactive graphics and animation . animation on canvas . A 2D rigid body physics engine for the web . Rive - Real-time ...",
+   184→        "date": "",
+   185→        "host_name": "github.com"
+   186→      }
+   187→    ]
+   188→  },
+   189→  {
+   190→    "topic": "PWA capability for canvas/WebGL heavy animation apps",
+   191→    "query": "progressive web app PWA canvas WebGL animation editor offline service worker installable capability",
+   192→    "results": [
+   193→      {
+   194→        "name": "Progressive Web Apps: Going Offline",
+   195→        "url": "https://developers.google.com/codelabs/pwa-training/pwa03--going-offline",
+   196→        "snippet": "Sep 18, 2024 — In this lab, you'll take an existing web application and make it work offline . Use the Service Worker and the Cache Storage API to make ...",
+   197→        "date": "Sep 18, 2024",
+   198→        "host_name": "developers.google.com"
+   199→      },
+   200→      {
+   201→        "name": "Progressive web apps - MDN Web Docs - Mozilla",
+   202→        "url": "https://developer.mozilla.org/en-US/docs/Web/Progressive_web_apps",
+   203→        "snippet": "Aug 31, 2026 — In this guide we'll explore what \" installable \" means, what a PWA needs to provide for it to be installable , and how you can customize the  ...",
+   204→        "date": "Aug 31, 2026",
+   205→        "host_name": "developer.mozilla.org"
+   206→      },
+   207→      {
+   208→        "name": "Progressive Web Apps",
+   209→        "url": "https://web.dev/explore/progressive-web-apps",
+   210→        "snippet": "Progressive Web Apps Capabilities that enable app experiences, built and deployed on the web . PWA installs see a 97% monthly growth … offline and dark mode",
+   211→        "date": "",
+   212→        "host_name": "web.dev"
+   213→      },
+   214→      {
+   215→        "name": "#05 - Make Progressive Web Apps Work Offline",
+   216→        "url": "https://dev.to/azure/05-make-progressive-web-apps-work-offline-fil",
+   217→        "snippet": "Feb 18, 2022 — What does an offline PWA experience involve? How do Service Workers enable it? Let's continue our #30DaysOfPWA journey!",
+   218→        "date": "Feb 18, 2022",
+   219→        "host_name": "dev.to"
+   220→      },
+   221→      {
+   222→        "name": "Do all progressive web apps (PWA) work offline?",
+   223→        "url": "https://www.quora.com/Do-all-progressive-web-apps-PWA-work-offline",
+   224→        "snippet": "Do all progressive web apps (PWA) work offline?",
+   225→        "date": "",
+   226→        "host_name": "www.quora.com"
+   227→      },
+   228→      {
+   229→        "name": "pwa-help.pdf",
+   230→        "url": "https://www.sci.brooklyn.cuny.edu/~goetz/cisc3610/pwa-help.pdf",
+   231→        "snippet": "Create the Service Worker File ( service - worker .js). This is the heart of your PWA's offline capability . The service worker acts as a proxy between your web ... Read more 14 pages",
+   232→        "date": "",
+   233→        "host_name": "www.sci.brooklyn.cuny.edu"
+   234→      },
+   235→      {
+   236→        "name": "Progressive Web Apps | Building Fast, Installable, and Offline-",
+   237→        "url": "https://www.google.com/goto?url=CAESaAHEIkXXJH2_suweX7qr9QjebsJxK1rAfLONM7c-NmQjMgZjlc7nDqnTFmlnAdoVdUGUiEvMt-T-WHySxDUiCOFqijahSBY5dPUdB4dfVTGfnI8RSQBnHWvwVPeIuAVop4PZV77V4HHg&gsessionid=QfJQt0GURByqvZGwDlWdkc_HRIibEBBlyKNE9rOud-gr7eKLkiyuvQ",
+   238→        "snippet": "Progressive Web Apps combine service workers, intelligent caching, offline storage, background synchronization, responsive design, and modern ...",
+   239→        "date": "",
+   240→        "host_name": "www.google.com"
+   241→      },
+   242→      {
+   243→        "name": "Are Service Workers necessary for a Progressive Web",
+   244→        "url": "https://stackoverflow.com/questions/53594466/are-service-workers-necessary-for-a-progressive-web-application",
+   245→        "snippet": "Service workers are not supported by all browsers; caniuse estimates that they would work for approximately 85% of users. If i built a PWA, does it need ...",
+   246→        "date": "",
+   247→        "host_name": "stackoverflow.com"
+   248→      }
+   249→    ]
+   250→  },
+   251→  {
+   252→    "topic": "Bangla TTS / voice & dubbing support (key feature)",
+   253→    "query": "Bangla Bengali text to speech TTS voice over cartoon video dubbing AI",
+   254→    "results": [
+   255→      {
+   256→        "name": "AI Text to Speech Bengali Generator",
+   257→        "url": "https://www.canva.com/features/text-to-speech-bengali",
+   258→        "snippet": "Create authentic voiceovers in Bengali with the text to speech Bangla generator on Canva . Just enter your text to get started. Produce a Bengali AI voiceover ...",
+   259→        "date": "",
+   260→        "host_name": "www.canva.com"
+   261→      },
+   262→      {
+   263→        "name": "Bangla Text to Speech",
+   264→        "url": "https://www.narakeet.com/languages/bangla-text-to-speech",
+   265→        "snippet": "Make realistic text to speech videos and audio in 100 languages, with 900 voices. Easily convert text to speech in Bangladesh accent Bangla, Bangla AI Voice ...",
+   266→        "date": "",
+   267→        "host_name": "www.narakeet.com"
+   268→      },
+   269→      {
+   270→        "name": "Text to Speech Bangla: Free Online Bengali AI Voices",
+   271→        "url": "https://elevenlabs.io/text-to-speech/bengali",
+   272→        "snippet": "Turn Bengali text into speech online for free with realistic AI voices . Try Bangla text to speech and bring your written words to life.",
+   273→        "date": "",
+   274→        "host_name": "elevenlabs.io"
+   275→      },
+   276→      {
+   277→        "name": "BuliAI: Best Bangla Text to Speech & AI Voice Generator",
+   278→        "url": "https://buliai.com",
+   279→        "snippet": "Create natural Bangla and English voices with BuliAI. Free Bangla text to speech & voice generator with 30+ male & female AI voices. Perfect for video ...",
+   280→        "date": "",
+   281→        "host_name": "buliai.com"
+   282→      },
+   283→      {
+   284→        "name": "Bengali Text to Speech - Free AI Voice Generator",
+   285→        "url": "https://www.camb.ai/text-to-speech/bengali",
+   286→        "snippet": "Convert Bengali text to natural AI speech free. Choose male or female Bengali AI voices, adjust tone and pace, download audio instantly.",
+   287→        "date": "",
+   288→        "host_name": "www.camb.ai"
+   289→      },
+   290→      {
+   291→        "name": "Bangla Dubbing - AI Voice Translation",
+   292→        "url": "https://www.veed.io/tools/voice-dubber/bangla-dubbing",
+   293→        "snippet": "Create professional Bangla voiceovers instantly with our AI voice translator . The dubbing AI translates your content in minutes, Add subtitles, animations, and ...",
+   294→        "date": "",
+   295→        "host_name": "www.veed.io"
+   296→      },
+   297→      {
+   298→        "name": "Bengali Text to Speech Generator | Easy & Natural AI Voices",
+   299→        "url": "https://www.crreo.ai/text-to-speech/bengali",
+   300→        "snippet": "Create authentic Bengali voice in seconds . Ideal for videos, turn your text into Bengali speech with just one click! No more recording and robotic voices–just ...",
+   301→        "date": "",
+   302→        "host_name": "www.crreo.ai"
+   303→      },
+   304→      {
+   305→        "name": "Free Bengali Text to Speech & Realistic AI Voice Generator",
+   306→        "url": "https://murf.ai/text-to-speech/bengali",
+   307→        "snippet": "Bengali Text to Speech made simple . Turn text into natural-sounding audio and create professional voiceovers with our Bengali AI Voice Generator.",
+   308→        "date": "",
+   309→        "host_name": "murf.ai"
+   310→      }
+   311→    ]
+   312→  },
+   313→  {
+   314→    "topic": "Animation learning demand in Bangladesh / course market",
+   315→    "query": "animation course demand Bangladesh 2D animation learn freelancing cartoon making",
+   316→    "results": [
+   317→      {
+   318→        "name": "2d animation course recommendations needed",
+   319→        "url": "https://www.facebook.com/groups/457269884316345/posts/7305925289450736",
+   320→        "snippet": "Anybody help me about a 2d animation course? If you know about any good 2d animation course, please tell me in comment",
+   321→        "date": "",
+   322→        "host_name": "www.facebook.com"
+   323→      },
+   324→      {
+   325→        "name": "2D Animation and 2.5D Animation Recorded Course",
+   326→        "url": "https://www.rahelacademy.com/courses/2d-animation-and-25d-animation-recorded-course",
+   327→        "snippet": "International-standard 2D animation, motion graphics, and freelancing training in Bangla. Official address:Naogaon, Bangladesh. Email: info@rahelacademy.com. Read more",
+   328→        "date": "",
+   329→        "host_name": "www.rahelacademy.com"
+   330→      },
+   331→      {
+   332→        "name": "2D Animation Training in Dhaka",
+   333→        "url": "https://www.theknowledgeacademy.com/bd/courses/animation-and-design-training/2d-animation-training/dhaka",
+   334→        "snippet": "Our 2D Animation Course in Dhaka covers key principles, frame-by-frame and cut-out techniques, plus compositing, colour grading, and export workflows.",
+   335→        "date": "",
+   336→        "host_name": "www.theknowledgeacademy.com"
+   337→      },
+   338→      {
+   339→        "name": "2d animation projects Jobs, Employment",
+   340→        "url": "https://www.freelancer.com.bd/job-search/2d-animation-projects",
+   341→        "snippet": "Search for jobs related to 2d animation projects or hire on the world's largest freelancing marketplace with 25m+ jobs. It's free to sign up and bid on ...",
+   342→        "date": "",
+   343→        "host_name": "www.freelancer.com.bd"
+   344→      },
+   345→      {
+   346→        "name": "Very Simple 2D Cartoon Animation Master Class | Part 1 Learn",
+   347→        "url": "https://www.facebook.com/adventurevfxbd/videos/very-simple-2d-cartoon-animation-master-class-part-1-learn-step-by-step-learning/952803723955477",
+   348→        "snippet": "Very Simple 2D Cartoon Animation Master Class | Part 1 Learn Step by Step. #learningthroughplay #bestacademyinbangladesh ...",
+   349→        "date": "",
+   350→        "host_name": "www.facebook.com"
+   351→      },
+   352→      {
+   353→        "name": "2d animation jobs Jobs, Employment",
+   354→        "url": "https://www.freelancer.com.bd/job-search/2d-animation-jobs",
+   355→        "snippet": "Search for jobs related to 2d animation jobs or hire on the world's largest freelancing marketplace with 25m+ jobs. It's free to sign up and bid on jobs.",
+   356→        "date": "",
+   357→        "host_name": "www.freelancer.com.bd"
+   358→      },
+   359→      {
+   360→        "name": "Animation Course - Bangladesh",
+   361→        "url": "https://www.theknowledgeacademy.com/bd/courses/animation-and-design-training/animation-masterclass-",
+   362→        "snippet": "Our Animation Course in Bangladesh is designed to help you develop creative animation skills , apply industry-relevant techniques, and create engaging visual ... Read more",
+   363→        "date": "",
+   364→        "host_name": "www.theknowledgeacademy.com"
+   365→      },
+   366→      {
+   367→        "name": "2D Animation Courses in Dhaka, Classes, Training Institutes",
+   368→        "url": "https://www.sulekha.com/2d-animation-training/dhaka",
+   369→        "snippet": "Enroll for 2D Animation Courses in Dhaka . Find 2D Animation Design training, classes, institutes, centres in Dhaka and get 2D Animation ✓Course fees ...",
+   370→        "date": "",
+   371→        "host_name": "www.sulekha.com"
+   372→      }
+   373→    ]
+   374→  },
+   375→  {
+   376→    "topic": "Character creator (avatar builder) implementation approach",
+   377→    "query": "layered SVG character creator avatar builder web app implementation customizer",
+   378→    "results": [
+   379→      {
+   380→        "name": "Character Avatar Creator",
+   381→        "url": "https://www.pinterest.com/pin/715509459588988297",
+   382→        "snippet": "Apr 2, 2026 — Create your own avatar character , Outfit your own personal cosplay avatar and create billions of unique combinations. Perfect for any occasion ...",
+   383→        "date": "Apr 2, 2026",
+   384→        "host_name": "www.pinterest.com"
+   385→      },
+   386→      {
+   387→        "name": "I made an avatar maker web app. I'd appreciate any",
+   388→        "url": "https://www.facebook.com/groups/learanHTMLandCSS/posts/3029324917396386",
+   389→        "snippet": "I will be showing you how to build your very own Avatar Maker web app in Python using Streamlit. You will be able to customize your avatar from ...",
+   390→        "date": "",
+   391→        "host_name": "www.facebook.com"
+   392→      },
+   393→      {
+   394→        "name": "Websites/apps like Picrew for making avatars?",
+   395→        "url": "https://www.reddit.com/r/asktransgender/comments/hbldkg/websitesapps_like_picrew_for_making_avatars",
+   396→        "snippet": "I am trying to more apps like Picrew for making my ideal appearance. Picrew seems made more for anime girls. I am FtM, so I don’t think Picrew would ...",
+   397→        "date": "",
+   398→        "host_name": "www.reddit.com"
+   399→      },
+   400→      {
+   401→        "name": "AI Characters in Web Browser using ThreeJS and Reallusion CC",
+   402→        "url": "https://www.google.com/goto?url=CAESZwHEIkXXvL6IPyv0pVxR1t2tB3qWFteWen8xUXdzVy6UM0Glfyvs2O8MKz2NJJfpuXn1JeDPWBKQQenhGVnpWJa1lqW6Vmpi4mFyI5NNMRZAy3BYXbPVIE5tJa0QZ1p6LDPQRqFcHmQ&gsessionid=cFcFSRaGFgvOLDWlRHh1aYVsq8LyxEZGG4T4460_Y2np8J3VF6EIUw",
+   403→        "snippet": "Using Convai, you can effortlessly add complex AI functionalities to your Reallusion character , enabling dynamic natural conversations, scene ...",
+   404→        "date": "",
+   405→        "host_name": "www.google.com"
+   406→      },
+   407→      {
+   408→        "name": "avatar maker",
+   409→        "url": "https://freesvg.org/avatar-maker",
+   410→        "snippet": "Aug 21, 2020 — Male avatar constructor kit with hair, nose and lips. free vector images in SVG . You can copy, modify, distribute and perform the work,",
+   411→        "date": "Aug 21, 2020",
+   412→        "host_name": "freesvg.org"
+   413→      },
+   414→      {
+   415→        "name": "Character and Avatar Maker",
+   416→        "url": "https://in.pinterest.com/pin/character-and-avatar-maker--821062575787836786",
+   417→        "snippet": "Buy Character and Avatar Maker. Custom Avatar Maker Features ver.2: High-Quality Colorful Vector Images. 48 male&female avatars,",
+   418→        "date": "",
+   419→        "host_name": "in.pinterest.com"
+   420→      },
+   421→      {
+   422→        "name": "What is the application that can help me make my own 3d",
+   423→        "url": "https://www.quora.com/What-is-the-application-that-can-help-me-make-my-own-3d-avatar",
+   424→        "snippet": "What is the application that can help me make my own 3d avatar?",
+   425→        "date": "",
+   426→        "host_name": "www.quora.com"
+   427→      },
+   428→      {
+   429→        "name": "AakashKakkar/avatar-builder: Open, extensible SVG",
+   430→        "url": "https://github.com/AakashKakkar/avatar-builder",
+   431→        "snippet": "An open, extensible avatar builder that composes SVG parts into complete avatars . It includes: a zero-dependency Python rendering engine; a responsive browser- ...",
+   432→        "date": "",
+   433→        "host_name": "github.com"
+   434→      }
+   435→    ]
+   436→  },
+   437→  {
+   438→    "topic": "AI-assisted cartoon video generation trends 2025",
+   439→    "query": "AI cartoon video generator text to animation lip sync 2025 tools",
+   440→    "results": [
+   441→      {
+   442→        "name": "Free AI Text to Video & Animation Generator",
+   443→        "url": "https://www.domoai.app/create/text-to-video",
+   444→        "snippet": "AI Text to Video & Animation Generator . Type the scene and the look you want, pick a model, set duration and aspect ratio, and generate. Read more",
+   445→        "date": "",
+   446→        "host_name": "www.domoai.app"
+   447→      },
+   448→      {
+   449→        "name": "Which is the best AI to generate animation videos?",
+   450→        "url": "https://www.reddit.com/r/generativeAI/comments/1ll2tt7/which_is_the_best_ai_to_generate_animation_videos",
+   451→        "snippet": "I want to make a 2 min long animation story and I want to know which ai can help me do it , I want ai that can create better animation with consistent ...",
+   452→        "date": "",
+   453→        "host_name": "www.reddit.com"
+   454→      },
+   455→      {
+   456→        "name": "Lip Sync AI Free Online Video Lipsync",
+   457→        "url": "https://www.vozo.ai/lip-sync",
+   458→        "snippet": "Lip sync any video to any audio online with accurate, natural results online. Perfect for any language, and even multi-speaker scenes with free trials.",
+   459→        "date": "",
+   460→        "host_name": "www.vozo.ai"
+   461→      },
+   462→      {
+   463→        "name": "Free AI Animation Generator – 2D, 3D & Anime",
+   464→        "url": "https://www.renderforest.com/ai-animation-generator",
+   465→        "snippet": "Type an idea, get an animation . Make 2D, 3D, anime, cartoon and whiteboard videos with the Renderforest model, Kling 3.0 and Seedance 2.5. Free to start.",
+   466→        "date": "",
+   467→        "host_name": "www.renderforest.com"
+   468→      },
+   469→      {
+   470→        "name": "Krikey AI - AI Animation App",
+   471→        "url": "https://www.krikey.ai",
+   472→        "snippet": "Krikey AI is the premier AI cartoon video generator that creates professional 3D animations from simple text or video prompts in minutes. Create animation ... Read more",
+   473→        "date": "",
+   474→        "host_name": "www.krikey.ai"
+   475→      },
+   476→      {
+   477→        "name": "Realistic AI Lip Sync Video Generator for Multiple Faces",
+   478→        "url": "https://www.dzine.ai/tools/multiple-lip-sync",
+   479→        "snippet": "Multiple Lip Sync AI is an AI-powered tool that generates synchronized mouth animations for multiple faces in a single image, matched to audio or text input. Read more",
+   480→        "date": "",
+   481→        "host_name": "www.dzine.ai"
+   482→      },
+   483→      {
+   484→        "name": "9 Best AI Video Generators in 2025 [Both Animation & Live",
+   485→        "url": "https://www.animaker.com/hub/ai-video-generators",
+   486→        "snippet": "Jul 22, 2026 — Runway's new feature, Generative Audio , lets users generate lip-sync videos with different faces and voices. Runaway offers additional ... Read more",
+   487→        "date": "Jul 22, 2026",
+   488→        "host_name": "www.animaker.com"
+   489→      },
+   490→      {
+   491→        "name": "AI Cartoon Video Maker: Free AI Animation Generator",
+   492→        "url": "https://www.heygen.com/tool/ai-cartoon-video-maker",
+   493→        "snippet": "HeyGen's AI cartoon video maker turn s a text prompt into an animated video with talking cartoon characters and voiceovers in 175+ languages. Free to start.",
+   494→        "date": "",
+   495→        "host_name": "www.heygen.com"
+   496→      }
+   497→    ]
+   498→  },
+   499→  {
+   500→    "topic": "Existing no-code cartoon animation platforms (competitors)",
+   501→    "query": "Animaker no code animation tool pricing features",
+   502→    "results": [
+   503→      {
+   504→        "name": "Animaker | Animation Maker for Beginners & Pros (Start Free)",
+   505→        "url": "https://www.animaker.com",
+   506→        "snippet": "Animaker offers a free plan for getting started with animation . In addition, Animaker offers 4 premium plans (Basic, Starter, Pro & Enterprise) with advanced ... Read more",
+   507→        "date": "",
+   508→        "host_name": "www.animaker.com"
+   509→      },
+   510→      {
+   511→        "name": "Animaker Pricing: Starter, Pro and Enterprise plans",
+   512→        "url": "https://app.animaker.com/pricing",
+   513→        "snippet": "Pro $79 /mo ($43/mo ) $516 /Yearly Upgrade Billed yearly. Pay monthly. Basic plan ($15/mo) is our most affordable paid option, Animaker is free to use. The free ...",
+   514→        "date": "",
+   515→        "host_name": "app.animaker.com"
+   516→      },
+   517→      {
+   518→        "name": "8 Best AI Animation Tools to Animate Like a Pro!",
+   519→        "url": "https://www.animaker.com/hub/ai-animation-tools",
+   520→        "snippet": "Jul 22, 2026 — Free plan available Generates real-time animations. Limited features compared to other animation tools. Free plan available Cons: Limited ...",
+   521→        "date": "Jul 22, 2026",
+   522→        "host_name": "www.animaker.com"
+   523→      },
+   524→      {
+   525→        "name": "Animaker AI Pricing, Reviews & Features: Is This Animation",
+   526→        "url": "https://ampifire.com/blog/animaker-ai-pricing-reviews-features-is-this-animation-generator-worth-it",
+   527→        "snippet": "Jun 22, 2026 — Regarding pricing, Animaker AI's tiers start at $15–$27/month for the basic plan, billed monthly or yearly. This review breaks down everything, ... Read more",
+   528→        "date": "Jun 22, 2026",
+   529→        "host_name": "ampifire.com"
+   530→      },
+   531→      {
+   532→        "name": "Animaker pricing",
+   533→        "url": "https://speechify.com/blog/animaker-pricing/?srsltid=AYCX9vKb1V0SN1w7m0TlIo5h0fbdatbtpjnxsSJXJWtjfqawN5m1K2sn",
+   534→        "snippet": "May 14, 2023 — Starter Plan - $35 monthly/$228 yearly · 15 mins video length · 10 premium downloads/mo · Full HD quality videos · 15 custom characters/mo · Auto ... Read more",
+   535→        "date": "May 14, 2023",
+   536→        "host_name": "speechify.com"
+   537→      },
+   538→      {
+   539→        "name": "Animaker Reviews 2026: Pricing, Features & More",
+   540→        "url": "https://www.selecthub.com/p/animation-software/animaker",
+   541→        "snippet": "Unique features include character customization, voiceover capabilities, and a variety of animation styles. Pricing details can vary, and it's advisable to ...",
+   542→        "date": "",
+   543→        "host_name": "www.selecthub.com"
+   544→      },
+   545→      {
+   546→        "name": "Animaker Review And Walkthrough - Is This Software Any Good?",
+   547→        "url": "https://www.google.com/goto?url=CAESaAHEIkXXGzkjN9Xbcgq0r2ZxnrR9jg__6aQ6zJm5JydUnBo4rhCuT3cD0iyI7uHO3Sobx-z2i03B2Kjndgq356qJoxskkJWXksKEI8faupNdhcbz2UgSePzwn7Mx_jNuKYVwQcdLwVUF&gsessionid=R3u8pTAmoqTGvS7h9ZGm1uzp4KjFIECSrESBjqnPrS7tMKfZFq7UoQ",
+   548→        "snippet": "you can try this amazing animation software for a one-time fee . Animaker is a very powerful video animation software that lets anyone create ...",
+   549→        "date": "",
+   550→        "host_name": "www.google.com"
+   551→      },
+   552→      {
+   553→        "name": "Animaker Review 2026: Features, Pricing, and Verdict",
+   554→        "url": "https://pexo.ai/blog/animaker-review-3415",
+   555→        "snippet": "Sep 10, 2026 — Animaker Pricing · Free : No cost, but exports carry an Animaker watermark, downloads are capped per month, quality is limited to lower resolution ... Read more",
+   556→        "date": "Sep 10, 2026",
+   557→        "host_name": "pexo.ai"
+   558→      }
+   559→    ]
+   560→  },
+   561→  {
+   562→    "topic": "Competitor details",
+   563→    "query": "Vyond Toonly Plotagon cartoon video maker comparison",
+   564→    "results": [
+   565→      {
+   566→        "name": "10 Best Vyond Alternatives & Competitors in 2026",
+   567→        "url": "https://www.saasworthy.com/product-alternative/5184/vyond",
+   568→        "snippet": "Find the best Vyond alternatives for your business. Compare features, pricing, and user feedback to pick the right solution for 2026.",
+   569→        "date": "",
+   570→        "host_name": "www.saasworthy.com"
+   571→      },
+   572→      {
+   573→        "name": "Plotagon vs. Story AI Comparison",
+   574→        "url": "https://sourceforge.net/software/compare/Plotagon-vs-Story-AI",
+   575→        "snippet": "Compare Plotagon vs. Story AI using this comparison chart . Make your videos stand out with 3D animation, Plotagon's easy User Interface let anyone create  ...",
+   576→        "date": "",
+   577→        "host_name": "sourceforge.net"
+   578→      },
+   579→      {
+   580→        "name": "Compare Toonly vs. Vyond in 2026",
+   581→        "url": "https://slashdot.org/software/comparison/Toonly-vs-Vyond",
+   582→        "snippet": "Compare Toonly vs. Vyond in 2026 by cost, reviews , features, integrations, and more. allows you to capture video from multiple angles and edit it in real-time. ...",
+   583→        "date": "",
+   584→        "host_name": "slashdot.org"
+   585→      },
+   586→      {
+   587→        "name": "Vyond Alternatives: 7 Animated Video Tools Worth Trying",
+   588→        "url": "https://www.lychee.video/blog/vyond-alternatives-animated-video",
+   589→        "snippet": "May 20, 2026 — 1. Animaker: Best Budget Alternative for Character Animation · 2. Powtoon: Best for Marketing Teams That Need Templates · 3. Synthesia: Best for ... Read more",
+   590→        "date": "May 20, 2026",
+   591→        "host_name": "www.lychee.video"
+   592→      },
+   593→      {
+   594→        "name": "Plotagon vs. Toontastic 3D Comparison",
+   595→        "url": "https://sourceforge.net/software/compare/Plotagon-vs-Toontastic-3D",
+   596→        "snippet": "Compare Plotagon vs. Toontastic 3D using this comparison chart. $249/month. Plotagon's easy User Interface let anyone create animated videos in no time. is a ...",
+   597→        "date": "",
+   598→        "host_name": "sourceforge.net"
+   599→      },
+   600→      {
+   601→        "name": "Best Free Alternatives to Vyond",
+   602→        "url": "https://www.saasworthy.com/product-alternative/free/5184/vyond",
+   603→        "snippet": "Discover the best Free alternatives to Vyond. Compare tools by features, pricing, and verified user reviews . For Making Animated Videos",
+   604→        "date": "",
+   605→        "host_name": "www.saasworthy.com"
+   606→      },
+   607→      {
+   608→        "name": "What is the Best Animation Tool for Me: A Vyond Vs. Other",
+   609→        "url": "https://lavenderdragonteam.com/index.php/2023/07/11/what-is-the-best-animation-tool-for-me-a-vyond-vs-other-animation-tools-showdown",
+   610→        "snippet": "Jul 11, 2023 — Adobe Animate is desktop-based, while Vyond is cloud-based , making it more accessible and user-friendly. Vyond's drag-and-drop interface makes ...",
+   611→        "date": "Jul 11, 2023",
+   612→        "host_name": "lavenderdragonteam.com"
+   613→      },
+   614→      {
+   615→        "name": "PowToon vs Vyond Comparison (2026)",
+   616→        "url": "https://www.softwaresuggest.com/compare/powtoon-vs-vyond",
+   617→        "snippet": "PowToon is rated 5.0 while Vyond is rated 4.7. Key features of PowToon include drag and drop, customizable templates, Vyond offers features, Vyond can be ...",
+   618→        "date": "",
+   619→        "host_name": "www.softwaresuggest.com"
+   620→      }
+   621→    ]
+   622→  },
+   623→  {
+   624→    "topic": "Mobile animation apps for amateurs",
+   625→    "query": "FlipaClip mobile animation app beginners",
+   626→    "results": [
+   627→      {
+   628→        "name": "FlipaClip",
+   629→        "url": "https://www.flipaclip.com",
+   630→        "snippet": "Create 2D animations on your phone or tablet. FlipaClip is a powerful and easy-to-use animation app for beginners and professionals.",
+   631→        "date": "",
+   632→        "host_name": "www.flipaclip.com"
+   633→      },
+   634→      {
+   635→        "name": "FlipaClip: Draw 2D Animation - Apps on Google Play",
+   636→        "url": "https://play.google.com/store/apps/details?id=com.vblast.flipaclip&hl=en_US",
+   637→        "snippet": "FlipaClip offers a full suite of drawing tools designed for artists and beginners alike. Use brushes, fill, lasso, eraser, ruler, text, and shape tools to ... Read more",
+   638→        "date": "",
+   639→        "host_name": "play.google.com"
+   640→      },
+   641→      {
+   642→        "name": "FlipaClip: Draw 2D Animation - App Store - Apple",
+   643→        "url": "https://apps.apple.com/us/app/flipaclip-draw-2d-animation/id1101848914",
+   644→        "snippet": "FlipaClip, the powerful animation app with a super simple interface. a pretty much easy to use UI like adding sounds and videos/pictures. I recommend this to ...",
+   645→        "date": "",
+   646→        "host_name": "apps.apple.com"
+   647→      },
+   648→      {
+   649→        "name": "How to Animate on FlipaClip Tutorial for Beginners (FREE!)",
+   650→        "url": "https://www.google.com/goto?url=CAESaAHEIkXX2cpx2CmiDL8hP8zpt3aN_0BnTfbV2egJhN4JXoWa_ZfvHUFoooqA0MYiuFnd6XpR3UmAsqjCDsKxZSRsbII8QyCInYrHGB1_nuk9bgkzfnW0xzXE-nL2BKD_TL94OA4ztz0J&gsessionid=zDp2vsjYyGsEidEL2u_9tUB3jwnBZ2Udk5VN1aRX6fOOtJLC8dzjDA",
+   651→        "snippet": "How to Animate Walking (FlipaClip Tutorial for Beginners) Jesse J. Jones•847K views 10:41",
+   652→        "date": "",
+   653→        "host_name": "www.google.com"
+   654→      },
+   655→      {
+   656→        "name": "Getting Started",
+   657→        "url": "https://support.flipaclip.com/article/57-getting-started",
+   658→        "snippet": "Sep 28, 2026 — FlipaClip makes it possible for even beginners to come up with remarkable animation . It also lets seasoned animators draw incredibly detailed ... Read more",
+   659→        "date": "Sep 28, 2026",
+   660→        "host_name": "support.flipaclip.com"
+   661→      },
+   662→      {
+   663→        "name": "Is Flipaclip the one? ( Beginner Question )",
+   664→        "url": "https://www.reddit.com/r/FlipaClip/comments/hs7r70/is_flipaclip_the_one_beginner_question",
+   665→        "snippet": "Flipaclip is also extremely useful and actually high-quality if you practice. Flipaclip is a great app, Flipaclip is great for practicing and ...",
+   666→        "date": "",
+   667→        "host_name": "www.reddit.com"
+   668→      },
+   669→      {
+   670→        "name": "Simple FlipaClip Tutorial",
+   671→        "url": "https://www.google.com/goto?url=CAESaAHEIkXXhDXA0mF_yoREcpHQLxh0VHVna0d-HzTTO30beWRICxfNWRHr4_VlZmL8bFyLWFHUxPxFhjkJMpdzkyKZI6EUcJEosNQSTsz8fG9nHHUFWpjbrWXAMFPY_VXDnTv7y1OJvpj7&gsessionid=zDp2vsjYyGsEidEL2u_9tUB3jwnBZ2Udk5VN1aRX6fOOtJLC8dzjDA",
+   672→        "snippet": "... animating and understand how the app works. We use this video in the app to teach you the basic tools and the concept of traditional animation .",
+   673→        "date": "",
+   674→        "host_name": "www.google.com"
+   675→      },
+   676→      {
+   677→        "name": "Animate for FREE on iPad: FlipaClip Beginner Course",
+   678→        "url": "https://www.skillshare.com/en/classes/animate-for-free-on-ipad-flipaclip-beginner-course/389544258?srsltid=AYCX9vJAlN31fOTJJOkI2VEKlex-MbrRh-aJNwDFJ16dzmNL_tNwqSEL",
+   679→        "snippet": "This beginner tutorial class will help you to become a better animator by walking you through the basics. We will be using the free iPad app: FlipaClip . Read more",
+   680→        "date": "",
+   681→        "host_name": "www.skillshare.com"
+   682→      }
+   683→    ]
+   684→  }
+   685→]
