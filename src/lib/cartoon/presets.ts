@@ -1,0 +1,252 @@
+// ============================================================
+// ঠাট্টা স্টুডিও — Presets: palettes, part options, sample designs
+// ============================================================
+
+import type { ActionName, BgName, CharacterDesign, PlacedCharacter, Scene, SceneBeat } from './types';
+
+export function newId(): string {
+  if (typeof crypto !== 'undefined' && crypto.randomUUID) return crypto.randomUUID();
+  return 'id-' + Math.random().toString(36).slice(2, 10) + Date.now().toString(36);
+}
+
+// ---------------- Palettes ----------------
+
+export const SKIN_TONES = [
+  { value: '#ffe0bd', label: 'ফর্সা' },
+  { value: '#f6c99f', label: 'হালকা' },
+  { value: '#eab88a', label: 'মাঝারি' },
+  { value: '#d9a066', label: 'কাঁচা' },
+  { value: '#b97a4a', label: 'তামাটে' },
+  { value: '#8d5a2b', label: 'গাঢ়' },
+];
+
+export const HAIR_COLORS = ['#1f1c18', '#3d2b1f', '#5a3a22', '#7a5230', '#9b9b9b', '#e8e6e1'];
+
+export const CLOTH_COLORS = [
+  '#ea580c', // orange
+  '#e11d48', // rose
+  '#f59e0b', // amber
+  '#10b981', // emerald
+  '#0d9488', // teal
+  '#7c3aed', // violet
+  '#a16207', // khaki
+  '#dc2626', // red
+  '#15803d', // green
+  '#ca8a04', // dark yellow
+  '#374151', // charcoal
+  '#111827', // near-black
+  '#e5e7eb', // light gray
+  '#fef3c7', // cream
+];
+
+// ---------------- Part options (Bangla labels) ----------------
+
+export const HAIR_STYLES = ['টাক (পালোয়ান)', 'ছোট চুল', 'কাঁকানো চুল', 'মাঝ বিভক্ত চুল', 'লম্বা চুল', 'খোপা'];
+export const EYE_STYLES = ['গোল চোখ', 'ডিম্বাকৃতি চোখ', 'সরু চোখ', 'বড় বাচ্চা চোখ'];
+export const BROW_STYLES = ['সাধারণ', 'মোটা ভুরু', 'উঁচু ভুরু'];
+export const MOUTH_STYLES = ['হাসি', 'সোজা', 'ভ্যু হাসি', 'খোলা হাসি'];
+export const TOP_STYLES = ['টি-শার্ট', 'পাঞ্জাবি', 'শার্ট', 'কুর্তি (মেয়ে)', 'ভেস্ট'];
+export const BOTTOM_STYLES = ['প্যান্ট', 'লুঙ্গি', 'পায়জামা', 'স্কার্ট'];
+export const HEADWEAR_STYLES = ['কিছু না', 'টুপি', 'ক্যাপ', 'পাগড়ি'];
+export const BEARD_STYLES = ['কিছু না', 'গোঁফ', 'দাড়ি', 'গোঁফ + দাড়ি'];
+
+export const VOICE_OPTIONS = [
+  { id: 'tongtong', label: 'তংতং — নরম কণ্ঠ' },
+  { id: 'chuichui', label: 'চুইচুই — মজার কণ্ঠ' },
+  { id: 'kazi', label: 'কাজি — স্পষ্ট কণ্ঠ' },
+  { id: 'douji', label: 'দোউজি — ঝরঝরে কণ্ঠ' },
+  { id: 'xiaochen', label: 'শিয়াওচেন — গমগমে কণ্ঠ' },
+  { id: 'jam', label: 'জ্যাম — স্টাইলিশ কণ্ঠ' },
+  { id: 'luodo', label: 'লুওদো — আবেগি কণ্ঠ' },
+];
+
+export const ACTION_OPTIONS: { id: ActionName; label: string; emoji: string }[] = [
+  { id: 'idle', label: 'দাঁড়িয়ে আছে', emoji: '🧍' },
+  { id: 'talk', label: 'কথা বলছে', emoji: '💬' },
+  { id: 'walk', label: 'হাঁটছে', emoji: '🚶' },
+  { id: 'wave', label: 'হাত নাড়ছে', emoji: '👋' },
+  { id: 'laugh', label: 'হাসছে', emoji: '😂' },
+  { id: 'point', label: 'ইশারা করছে', emoji: '👉' },
+  { id: 'angry', label: 'রেগে আছে', emoji: '😠' },
+  { id: 'jump', label: 'লাফাচ্ছে', emoji: '🤸' },
+  { id: 'nod', label: 'মাথা নাড়ছে', emoji: '🙂' },
+  { id: 'cry', label: 'কাঁদছে', emoji: '😭' },
+];
+
+export const BG_OPTIONS: { id: BgName; label: string }[] = [
+  { id: 'village', label: '🏡 গ্রামের বাড়ি' },
+  { id: 'bazaar', label: '🏪 বাজার' },
+  { id: 'field', label: '🌾 ধানখেত' },
+  { id: 'room', label: '🛋️ ঘরের ভেতর' },
+  { id: 'pond', label: '🛶 পুকুরপাড়' },
+];
+
+// ---------------- Design factory ----------------
+
+export function makeDesign(partial: Partial<CharacterDesign> = {}): CharacterDesign {
+  return {
+    id: newId(),
+    name: 'নতুন ক্যারেক্টার',
+    gender: 'male',
+    skin: SKIN_TONES[2].value,
+    hairStyle: 1,
+    hairColor: HAIR_COLORS[0],
+    eyeStyle: 0,
+    browStyle: 0,
+    mouthStyle: 0,
+    topStyle: 0,
+    topColor: CLOTH_COLORS[0],
+    bottomStyle: 0,
+    bottomColor: CLOTH_COLORS[10],
+    headwearStyle: 0,
+    headwearColor: CLOTH_COLORS[13],
+    beardStyle: 0,
+    glasses: false,
+    voice: 'tongtong',
+    ...partial,
+  };
+}
+
+// ---------------- Ready-made sample cast ----------------
+
+export function presetCast(): CharacterDesign[] {
+  return [
+    makeDesign({
+      name: 'গোপাল',
+      skin: SKIN_TONES[2].value,
+      hairStyle: 2,
+      hairColor: HAIR_COLORS[0],
+      eyeStyle: 3,
+      browStyle: 1,
+      mouthStyle: 0,
+      topStyle: 1,
+      topColor: CLOTH_COLORS[0],
+      bottomStyle: 1,
+      bottomColor: CLOTH_COLORS[13],
+      voice: 'chuichui',
+    }),
+    makeDesign({
+      name: 'মশিমা',
+      gender: 'female',
+      skin: SKIN_TONES[1].value,
+      hairStyle: 4,
+      hairColor: HAIR_COLORS[1],
+      eyeStyle: 1,
+      browStyle: 0,
+      mouthStyle: 0,
+      topStyle: 3,
+      topColor: CLOTH_COLORS[1],
+      bottomStyle: 3,
+      bottomColor: CLOTH_COLORS[4],
+      voice: 'tongtong',
+    }),
+    makeDesign({
+      name: 'মামা পুলিশ',
+      skin: SKIN_TONES[3].value,
+      hairStyle: 1,
+      hairColor: HAIR_COLORS[0],
+      eyeStyle: 0,
+      browStyle: 1,
+      mouthStyle: 1,
+      topStyle: 2,
+      topColor: CLOTH_COLORS[6],
+      bottomStyle: 0,
+      bottomColor: CLOTH_COLORS[10],
+      headwearStyle: 2,
+      headwearColor: CLOTH_COLORS[6],
+      beardStyle: 1,
+      voice: 'xiaochen',
+    }),
+    makeDesign({
+      name: 'দাদু',
+      skin: SKIN_TONES[1].value,
+      hairStyle: 0,
+      hairColor: HAIR_COLORS[5],
+      eyeStyle: 2,
+      browStyle: 0,
+      mouthStyle: 1,
+      topStyle: 1,
+      topColor: CLOTH_COLORS[13],
+      bottomStyle: 2,
+      bottomColor: CLOTH_COLORS[12],
+      headwearStyle: 1,
+      headwearColor: CLOTH_COLORS[12],
+      beardStyle: 3,
+      voice: 'xiaochen',
+    }),
+    makeDesign({
+      name: 'বন্ধু মিয়া',
+      skin: SKIN_TONES[3].value,
+      hairStyle: 3,
+      hairColor: HAIR_COLORS[0],
+      eyeStyle: 0,
+      browStyle: 2,
+      mouthStyle: 3,
+      topStyle: 0,
+      topColor: CLOTH_COLORS[4],
+      bottomStyle: 0,
+      bottomColor: CLOTH_COLORS[11],
+      headwearStyle: 2,
+      headwearColor: CLOTH_COLORS[11],
+      voice: 'douji',
+    }),
+  ];
+}
+
+// ---------------- Starter scene (demo cartoon) ----------------
+
+export function starterScene(cast: CharacterDesign[]): Scene {
+  const byName = (n: string) => cast.find((c) => c.name === n)!;
+  const gopal = byName('গোপাল');
+  const police = byName('মামা পুলিশ');
+  const placedGopal: PlacedCharacter = {
+    uid: newId(),
+    designId: gopal.id,
+    x: 32,
+    scale: 1.15,
+    flip: false,
+  };
+  const placedPolice: PlacedCharacter = {
+    uid: newId(),
+    designId: police.id,
+    x: 72,
+    scale: 1.25,
+    flip: true,
+  };
+  const beats: Array<Omit<SceneBeat, 'id' | 'actorUid'>> = [
+    {
+      action: 'wave',
+      duration: 3,
+      text: 'ওই মামা! কী রে, কাজে ধরলি আমারে?',
+    },
+    {
+      action: 'angry',
+      duration: 4,
+      text: 'তুই কলকের সেই নটকি গোপাল! বাজারে গন্ডগোল করস কেন?',
+    },
+    {
+      action: 'laugh',
+      duration: 3,
+      text: 'হা হা হা! মামা, আসলে মজা করছিলাম শুধু!',
+    },
+    {
+      action: 'point',
+      duration: 3.5,
+      text: 'এইবার দেখলাম তোকে! আর করলে থানায় যাবি!',
+    },
+    {
+      action: 'nod',
+      duration: 3,
+      text: 'জ্যে মামা! ভুল করিনি আর কখনো, কথা দিলাম!',
+    },
+  ];
+  return {
+    background: 'village',
+    characters: [placedGopal, placedPolice],
+    beats: beats.map((b, i) => ({
+      ...b,
+      id: newId(),
+      actorUid: i % 2 === 0 ? placedGopal.uid : placedPolice.uid,
+    })),
+  };
+}

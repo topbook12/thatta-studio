@@ -30,3 +30,11 @@ model Post {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 }
+
+model Project {
+  id        String   @id @default(cuid())
+  name      String
+  data      String   // JSON string: { scene, designs }
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
