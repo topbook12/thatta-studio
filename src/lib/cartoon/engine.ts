@@ -431,7 +431,7 @@ export class CartoonStage {
       ctx.save();
       ctx.translate(worldX, GROUND_Y);
       ctx.scale(flip ? -s : s, s);
-      drawCharacter(ctx, design, pose, t);
+      drawCharacter(ctx, design, pose, t, placed.prop ?? 'none');
       ctx.restore();
 
       // selection ring

@@ -8,6 +8,7 @@ import type {
   CharacterDesign,
   EasingName,
   PlacedCharacter,
+  PropName,
   Scene,
   SceneBeat,
 } from './types';
@@ -112,6 +113,16 @@ export const BG_OPTIONS: { id: BgName; label: string }[] = [
   { id: 'school', label: '🏫 স্কুল' },
   { id: 'ghat', label: '🛕 ঘাট' },
   { id: 'night', label: '🌙 রাতের গ্রাম' },
+];
+
+/** হাতে ধরা যায় এমন প্রপ (Sprint 2) */
+export const PROP_OPTIONS: { id: PropName; label: string; emoji: string }[] = [
+  { id: 'none', label: 'কিছু না', emoji: '🚫' },
+  { id: 'stick', label: 'লাঠি', emoji: '🦯' },
+  { id: 'umbrella', label: 'ছাতা', emoji: '☂️' },
+  { id: 'pot', label: 'কলসি', emoji: '🏺' },
+  { id: 'basket', label: 'মাছের টোকরি', emoji: '🧺' },
+  { id: 'fan', label: 'হাতপাখা', emoji: '🪭' },
 ];
 
 // ---------------- Design factory ----------------

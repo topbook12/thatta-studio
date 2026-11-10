@@ -28,6 +28,7 @@ import {
   ACTION_OPTIONS,
   BG_OPTIONS,
   EASING_OPTIONS,
+  PROP_OPTIONS,
   SPEED_OPTIONS,
 } from "@/lib/cartoon/presets";
 import { CartoonStage } from "@/lib/cartoon/engine";
@@ -36,6 +37,7 @@ import type {
   ActionName,
   CharacterDesign,
   EasingName,
+  PropName,
   Scene,
   SceneBeat,
 } from "@/lib/cartoon/types";
@@ -880,6 +882,34 @@ export default function StudioTab({
                             step={0.05}
                             onValueChange={(v) => updatePlaced(c.uid, { scale: v[0] })}
                           />
+                        </div>
+                        <div>
+                          <div className="mb-1 flex justify-between text-xs text-amber-800">
+                            <span>হাতের জিনিস</span>
+                            <span>
+                              {
+                                PROP_OPTIONS.find((o) => o.id === (c.prop ?? "none"))
+                                  ?.emoji
+                              }
+                            </span>
+                          </div>
+                          <Select
+                            value={c.prop ?? "none"}
+                            onValueChange={(v) =>
+                              updatePlaced(c.uid, { prop: v as PropName })
+                            }
+                          >
+                            <SelectTrigger className="h-8 w-full border-amber-200 text-xs">
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                              {PROP_OPTIONS.map((o) => (
+                                <SelectItem key={o.id} value={o.id}>
+                                  {o.emoji} {o.label}
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
                         </div>
                       </div>
                     </div>

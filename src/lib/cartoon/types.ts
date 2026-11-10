@@ -53,6 +53,19 @@ export type Expression =
   | 'angry'
   | 'surprised';
 
+/**
+ * Face FX overlays — the “comic book” garnish that makes emotions readable
+ * from far away (Sprint 2 expression engine v2).
+ */
+export type FaceFx =
+  | 'angerVein' // 🔴 রাগের শিরা (cross-popping vein)
+  | 'steam' // 💨 রাগের ধোঁয়া
+  | 'sweat' // 💦 ঘাম ছিটকে যাওয়া
+  | 'shockLines' // ❗ চমকে যাওয়ার দাগ
+  | 'music' // 🎵 সুরের ফুলকি (dance)
+  | 'blush' // 😊 লজ্জার লালচে ভাব
+  | 'zzz'; // 💤 ঘুম
+
 /** A fully-described cartoon character (parts-based). */
 export interface CharacterDesign {
   id: string;
@@ -76,6 +89,15 @@ export interface CharacterDesign {
   voice: string;
 }
 
+/** Props a character can hold in the (near) hand — Sprint 2. */
+export type PropName =
+  | 'none'
+  | 'stick' // লাঠি
+  | 'umbrella' // ছাতা
+  | 'pot' // কলসি
+  | 'basket' // মাছের টোকরি
+  | 'fan'; // হাতপাখা
+
 /** A character placed into the stage scene. */
 export interface PlacedCharacter {
   uid: string;
@@ -85,6 +107,8 @@ export interface PlacedCharacter {
   /** 0.8 .. 1.8 */
   scale: number;
   flip: boolean;
+  /** prop held in the near hand (older saved scenes may omit → 'none') */
+  prop?: PropName;
 }
 
 /** One action/dialogue unit of the cartoon ("beat"). */
@@ -133,6 +157,10 @@ export interface Pose {
   tears: boolean;
   /** squash & stretch: -1 = stretched tall, +1 = squashed wide, 0 = normal */
   squash: number;
+  /** comic face FX overlays active this frame (expression engine v2) */
+  fx?: FaceFx[];
+  /** true when the near hand should render a gripping fist (slap, push…) */
+  fist?: boolean;
 }
 
 /** Callbacks for playback orchestration. */

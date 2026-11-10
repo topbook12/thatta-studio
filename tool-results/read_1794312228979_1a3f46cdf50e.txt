@@ -1,0 +1,1268 @@
+     1→"use client";
+     2→
+     3→import { useEffect, useMemo, useRef, useState } from "react";
+     4→import { Button } from "@/components/ui/button";
+     5→import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+     6→import { Input } from "@/components/ui/input";
+     7→import { Label } from "@/components/ui/label";
+     8→import { Slider } from "@/components/ui/slider";
+     9→import { Switch } from "@/components/ui/switch";
+    10→import { Textarea } from "@/components/ui/textarea";
+    11→import {
+    12→  Dialog,
+    13→  DialogContent,
+    14→  DialogDescription,
+    15→  DialogHeader,
+    16→  DialogTitle,
+    17→} from "@/components/ui/dialog";
+    18→import {
+    19→  Select,
+    20→  SelectContent,
+    21→  SelectItem,
+    22→  SelectTrigger,
+    23→  SelectValue,
+    24→} from "@/components/ui/select";
+    25→import { toast } from "@/hooks/use-toast";
+    26→import { useStudio } from "@/lib/store";
+    27→import {
+    28→  ACTION_OPTIONS,
+    29→  BG_OPTIONS,
+    30→  EASING_OPTIONS,
+    31→  SPEED_OPTIONS,
+    32→} from "@/lib/cartoon/presets";
+    33→import { CartoonStage } from "@/lib/cartoon/engine";
+    34→import { getCachedAudio, generateVoice, setCachedAudio } from "@/lib/tts-cache";
+    35→import type {
+    36→  ActionName,
+    37→  CharacterDesign,
+    38→  EasingName,
+    39→  Scene,
+    40→  SceneBeat,
+    41→} from "@/lib/cartoon/types";
+    42→import TimelineEditor, {
+    43→  type TimelineActor,
+    44→  type TimelineBeat,
+    45→} from "@/components/studio/timeline-editor";
+    46→import {
+    47→  ArrowDown,
+    48→  ArrowUp,
+    49→  Download,
+    50→  FolderOpen,
+    51→  Mic,
+    52→  Pause,
+    53→  Pencil,
+    54→  Play,
+    55→  Save,
+    56→  Square,
+    57→  Trash2,
+    58→  UserPlus,
+    59→  Volume2,
+    60→  X,
+    61→} from "lucide-react";
+    62→
+    63→interface ProjectMeta {
+    64→  id: string;
+    65→  name: string;
+    66→  updatedAt: string;
+    67→}
+    68→
+    69→const bnNum = (n: number | string) => String(n).replace(/\d/g, (d) => "০১২৩৪৫৬৭৮৯"[+d]);
+    70→
+    71→/** ক্যারেক্টারপ্রতি টাইমলাইনের রঙ (টাইমলাইন ব্লক + রো) */
+    72→const ACTOR_COLORS = [
+    73→  "#ea580c",
+    74→  "#0d9488",
+    75→  "#7c3aed",
+    76→  "#dc2626",
+    77→  "#15803d",
+    78→  "#b45309",
+    79→  "#be185d",
+    80→  "#4d7c0f",
+    81→];
+    82→
+    83→function actorColorOf(uid: string, characters: { uid: string }[]): string {
+    84→  const idx = characters.findIndex((c) => c.uid === uid);
+    85→  return ACTOR_COLORS[(idx >= 0 ? idx : 0) % ACTOR_COLORS.length];
+    86→}
+    87→
+    88→function pickMime(): { mime: string; ext: string } {
+    89→  const candidates = [
+    90→    "video/mp4;codecs=avc1.42E01E,mp4a.40.2",
+    91→    "video/mp4",
+    92→    "video/webm;codecs=vp9,opus",
+    93→    "video/webm;codecs=vp8,opus",
+    94→    "video/webm",
+    95→  ];
+    96→  if (typeof MediaRecorder === "undefined") return { mime: "", ext: "webm" };
+    97→  for (const m of candidates) {
+    98→    if (MediaRecorder.isTypeSupported(m)) {
+    99→      return { mime: m, ext: m.startsWith("video/mp4") ? "mp4" : "webm" };
+   100→    }
+   101→  }
+   102→  return { mime: "", ext: "webm" };
+   103→}
+   104→
+   105→export default function StudioTab({
+   106→  onOpenCreator,
+   107→}: {
+   108→  onOpenCreator?: () => void;
+   109→}) {
+   110→  const {
+   111→    designs,
+   112→    scene,
+   113→    setBackground,
+   114→    addPlaced,
+   115→    updatePlaced,
+   116→    removePlaced,
+   117→    addBeat,
+   118→    updateBeat,
+   119→    removeBeat,
+   120→    moveBeat,
+   121→    setDesigns,
+   122→    setScene,
+   123→  } = useStudio();
+   124→
+   125→  const canvasRef = useRef<HTMLCanvasElement | null>(null);
+   126→  const stageRef = useRef<CartoonStage | null>(null);
+   127→  const audioCtxRef = useRef<AudioContext | null>(null);
+   128→  const destRef = useRef<MediaStreamAudioDestinationNode | null>(null);
+   129→  const recorderRef = useRef<MediaRecorder | null>(null);
+   130→  const exportingRef = useRef(false);
+   131→  const editorCardRef = useRef<HTMLDivElement | null>(null);
+   132→  const currentAudioRef = useRef<HTMLAudioElement | null>(null);
+   133→  const rateRef = useRef(1);
+   134→  const lastTimePushRef = useRef(0);
+   135→
+   136→  const [playing, setPlaying] = useState(false);
+   137→  const [activeBeatIdx, setActiveBeatIdx] = useState(-1);
+   138→  const [currentTime, setCurrentTime] = useState(0);
+   139→  const [playbackRate, setPlaybackRate] = useState(1);
+   140→  const [audioVersion, setAudioVersion] = useState(0);
+   141→  const [genBusyId, setGenBusyId] = useState<string | null>(null);
+   142→  const [exporting, setExporting] = useState(false);
+   143→
+   144→  // beat editor state
+   145→  const [editingBeatId, setEditingBeatId] = useState<string | null>(null);
+   146→  const [selectedBeatId, setSelectedBeatId] = useState<string | null>(null);
+   147→  const [actorUid, setActorUid] = useState("");
+   148→  const [action, setAction] = useState<ActionName>("talk");
+   149→  const [duration, setDuration] = useState(3);
+   150→  const [text, setText] = useState("");
+   151→  const [moveTo, setMoveTo] = useState(50);
+   152→  const [beatSpeed, setBeatSpeed] = useState(1);
+   153→  const [beatEasing, setBeatEasing] = useState<EasingName>("easeInOut");
+   154→
+   155→  // projects
+   156→  const [saveOpen, setSaveOpen] = useState(false);
+   157→  const [loadOpen, setLoadOpen] = useState(false);
+   158→  const [projectName, setProjectName] = useState("");
+   159→  const [projects, setProjects] = useState<ProjectMeta[]>([]);
+   160→  const [loadingProjects, setLoadingProjects] = useState(false);
+   161→  const [saving, setSaving] = useState(false);
+   162→
+   163→  // ---------- stage lifecycle ----------
+   164→  useEffect(() => {
+   165→    const canvas = canvasRef.current;
+   166→    if (!canvas) return;
+   167→    const stage = new CartoonStage(canvas, {
+   168→      onBeat: (i, beat, offset) => {
+   169→        setActiveBeatIdx(i);
+   170→        playBeatAudio(beat, offset);
+   171→      },
+   172→      onTime: (t) => {
+   173→        // throttle React updates to ~20fps for the playhead
+   174→        const now = performance.now();
+   175→        if (now - lastTimePushRef.current > 50) {
+   176→          lastTimePushRef.current = now;
+   177→          setCurrentTime(t);
+   178→        }
+   179→      },
+   180→      onFinish: () => {
+   181→        setPlaying(false);
+   182→        setActiveBeatIdx(-1);
+   183→        stopCurrentAudio();
+   184→        if (exportingRef.current) {
+   185→          recorderRef.current?.stop();
+   186→          recorderRef.current = null;
+   187→        }
+   188→      },
+   189→    });
+   190→    stageRef.current = stage;
+   191→    return () => {
+   192→      stage.dispose();
+   193→      stageRef.current = null;
+   194→    };
+   195→  }, []);
+   196→
+   197→  useEffect(() => {
+   198→    stageRef.current?.setScene(scene, designs);
+   199→  }, [scene, designs]);
+   200→
+   201→  // audio-aware durations + lip-sync envelopes + timeline data stay in sync
+   202→  useEffect(() => {
+   203→    const durMap: Record<string, number> = {};
+   204→    const envMap: Record<string, number[]> = {};
+   205→    for (const b of scene.beats) {
+   206→      const a = getCachedAudio(b.id);
+   207→      if (a) {
+   208→        durMap[b.id] = Math.max(b.duration, a.duration + 0.3);
+   209→        if (a.envelope?.length) envMap[b.id] = a.envelope;
+   210→      }
+   211→    }
+   212→    const stage = stageRef.current;
+   213→    stage?.setDurations(durMap);
+   214→    stage?.setEnvelopes(envMap);
+   215→  }, [scene.beats, audioVersion]);
+   216→
+   217→  // global playback speed
+   218→  useEffect(() => {
+   219→    rateRef.current = playbackRate;
+   220→    stageRef.current?.setPlaybackRate(playbackRate);
+   221→  }, [playbackRate]);
+   222→
+   223→  // drag characters directly on the stage
+   224→  useEffect(() => {
+   225→    stageRef.current?.setInteractions({
+   226→      onPick: (uid) => setSelectedBeatId(null),
+   227→      onDrag: (uid, pct) => updatePlaced(uid, { x: Math.round(pct * 10) / 10 }),
+   228→      onDragEnd: (uid, pct) => updatePlaced(uid, { x: Math.round(pct * 10) / 10 }),
+   229→    });
+   230→  }, [updatePlaced]);
+   231→
+   232→  // space = play/pause shortcut
+   233→  useEffect(() => {
+   234→    const onKey = (e: KeyboardEvent) => {
+   235→      if (e.code !== "Space") return;
+   236→      const el = e.target as HTMLElement | null;
+   237→      if (
+   238→        el &&
+   239→        (el.tagName === "INPUT" ||
+   240→          el.tagName === "TEXTAREA" ||
+   241→          el.tagName === "SELECT" ||
+   242→          el.isContentEditable)
+   243→      )
+   244→        return;
+   245→      e.preventDefault();
+   246→      handlePlay();
+   247→    };
+   248→    window.addEventListener("keydown", onKey);
+   249→    return () => window.removeEventListener("keydown", onKey);
+   250→  }, [playing, scene.beats]);
+   251→
+   252→  const stopCurrentAudio = () => {
+   253→    const el = currentAudioRef.current;
+   254→    if (el) {
+   255→      el.pause();
+   256→      currentAudioRef.current = null;
+   257→    }
+   258→  };
+   259→
+   260→  const playBeatAudio = (beat: SceneBeat, offset = 0) => {
+   261→    const audio = getCachedAudio(beat.id);
+   262→    if (!audio) return;
+   263→    // during scrubbing (paused) we stay silent — audio only when actually playing
+   264→    if (!stageRef.current?.isPlaying()) return;
+   265→    stopCurrentAudio();
+   266→    const el = new Audio(audio.url);
+   267→    el.playbackRate = rateRef.current;
+   268→    try {
+   269→      (el as HTMLAudioElement & { preservesPitch?: boolean }).preservesPitch = true;
+   270→    } catch {
+   271→      /* older browsers */
+   272→    }
+   273→    if (offset > 0.05) {
+   274→      try {
+   275→        el.currentTime = offset;
+   276→      } catch {
+   277→        /* ignore */
+   278→      }
+   279→    }
+   280→    currentAudioRef.current = el;
+   281→    if (exportingRef.current && audioCtxRef.current && destRef.current) {
+   282→      try {
+   283→        const src = audioCtxRef.current.createMediaElementSource(el);
+   284→        src.connect(destRef.current);
+   285→        src.connect(audioCtxRef.current.destination);
+   286→      } catch {
+   287→        /* ignore */
+   288→      }
+   289→    }
+   290→    el.play().catch(() => {});
+   291→  };
+   292→
+   293→  // ---------- playback ----------
+   294→  const handlePlay = () => {
+   295→    const stage = stageRef.current;
+   296→    if (!stage) return;
+   297→    if (playing) {
+   298→      stage.pause();
+   299→      stopCurrentAudio();
+   300→      setPlaying(false);
+   301→      setActiveBeatIdx(-1);
+   302→      return;
+   303→    }
+   304→    const ok = stage.play();
+   305→    if (!ok) {
+   306→      toast({
+   307→        title: "কোনো দৃশ্য নেই",
+   308→        description: "আগে টাইমলাইনের নিচে ফর্ম থেকে অন্তত একটি দৃশ্য (বিট) যোগ করুন।",
+   309→        variant: "destructive",
+   310→      });
+   311→      return;
+   312→    }
+   313→    setPlaying(true);
+   314→  };
+   315→
+   316→  const handleStop = () => {
+   317→    stageRef.current?.stop();
+   318→    stopCurrentAudio();
+   319→    setPlaying(false);
+   320→    setActiveBeatIdx(-1);
+   321→    setCurrentTime(0);
+   322→    if (exportingRef.current) {
+   323→      recorderRef.current?.stop();
+   324→      recorderRef.current = null;
+   325→    }
+   326→  };
+   327→
+   328→  // ---------- timeline ----------
+   329→  const effectiveDur = (b: SceneBeat) => {
+   330→    const a = getCachedAudio(b.id);
+   331→    return Math.max(0.3, a ? Math.max(b.duration, a.duration + 0.3) : b.duration);
+   332→  };
+   333→
+   334→  const totalDuration = useMemo(
+   335→    () => scene.beats.reduce((acc, b) => acc + effectiveDur(b), 0),
+   336→    [scene.beats, audioVersion],
+   337→  );
+   338→
+   339→  const timelineActors: TimelineActor[] = useMemo(
+   340→    () =>
+   341→      scene.characters.map((c) => ({
+   342→        uid: c.uid,
+   343→        name: designs.find((d) => d.id === c.designId)?.name ?? "অজানা",
+   344→        color: actorColorOf(c.uid, scene.characters),
+   345→      })),
+   346→    [scene.characters, designs],
+   347→  );
+   348→
+   349→  const timelineBeats: TimelineBeat[] = useMemo(
+   350→    () =>
+   351→      scene.beats.map((b) => {
+   352→        const a = getCachedAudio(b.id);
+   353→        const opt = ACTION_OPTIONS.find((o) => o.id === b.action);
+   354→        return {
+   355→          id: b.id,
+   356→          actorUid: b.actorUid,
+   357→          actorName:
+   358→            designs.find(
+   359→              (d) => d.id === scene.characters.find((c) => c.uid === b.actorUid)?.designId,
+   360→            )?.name ?? "অজানা",
+   361→          actorColor: actorColorOf(b.actorUid, scene.characters),
+   362→          action: b.action,
+   363→          actionEmoji: opt?.emoji ?? "🎬",
+   364→          actionLabel: opt?.label ?? b.action,
+   365→          text: b.text,
+   366→          duration: effectiveDur(b),
+   367→          hasAudio: !!a,
+   368→          peaks: a?.peaks ?? null,
+   369→        };
+   370→      }),
+   371→    [scene.beats, scene.characters, designs, audioVersion],
+   372→  );
+   373→
+   374→  const handleSeek = (t: number) => {
+   375→    if (exportingRef.current) return;
+   376→    stopCurrentAudio();
+   377→    stageRef.current?.seek(t);
+   378→    setCurrentTime(t);
+   379→  };
+   380→
+   381→  const handleTimelineSelect = (id: string) => {
+   382→    setSelectedBeatId(id);
+   383→    const b = scene.beats.find((x) => x.id === id);
+   384→    if (b) startEditBeat(b);
+   385→  };
+   386→
+   387→  const handleTimelineResize = (id: string, newDuration: number) => {
+   388→    updateBeat(id, { duration: Math.round(newDuration * 10) / 10 });
+   389→  };
+   390→
+   391→  // ---------- voice generation ----------
+   392→  const genBeatVoice = async (beat: SceneBeat, silent = false) => {
+   393→    if (!beat.text.trim()) {
+   394→      if (!silent)
+   395→        toast({ title: "ডায়ালগ লিখুন আগে", description: "এই দৃশ্যে কোনো সংলাপ নেই।" });
+   396→      return;
+   397→    }
+   398→    const placed = scene.characters.find((c) => c.uid === beat.actorUid);
+   399→    const design = designs.find((d) => d.id === placed?.designId);
+   400→    setGenBusyId(beat.id);
+   401→    try {
+   402→      const audio = await generateVoice(beat.text, design?.voice ?? "tongtong");
+   403→      setCachedAudio(beat.id, audio);
+   404→      setAudioVersion((v) => v + 1);
+   405→      if (!silent)
+   406→        toast({
+   407→          title: "ভয়েস রেডি 🔊",
+   408→          description: `${audio.duration.toFixed(1)} সেকেন্ডের অডিও তৈরি হয়েছে।`,
+   409→        });
+   410→    } catch (e: unknown) {
+   411→      if (!silent)
+   412→        toast({
+   413→          title: "ভয়েস তৈরি করা যায়নি",
+   414→          description: e instanceof Error ? e.message : "আবার চেষ্টা করুন।",
+   415→          variant: "destructive",
+   416→        });
+   417→    } finally {
+   418→      setGenBusyId(null);
+   419→    }
+   420→  };
+   421→
+   422→  const genAllVoices = async () => {
+   423→    const pending = scene.beats.filter((b) => b.text.trim() && !getCachedAudio(b.id));
+   424→    if (pending.length === 0) {
+   425→      toast({ title: "সব ভয়েস আগেই রেডি ✅", description: "এখন প্লে করে দেখুন!" });
+   426→      return;
+   427→    }
+   428→    toast({
+   429→      title: `${bnNum(pending.length)}টি ভয়েস জেনারেট হচ্ছে...`,
+   430→      description: "প্রতিটি সংলাপের বাংলা ভয়েস তৈরি করা হচ্ছে।",
+   431→    });
+   432→    for (const b of pending) {
+   433→      await genBeatVoice(b, true);
+   434→    }
+   435→    toast({ title: "সব ভয়েস রেডি 🔊", description: "এখন ▶ প্লে চাপুন!" });
+   436→  };
+   437→
+   438→  // ---------- export ----------
+   439→  const handleExport = () => {
+   440→    const stage = stageRef.current;
+   441→    const canvas = canvasRef.current;
+   442→    if (!stage || !canvas) return;
+   443→    if (playing) {
+   444→      toast({ title: "আগে প্লে বন্ধ করুন", variant: "destructive" });
+   445→      return;
+   446→    }
+   447→    if (scene.beats.length === 0) {
+   448→      toast({
+   449→        title: "কোনো দৃশ্য নেই",
+   450→        description: "আগে বিট যোগ করুন, তারপর এক্সপোর্ট করুন।",
+   451→        variant: "destructive",
+   452→      });
+   453→      return;
+   454→    }
+   455→    try {
+   456→      const { mime, ext } = pickMime();
+   457→      const stream = canvas.captureStream(30);
+   458→      let audioCtx: AudioContext | null = null;
+   459→      try {
+   460→        audioCtx = new AudioContext();
+   461→        const dest = audioCtx.createMediaStreamDestination();
+   462→        audioCtxRef.current = audioCtx;
+   463→        destRef.current = dest;
+   464→        for (const t of dest.stream.getAudioTracks()) stream.addTrack(t);
+   465→      } catch {
+   466→        audioCtxRef.current = null;
+   467→        destRef.current = null;
+   468→      }
+   469→      const rec = new MediaRecorder(stream, mime ? { mimeType: mime } : undefined);
+   470→      const chunks: Blob[] = [];
+   471→      rec.ondataavailable = (e) => {
+   472→        if (e.data.size > 0) chunks.push(e.data);
+   473→      };
+   474→      rec.onstop = () => {
+   475→        const blob = new Blob(chunks, {
+   476→          type: mime ? mime.split(";")[0] : "video/webm",
+   477→        });
+   478→        const url = URL.createObjectURL(blob);
+   479→        const a = document.createElement("a");
+   480→        a.href = url;
+   481→        a.download = `thatta-cartoon-${Date.now()}.${ext}`;
+   482→        a.click();
+   483→        setTimeout(() => URL.revokeObjectURL(url), 5000);
+   484→        setExporting(false);
+   485→        exportingRef.current = false;
+   486→        audioCtx?.close().catch(() => {});
+   487→        audioCtxRef.current = null;
+   488→        destRef.current = null;
+   489→        toast({
+   490→          title: "ভিডিও ডাউনলোড হয়েছে 🎬",
+   491→          description: `${ext.toUpperCase()} ফরম্যাটে সেভ হয়েছে — এবার YouTube/Facebook এ আপলোড করুন!`,
+   492→        });
+   493→      };
+   494→      recorderRef.current = rec;
+   495→      rec.start(250);
+   496→      setExporting(true);
+   497→      exportingRef.current = true;
+   498→      // always export from the very beginning
+   499→      stage.stop();
+   500→      const ok = stage.play();
+   501→      if (!ok) {
+   502→        rec.stop();
+   503→        return;
+   504→      }
+   505→      setPlaying(true);
+   506→      toast({
+   507→        title: "এক্সপোর্ট চলছে 🎥",
+   508→        description: "কার্টুন শেষ হলে ভিডিও স্বয়ংক্রিয়ভাবে ডাউনলোড হবে।",
+   509→      });
+   510→    } catch (e: unknown) {
+   511→      setExporting(false);
+   512→      exportingRef.current = false;
+   513→      toast({
+   514→        title: "এক্সপোর্ট করা যায়নি",
+   515→        description: e instanceof Error ? e.message : "আপনার ব্রাউজার ভিডিও রেকর্ডিং সাপোর্ট করে না।",
+   516→        variant: "destructive",
+   517→      });
+   518→    }
+   519→  };
+   520→
+   521→  // ---------- beat editor ----------
+   522→  const resetBeatForm = () => {
+   523→    setEditingBeatId(null);
+   524→    setSelectedBeatId(null);
+   525→    setActorUid("");
+   526→    setAction("talk");
+   527→    setDuration(3);
+   528→    setText("");
+   529→    setMoveTo(50);
+   530→    setBeatSpeed(1);
+   531→    setBeatEasing("easeInOut");
+   532→  };
+   533→
+   534→  const submitBeat = () => {
+   535→    if (!actorUid) {
+   536→      toast({
+   537→        title: "ক্যারেক্টার নির্বাচন করুন",
+   538→        description: "কোন ক্যারেক্টর এই দৃশ্যে থাকবে সেটা বাছুন।",
+   539→        variant: "destructive",
+   540→      });
+   541→      return;
+   542→    }
+   543→    const payload = {
+   544→      actorUid,
+   545→      action,
+   546→      duration,
+   547→      text: text.trim(),
+   548→      moveTo: action === "walk" || action === "run" ? moveTo : undefined,
+   549→      speed: beatSpeed !== 1 ? beatSpeed : undefined,
+   550→      easing: action === "walk" || action === "run" ? beatEasing : undefined,
+   551→    };
+   552→    if (editingBeatId) {
+   553→      updateBeat(editingBeatId, payload);
+   554→      toast({ title: "দৃশ্য আপডেট হয়েছে ✅" });
+   555→    } else {
+   556→      addBeat(payload);
+   557→      toast({
+   558→        title: "দৃশ্য যোগ হয়েছে 🎬",
+   559→        description: `মোট দৃশ্য: ${bnNum(scene.beats.length + 1)}টি`,
+   560→      });
+   561→    }
+   562→    resetBeatForm();
+   563→  };
+   564→
+   565→  const startEditBeat = (b: SceneBeat) => {
+   566→    setEditingBeatId(b.id);
+   567→    setSelectedBeatId(b.id);
+   568→    setActorUid(b.actorUid);
+   569→    setAction(b.action);
+   570→    setDuration(b.duration);
+   571→    setText(b.text);
+   572→    setMoveTo(b.moveTo ?? 50);
+   573→    setBeatSpeed(b.speed ?? 1);
+   574→    setBeatEasing(b.easing ?? "easeInOut");
+   575→    editorCardRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
+   576→  };
+   577→
+   578→  // ---------- projects ----------
+   579→  const handleSaveProject = async () => {
+   580→    if (!projectName.trim()) {
+   581→      toast({ title: "প্রজেক্টের নাম দিন", variant: "destructive" });
+   582→      return;
+   583→    }
+   584→    setSaving(true);
+   585→    try {
+   586→      const res = await fetch("/api/projects", {
+   587→        method: "POST",
+   588→        headers: { "Content-Type": "application/json" },
+   589→        body: JSON.stringify({
+   590→          name: projectName.trim(),
+   591→          data: JSON.stringify({ scene, designs }),
+   592→        }),
+   593→      });
+   594→      if (!res.ok) throw new Error("সেভ করা যায়নি");
+   595→      toast({ title: "সেভ হয়েছে 💾", description: `"${projectName}" সার্ভারে সেভ হয়েছে।` });
+   596→      setSaveOpen(false);
+   597→      setProjectName("");
+   598→    } catch {
+   599→      toast({ title: "সেভ করা যায়নি", description: "আবার চেষ্টা করুন।", variant: "destructive" });
+   600→    } finally {
+   601→      setSaving(false);
+   602→    }
+   603→  };
+   604→
+   605→  const openLoad = async () => {
+   606→    setLoadOpen(true);
+   607→    setLoadingProjects(true);
+   608→    try {
+   609→      const res = await fetch("/api/projects");
+   610→      const j = await res.json();
+   611→      setProjects(j.projects ?? []);
+   612→    } catch {
+   613→      toast({ title: "লিস্ট আনা যায়নি", variant: "destructive" });
+   614→    } finally {
+   615→      setLoadingProjects(false);
+   616→    }
+   617→  };
+   618→
+   619→  const loadProject = async (id: string) => {
+   620→    try {
+   621→      const res = await fetch(`/api/projects/${id}`);
+   622→      const j = await res.json();
+   623→      const parsed = JSON.parse(j.project.data) as {
+   624→        scene?: Scene;
+   625→        designs?: CharacterDesign[];
+   626→      };
+   627→      if (parsed.scene && parsed.designs) {
+   628→        setScene(parsed.scene);
+   629→        setDesigns(parsed.designs);
+   630→        setLoadOpen(false);
+   631→        toast({ title: "প্রজেক্ট লোড হয়েছে 📂", description: j.project.name });
+   632→      } else {
+   633→        toast({ title: "ফাইল ভাঙা আছে", variant: "destructive" });
+   634→      }
+   635→    } catch {
+   636→      toast({ title: "লোড করা যায়নি", variant: "destructive" });
+   637→    }
+   638→  };
+   639→
+   640→  const deleteProject = async (id: string) => {
+   641→    try {
+   642→      await fetch(`/api/projects/${id}`, { method: "DELETE" });
+   643→      setProjects((p) => p.filter((x) => x.id !== id));
+   644→      toast({ title: "ডিলিট হয়েছে" });
+   645→    } catch {
+   646→      toast({ title: "ডিলিট করা যায়নি", variant: "destructive" });
+   647→    }
+   648→  };
+   649→
+   650→  // ---------- derived ----------
+   651→  const designNameOf = (uid: string) => {
+   652→    const placed = scene.characters.find((c) => c.uid === uid);
+   653→    const d = designs.find((x) => x.id === placed?.designId);
+   654→    return d?.name;
+   655→  };
+   656→
+   657→  const unplacedDesigns = designs.filter(
+   658→    (d) => !scene.characters.some((c) => c.designId === d.id),
+   659→  );
+   660→
+   661→  return (
+   662→    <div className="space-y-6">
+   663→      {/* ---------- Stage ---------- */}
+   664→      <Card className="border-amber-200">
+   665→        <CardContent className="space-y-4 p-4 sm:p-5">
+   666→          <div className="overflow-hidden rounded-xl border border-amber-300 shadow-inner">
+   667→            <canvas
+   668→              ref={canvasRef}
+   669→              className="block w-full bg-amber-100"
+   670→              style={{ aspectRatio: "16 / 9" }}
+   671→              aria-label="কার্টুন স্টেজ"
+   672→            />
+   673→          </div>
+   674→
+   675→          <div className="flex flex-wrap items-center gap-2.5">
+   676→            <Button
+   677→              onClick={handlePlay}
+   678→              disabled={exporting}
+   679→              className="bg-emerald-600 text-white hover:bg-emerald-700"
+   680→            >
+   681→              {playing ? (
+   682→                <>
+   683→                  <Pause className="mr-2 h-4 w-4" /> থামান
+   684→                </>
+   685→              ) : (
+   686→                <>
+   687→                  <Play className="mr-2 h-4 w-4" /> প্লে করুন
+   688→                </>
+   689→              )}
+   690→            </Button>
+   691→            <Button
+   692→              variant="outline"
+   693→              onClick={handleStop}
+   694→              disabled={!playing && currentTime === 0}
+   695→              className="border-amber-300"
+   696→            >
+   697→              <Square className="mr-2 h-4 w-4" /> রিসেট
+   698→            </Button>
+   699→            <div className="flex items-center gap-1.5 rounded-xl border border-amber-300 bg-white px-2.5 py-1">
+   700→              <span className="text-xs font-semibold text-amber-800">গতি</span>
+   701→              <Select
+   702→                value={String(playbackRate)}
+   703→                onValueChange={(v) => setPlaybackRate(Number(v))}
+   704→              >
+   705→                <SelectTrigger className="h-8 w-[86px] border-amber-200 text-xs">
+   706→                  <SelectValue />
+   707→                </SelectTrigger>
+   708→                <SelectContent>
+   709→                  {SPEED_OPTIONS.map((s) => (
+   710→                    <SelectItem key={s} value={String(s)}>
+   711→                      ×{bnNum(s)}
+   712→                    </SelectItem>
+   713→                  ))}
+   714→                </SelectContent>
+   715→              </Select>
+   716→            </div>
+   717→            <Button
+   718→              onClick={handleExport}
+   719→              disabled={playing || exporting}
+   720→              className="bg-orange-600 text-white hover:bg-orange-700"
+   721→            >
+   722→              <Download className="mr-2 h-4 w-4" />
+   723→              {exporting ? "এক্সপোর্ট হচ্ছে..." : "ভিডিও এক্সপোর্ট"}
+   724→            </Button>
+   725→            <Button
+   726→              variant="outline"
+   727→              onClick={genAllVoices}
+   728→              disabled={playing || exporting}
+   729→              className="border-teal-300 text-teal-800 hover:bg-teal-50"
+   730→            >
+   731→              <Volume2 className="mr-2 h-4 w-4" /> সব ভয়েস জেনারেট
+   732→            </Button>
+   733→            <div className="ml-auto flex gap-2.5">
+   734→              <Button
+   735→                variant="outline"
+   736→                onClick={() => setSaveOpen(true)}
+   737→                className="border-amber-300"
+   738→              >
+   739→                <Save className="mr-2 h-4 w-4" /> সেভ
+   740→              </Button>
+   741→              <Button variant="outline" onClick={openLoad} className="border-amber-300">
+   742→                <FolderOpen className="mr-2 h-4 w-4" /> লোড
+   743→              </Button>
+   744→            </div>
+   745→          </div>
+   746→
+   747→          {(playing || exporting) && (
+   748→            <p className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900">
+   749→              {exporting
+   750→                ? "🎥 রেকর্ড হচ্ছে — কার্টুন শেষ না হওয়া পর্যন্ত ট্যাব বদলাবেন না।"
+   751→                : `▶ চলছে দৃশ্য ${bnNum(activeBeatIdx + 1)}/${bnNum(scene.beats.length)} — ${bnNum(currentTime.toFixed(1))} সে.`}
+   752→            </p>
+   753→          )}
+   754→          {!playing && !exporting && scene.characters.length > 0 && (
+   755→            <p className="rounded-lg border border-amber-200 bg-amber-50/60 px-3 py-2 text-xs text-amber-700">
+   756→              ✋ টিপ: স্টেজে ক্যারেক্টারে চেপে ধরে টেনে সরানো যায় — স্লাইডার ছোঁয়ার দরকার নেই!
+   757→            </p>
+   758→          )}
+   759→        </CardContent>
+   760→      </Card>
+   761→
+   762→      {/* ---------- Timeline ---------- */}
+   763→      <TimelineEditor
+   764→        beats={timelineBeats}
+   765→        actors={timelineActors}
+   766→        totalDuration={totalDuration}
+   767→        currentTime={currentTime}
+   768→        selectedBeatId={selectedBeatId}
+   769→        playing={playing}
+   770→        onSeek={handleSeek}
+   771→        onSelectBeat={handleTimelineSelect}
+   772→        onResizeBeat={handleTimelineResize}
+   773→      />
+   774→
+   775→      <div className="grid gap-6 lg:grid-cols-[340px_1fr]">
+   776→        {/* ---------- Left: scene setup ---------- */}
+   777→        <div className="space-y-6">
+   778→          <Card className="border-amber-200">
+   779→            <CardHeader className="pb-3">
+   780→              <CardTitle className="text-orange-800">🏞️ ব্যাকগ্রাউন্ড</CardTitle>
+   781→            </CardHeader>
+   782→            <CardContent>
+   783→              <div className="flex flex-wrap gap-1.5">
+   784→                {BG_OPTIONS.map((b) => (
+   785→                  <button
+   786→                    key={b.id}
+   787→                    type="button"
+   788→                    onClick={() => setBackground(b.id)}
+   789→                    className={`rounded-full border px-3 py-1.5 text-xs font-medium transition-colors ${
+   790→                      scene.background === b.id
+   791→                        ? "border-orange-600 bg-orange-600 text-white"
+   792→                        : "border-amber-200 bg-white text-amber-900 hover:bg-amber-100"
+   793→                    }`}
+   794→                  >
+   795→                    {b.label}
+   796→                  </button>
+   797→                ))}
+   798→              </div>
+   799→            </CardContent>
+   800→          </Card>
+   801→
+   802→          <Card className="border-amber-200">
+   803→            <CardHeader className="pb-3">
+   804→              <CardTitle className="text-orange-800">
+   805→                👥 ক্যারেক্টার ({bnNum(scene.characters.length)})
+   806→              </CardTitle>
+   807→            </CardHeader>
+   808→            <CardContent className="space-y-3">
+   809→              {scene.characters.length === 0 && (
+   810→                <div className="rounded-lg border border-dashed border-amber-300 p-4 text-center text-sm text-amber-700">
+   811→                  স্টেজে কোনো ক্যারেক্টার নেই।
+   812→                  {onOpenCreator ? (
+   813→                    <Button
+   814→                      size="sm"
+   815→                      variant="outline"
+   816→                      onClick={onOpenCreator}
+   817→                      className="mt-2 border-orange-300 text-orange-700"
+   818→                    >
+   819→                      <UserPlus className="mr-1.5 h-3.5 w-3.5" /> ক্যারেক্টার তৈরি করুন
+   820→                    </Button>
+   821→                  ) : null}
+   822→                </div>
+   823→              )}
+   824→              <div className="thatta-scroll max-h-72 space-y-3 overflow-y-auto pr-1">
+   825→                {scene.characters.map((c) => {
+   826→                  const d = designs.find((x) => x.id === c.designId);
+   827→                  return (
+   828→                    <div
+   829→                      key={c.uid}
+   830→                      className="rounded-xl border border-amber-200 bg-white p-3"
+   831→                    >
+   832→                      <div className="mb-2 flex items-center justify-between">
+   833→                        <p className="text-sm font-bold text-amber-950">
+   834→                          {d?.name ?? "❓ অজানা"}
+   835→                        </p>
+   836→                        <div className="flex gap-1">
+   837→                          <Button
+   838→                            size="sm"
+   839→                            variant="outline"
+   840→                            className="h-7 px-2 text-xs"
+   841→                            onClick={() => updatePlaced(c.uid, { flip: !c.flip })}
+   842→                            aria-label="মুখ ঘোরান"
+   843→                          >
+   844→                            ⇄
+   845→                          </Button>
+   846→                          <Button
+   847→                            size="sm"
+   848→                            variant="outline"
+   849→                            className="h-7 border-rose-200 px-2 text-rose-700 hover:bg-rose-50"
+   850→                            onClick={() => removePlaced(c.uid)}
+   851→                            aria-label="সরান"
+   852→                          >
+   853→                            <Trash2 className="h-3 w-3" />
+   854→                          </Button>
+   855→                        </div>
+   856→                      </div>
+   857→                      <div className="space-y-2.5">
+   858→                        <div>
+   859→                          <div className="mb-1 flex justify-between text-xs text-amber-800">
+   860→                            <span>অবস্থান (X)</span>
+   861→                            <span>{bnNum(Math.round(c.x))}%</span>
+   862→                          </div>
+   863→                          <Slider
+   864→                            value={[c.x]}
+   865→                            min={5}
+   866→                            max={95}
+   867→                            step={1}
+   868→                            onValueChange={(v) => updatePlaced(c.uid, { x: v[0] })}
+   869→                          />
+   870→                        </div>
+   871→                        <div>
+   872→                          <div className="mb-1 flex justify-between text-xs text-amber-800">
+   873→                            <span>সাইজ</span>
+   874→                            <span>×{c.scale.toFixed(1)}</span>
+   875→                          </div>
+   876→                          <Slider
+   877→                            value={[c.scale]}
+   878→                            min={0.8}
+   879→                            max={1.8}
+   880→                            step={0.05}
+   881→                            onValueChange={(v) => updatePlaced(c.uid, { scale: v[0] })}
+   882→                          />
+   883→                        </div>
+   884→                      </div>
+   885→                    </div>
+   886→                  );
+   887→                })}
+   888→              </div>
+   889→              {unplacedDesigns.length > 0 && (
+   890→                <div className="flex gap-2 border-t border-amber-100 pt-3">
+   891→                  <Select
+   892→                    value={undefined}
+   893→                    onValueChange={(v) => addPlaced(v)}
+   894→                  >
+   895→                    <SelectTrigger className="border-amber-300">
+   896→                      <SelectValue placeholder="ক্যারেক্টার বাছুন..." />
+   897→                    </SelectTrigger>
+   898→                    <SelectContent>
+   899→                      {unplacedDesigns.map((d) => (
+   900→                        <SelectItem key={d.id} value={d.id}>
+   901→                          {d.name}
+   902→                        </SelectItem>
+   903→                      ))}
+   904→                    </SelectContent>
+   905→                  </Select>
+   906→                  <span className="self-center text-xs text-amber-700">যোগ করুন</span>
+   907→                </div>
+   908→              )}
+   909→              {designs.length === 0 && (
+   910→                <p className="text-xs text-amber-700">
+   911→                  আগে ক্যারেক্টার তৈরি করুন —{' '}
+   912→                  {onOpenCreator && (
+   913→                    <button
+   914→                      onClick={onOpenCreator}
+   915→                      className="font-bold text-orange-700 underline"
+   916→                    >
+   917→                      ক্যারেক্টার তৈরি ট্যাব
+   918→                    </button>
+   919→                  )}
+   920→                </p>
+   921→              )}
+   922→            </CardContent>
+   923→          </Card>
+   924→        </div>
+   925→
+   926→        {/* ---------- Right: beats ---------- */}
+   927→        <div className="space-y-6">
+   928→          <Card className="border-amber-200">
+   929→            <CardHeader className="pb-3">
+   930→              <CardTitle className="text-orange-800">
+   931→                🎬 দৃশ্য তালিকা ({bnNum(scene.beats.length)}টি বিট)
+   932→              </CardTitle>
+   933→            </CardHeader>
+   934→            <CardContent>
+   935→              <div className="thatta-scroll max-h-80 space-y-2.5 overflow-y-auto pr-1">
+   936→                {scene.beats.map((b, i) => {
+   937→                  const aOpt = ACTION_OPTIONS.find((a) => a.id === b.action);
+   938→                  const hasVoice = !!getCachedAudio(b.id);
+   939→                  return (
+   940→                    <div
+   941→                      key={b.id}
+   942→                      className={`rounded-xl border p-3 ${
+   943→                        activeBeatIdx === i
+   944→                          ? "border-emerald-500 bg-emerald-50"
+   945→                          : "border-amber-200 bg-white"
+   946→                      }`}
+   947→                    >
+   948→                      <div className="flex items-center justify-between gap-2">
+   949→                        <p className="min-w-0 flex-1 truncate text-sm font-semibold text-amber-950">
+   950→                          <span className="mr-1.5 inline-flex h-6 w-6 items-center justify-center rounded-full bg-orange-600 text-xs text-white">
+   951→                            {bnNum(i + 1)}
+   952→                          </span>
+   953→                          {aOpt?.emoji} {designNameOf(b.actorUid) ?? "❓"} — {aOpt?.label}
+   954→                          <span className="ml-1 text-xs text-amber-600">
+   955→                            ({bnNum(b.duration)} সে.)
+   956→                          </span>
+   957→                        </p>
+   958→                        <div className="flex shrink-0 gap-1">
+   959→                          <Button
+   960→                            size="sm"
+   961→                            variant="outline"
+   962→                            className="h-7 w-7 px-0"
+   963→                            onClick={() => moveBeat(b.id, -1)}
+   964→                            disabled={i === 0}
+   965→                            aria-label="উপরে"
+   966→                          >
+   967→                            <ArrowUp className="h-3.5 w-3.5" />
+   968→                          </Button>
+   969→                          <Button
+   970→                            size="sm"
+   971→                            variant="outline"
+   972→                            className="h-7 w-7 px-0"
+   973→                            onClick={() => moveBeat(b.id, 1)}
+   974→                            disabled={i === scene.beats.length - 1}
+   975→                            aria-label="নিচে"
+   976→                          >
+   977→                            <ArrowDown className="h-3.5 w-3.5" />
+   978→                          </Button>
+   979→                          <Button
+   980→                            size="sm"
+   981→                            variant="outline"
+   982→                            className="h-7 w-7 px-0"
+   983→                            onClick={() => startEditBeat(b)}
+   984→                            aria-label="সম্পাদনা"
+   985→                          >
+   986→                            <Pencil className="h-3.5 w-3.5" />
+   987→                          </Button>
+   988→                          <Button
+   989→                            size="sm"
+   990→                            variant="outline"
+   991→                            className="h-7 w-7 border-rose-200 px-0 text-rose-700 hover:bg-rose-50"
+   992→                            onClick={() => removeBeat(b.id)}
+   993→                            aria-label="মুছুন"
+   994→                          >
+   995→                            <Trash2 className="h-3.5 w-3.5" />
+   996→                          </Button>
+   997→                        </div>
+   998→                      </div>
+   999→                      {b.text && (
+  1000→                        <p className="mt-1.5 truncate text-xs text-amber-800">
+  1001→                          💬 {b.text}
+  1002→                        </p>
+  1003→                      )}
+  1004→                      <div className="mt-2 flex items-center gap-2">
+  1005→                        <Button
+  1006→                          size="sm"
+  1007→                          variant="outline"
+  1008→                          className={`h-7 text-xs ${
+  1009→                            hasVoice
+  1010→                              ? "border-emerald-300 text-emerald-700"
+  1011→                              : "border-teal-300 text-teal-800"
+  1012→                          }`}
+  1013→                          onClick={() => genBeatVoice(b)}
+  1014→                          disabled={genBusyId === b.id || !b.text.trim()}
+  1015→                        >
+  1016→                          <Mic className="mr-1 h-3 w-3" />
+  1017→                          {genBusyId === b.id
+  1018→                            ? "জেনারেট হচ্ছে..."
+  1019→                            : hasVoice
+  1020→                              ? "ভয়েস আছে 🔊"
+  1021→                              : "ভয়েস বানান"}
+  1022→                        </Button>
+  1023→                        {b.moveTo != null && (
+  1024→                          <span className="text-xs text-amber-600">
+  1025→                            🚶 হাঁটবে {bnNum(Math.round(b.moveTo))}% পর্যন্ত
+  1026→                          </span>
+  1027→                        )}
+  1028→                      </div>
+  1029→                    </div>
+  1030→                  );
+  1031→                })}
+  1032→                {scene.beats.length === 0 && (
+  1033→                  <p className="rounded-lg border border-dashed border-amber-300 p-6 text-center text-sm text-amber-700">
+  1034→                    এখনো কোনো দৃশ্য নেই। নিচের ফর্ম থেকে প্রথম দৃশ্য যোগ করুন — ক্যারেক্টর
+  1035→                    বাছুন, অ্যাকশন দিন, সংলাপ লিখুন! 👇
+  1036→                  </p>
+  1037→                )}
+  1038→              </div>
+  1039→            </CardContent>
+  1040→          </Card>
+  1041→
+  1042→          <Card className="border-amber-200" ref={editorCardRef as never}>
+  1043→            <CardHeader className="pb-3">
+  1044→              <CardTitle className="flex items-center justify-between text-orange-800">
+  1045→                {editingBeatId ? "✏️ দৃশ্য সম্পাদনা" : "➕ নতুন দৃশ্য (বিট) যোগ করুন"}
+  1046→                {editingBeatId && (
+  1047→                  <Button size="sm" variant="ghost" onClick={resetBeatForm}>
+  1048→                    <X className="mr-1 h-3.5 w-3.5" /> বাতিল
+  1049→                  </Button>
+  1050→                )}
+  1051→              </CardTitle>
+  1052→            </CardHeader>
+  1053→            <CardContent className="space-y-4">
+  1054→              <div className="grid gap-4 sm:grid-cols-2">
+  1055→                <div className="space-y-2">
+  1056→                  <Label className="text-sm font-semibold text-amber-900">ক্যারেক্টার</Label>
+  1057→                  <Select value={actorUid} onValueChange={setActorUid}>
+  1058→                    <SelectTrigger className="border-amber-300">
+  1059→                      <SelectValue placeholder="কে অভিনয় করবে?" />
+  1060→                    </SelectTrigger>
+  1061→                    <SelectContent>
+  1062→                      {scene.characters.map((c) => (
+  1063→                        <SelectItem key={c.uid} value={c.uid}>
+  1064→                          {designNameOf(c.uid) ?? "অজানা"}
+  1065→                        </SelectItem>
+  1066→                      ))}
+  1067→                    </SelectContent>
+  1068→                  </Select>
+  1069→                </div>
+  1070→                <div className="space-y-2">
+  1071→                  <Label className="text-sm font-semibold text-amber-900">অ্যাকশন</Label>
+  1072→                  <Select value={action} onValueChange={(v) => setAction(v as ActionName)}>
+  1073→                    <SelectTrigger className="border-amber-300">
+  1074→                      <SelectValue />
+  1075→                    </SelectTrigger>
+  1076→                    <SelectContent>
+  1077→                      {ACTION_OPTIONS.map((a) => (
+  1078→                        <SelectItem key={a.id} value={a.id}>
+  1079→                          {a.emoji} {a.label}
+  1080→                        </SelectItem>
+  1081→                      ))}
+  1082→                    </SelectContent>
+  1083→                  </Select>
+  1084→                </div>
+  1085→              </div>
+  1086→
+  1087→              <div className="space-y-2">
+  1088→                <div className="flex justify-between">
+  1089→                  <Label className="text-sm font-semibold text-amber-900">সময়</Label>
+  1090→                  <span className="text-sm text-amber-700">{bnNum(duration)} সেকেন্ড</span>
+  1091→                </div>
+  1092→                <Slider
+  1093→                  value={[duration]}
+  1094→                  min={1}
+  1095→                  max={15}
+  1096→                  step={0.5}
+  1097→                  onValueChange={(v) => setDuration(v[0])}
+  1098→                />
+  1099→              </div>
+  1100→
+  1101→              <div className="space-y-2">
+  1102→                <Label className="text-sm font-semibold text-amber-900">
+  1103→                  সংলাপ (ডায়ালগ) — বাংলায় লিখুন
+  1104→                </Label>
+  1105→                <Textarea
+  1106→                  value={text}
+  1107→                  onChange={(e) => setText(e.target.value)}
+  1108→                  placeholder="যেমন: কী রে গোপাল, আবার কী জগাখিচুড়ি শুরু করেছিস?"
+  1109→                  rows={2}
+  1110→                  className="border-amber-300 focus-visible:ring-orange-400"
+  1111→                />
+  1112→                <p className="text-xs text-amber-600">
+  1113→                  সংলাপ সাবটাইটেল হিসেবে দেখাবে আর 🎙 বাটনে চাপলে বাংলা ভয়েস তৈরি হবে।
+  1114→                </p>
+  1115→              </div>
+  1116→
+  1117→              {action === "walk" || action === "run" ? (
+  1118→                <div className="space-y-2">
+  1119→                  <div className="flex justify-between">
+  1120→                    <Label className="text-sm font-semibold text-amber-900">
+  1121→                      কোথা পর্যন্ত যাবে (X)
+  1122→                    </Label>
+  1123→                    <span className="text-sm text-amber-700">{bnNum(moveTo)}%</span>
+  1124→                  </div>
+  1125→                  <Slider
+  1126→                    value={[moveTo]}
+  1127→                    min={5}
+  1128→                    max={95}
+  1129→                    step={1}
+  1130→                    onValueChange={(v) => setMoveTo(v[0])}
+  1131→                  />
+  1132→                  <div className="space-y-2 pt-1">
+  1133→                    <Label className="text-sm font-semibold text-amber-900">
+  1134→                      গতিপথের ভাব (easing)
+  1135→                    </Label>
+  1136→                    <Select
+  1137→                      value={beatEasing}
+  1138→                      onValueChange={(v) => setBeatEasing(v as EasingName)}
+  1139→                    >
+  1140→                      <SelectTrigger className="border-amber-300">
+  1141→                        <SelectValue />
+  1142→                      </SelectTrigger>
+  1143→                      <SelectContent>
+  1144→                        {EASING_OPTIONS.map((e) => (
+  1145→                          <SelectItem key={e.id} value={e.id}>
+  1146→                            {e.label}
+  1147→                          </SelectItem>
+  1148→                        ))}
+  1149→                      </SelectContent>
+  1150→                    </Select>
+  1151→                  </div>
+  1152→                </div>
+  1153→              ) : null}
+  1154→
+  1155→              <div className="space-y-2">
+  1156→                <div className="flex justify-between">
+  1157→                  <Label className="text-sm font-semibold text-amber-900">
+  1158→                    অ্যানিমেশন স্পিড (এই দৃশ্যের)
+  1159→                  </Label>
+  1160→                  <span className="text-sm font-semibold text-orange-700">
+  1161→                    ×{bnNum(beatSpeed.toFixed(2).replace(/\.?0+$/, ""))}
+  1162→                  </span>
+  1163→                </div>
+  1164→                <Slider
+  1165→                  value={[beatSpeed]}
+  1166→                  min={0.5}
+  1167→                  max={2}
+  1168→                  step={0.05}
+  1169→                  onValueChange={(v) => setBeatSpeed(v[0])}
+  1170→                />
+  1171→                <p className="text-xs text-amber-600">
+  1172→                  কম = ধীর ও নাটকীয়, বেশি = দ্রুত ও কৌতুকপূর্ণ। ভয়েসের গতি বদলাবে না।
+  1173→                </p>
+  1174→              </div>
+  1175→
+  1176→              <Button
+  1177→                onClick={submitBeat}
+  1178→                className="w-full bg-orange-600 text-white hover:bg-orange-700 sm:w-auto"
+  1179→              >
+  1180→                {editingBeatId ? "আপডেট করুন" : "দৃশ্য যোগ করুন"}
+  1181→              </Button>
+  1182→            </CardContent>
+  1183→          </Card>
+  1184→        </div>
+  1185→      </div>
+  1186→
+  1187→      {/* ---------- Save dialog ---------- */}
+  1188→      <Dialog open={saveOpen} onOpenChange={setSaveOpen}>
+  1189→        <DialogContent className="sm:max-w-md">
+  1190→          <DialogHeader>
+  1191→            <DialogTitle className="text-orange-800">প্রজেক্ট সেভ করুন</DialogTitle>
+  1192→            <DialogDescription>
+  1193→              সিন, ক্যারেক্টার ও দৃশ্যগুলো সার্ভারে সেভ হবে — যেকোনো সময় লোড করা যাবে।
+  1194→            </DialogDescription>
+  1195→          </DialogHeader>
+  1196→          <div className="space-y-4">
+  1197→            <Input
+  1198→              value={projectName}
+  1199→              onChange={(e) => setProjectName(e.target.value)}
+  1200→              placeholder="প্রজেক্টের নাম: যেমন — গোপাল ও পুলিশ"
+  1201→              className="border-amber-300"
+  1202→            />
+  1203→            <Button
+  1204→              onClick={handleSaveProject}
+  1205→              disabled={saving}
+  1206→              className="w-full bg-orange-600 text-white hover:bg-orange-700"
+  1207→            >
+  1208→              <Save className="mr-2 h-4 w-4" />
+  1209→              {saving ? "সেভ হচ্ছে..." : "সেভ করুন"}
+  1210→            </Button>
+  1211→          </div>
+  1212→        </DialogContent>
+  1213→      </Dialog>
+  1214→
+  1215→      {/* ---------- Load dialog ---------- */}
+  1216→      <Dialog open={loadOpen} onOpenChange={setLoadOpen}>
+  1217→        <DialogContent className="sm:max-w-md">
+  1218→          <DialogHeader>
+  1219→            <DialogTitle className="text-orange-800">প্রজেক্ট লোড করুন</DialogTitle>
+  1220→            <DialogDescription>সেভ করা প্রজেক্ট লিস্ট থেকে বাছুন।</DialogDescription>
+  1221→          </DialogHeader>
+  1222→          <div className="thatta-scroll max-h-72 space-y-2 overflow-y-auto pr-1">
+  1223→            {loadingProjects && (
+  1224→              <p className="py-6 text-center text-sm text-amber-700">লোড হচ্ছে...</p>
+  1225→            )}
+  1226→            {!loadingProjects && projects.length === 0 && (
+  1227→              <p className="py-6 text-center text-sm text-amber-700">
+  1228→                কোনো সেভ করা প্রজেক্ট নেই।
+  1229→              </p>
+  1230→            )}
+  1231→            {projects.map((p) => (
+  1232→              <div
+  1233→                key={p.id}
+  1234→                className="flex items-center justify-between gap-2 rounded-lg border border-amber-200 p-2.5"
+  1235→              >
+  1236→                <div className="min-w-0">
+  1237→                  <p className="truncate text-sm font-semibold text-amber-950">{p.name}</p>
+  1238→                  <p className="text-xs text-amber-600">
+  1239→                    {new Date(p.updatedAt).toLocaleDateString("bn-BD")}
+  1240→                  </p>
+  1241→                </div>
+  1242→                <div className="flex gap-1.5">
+  1243→                  <Button
+  1244→                    size="sm"
+  1245→                    className="h-8 bg-emerald-600 text-white hover:bg-emerald-700"
+  1246→                    onClick={() => loadProject(p.id)}
+  1247→                  >
+  1248→                    লোড
+  1249→                  </Button>
+  1250→                  <Button
+  1251→                    size="sm"
+  1252→                    variant="outline"
+  1253→                    className="h-8 border-rose-200 text-rose-700 hover:bg-rose-50"
+  1254→                    onClick={() => deleteProject(p.id)}
+  1255→                    aria-label="ডিলিট"
+  1256→                  >
+  1257→                    <Trash2 className="h-3.5 w-3.5" />
+  1258→                  </Button>
+  1259→                </div>
+  1260→              </div>
+  1261→            ))}
+  1262→          </div>
+  1263→        </DialogContent>
+  1264→      </Dialog>
+  1265→    </div>
+  1266→  );
+  1267→}
+  1268→

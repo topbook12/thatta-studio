@@ -5,33 +5,34 @@
 // height ≈ 200 units. The caller sets translation/scale/flip.
 // ============================================================
 
-import type { CharacterDesign, Pose } from './types';
-
-const D = Math.PI / 180;
+import type { CharacterDesign, Pose, PropName } from './types';
+import {
+  BROW_Y,
+  D,
+  EYE_LX,
+  EYE_RX,
+  EYE_Y,
+  FOREARM,
+  HEAD_CY,
+  HEAD_CX,
+  HEAD_R,
+  HIP_LX,
+  HIP_RX,
+  HIP_Y,
+  MOUTH_X,
+  MOUTH_Y,
+  SHOULDER_LX,
+  SHOULDER_RX,
+  SHOULDER_Y,
+  SHIN,
+  THIGH,
+  UPPER_ARM,
+  handXform,
+} from './skeleton';
+import { drawProp } from './props';
 
 /** consistent cartoon outline color */
 const OUTLINE = '#4a352b';
-
-// ---------------- skeleton constants ----------------
-const HIP_Y = -88;
-const HIP_LX = -9;
-const HIP_RX = 9;
-const THIGH = 44;
-const SHIN = 44;
-const SHOULDER_Y = -142;
-const SHOULDER_LX = -22;
-const SHOULDER_RX = 22;
-const UPPER_ARM = 32;
-const FOREARM = 30;
-const HEAD_CX = 0;
-const HEAD_CY = -182;
-const HEAD_R = 30;
-const EYE_LX = -11;
-const EYE_RX = 11;
-const EYE_Y = HEAD_CY - 8;
-const BROW_Y = HEAD_CY - 17;
-const MOUTH_X = 2;
-const MOUTH_Y = HEAD_CY + 15;
 
 // ---------------- small helpers ----------------
 
@@ -119,6 +120,7 @@ function drawArm(
   elbow: number,
   upperColor: string,
   foreColor: string,
+  fist = false,
 ) {
   ctx.save();
   ctx.translate(jx, jy);
@@ -127,7 +129,19 @@ function drawArm(
   ctx.translate(0, UPPER_ARM);
   ctx.rotate(elbow * D);
   capsule(ctx, 0, 0, 0, FOREARM, 9, foreColor);
-  outlinedCircle(ctx, 0, FOREARM + 2, 6, foreColor);
+  // hand — open or gripping fist (grip reads stronger for action beats)
+  outlinedCircle(ctx, 0, FOREARM + 2, fist ? 7.6 : 6, foreColor);
+  if (fist) {
+    ctx.strokeStyle = 'rgba(74,53,43,0.55)';
+    ctx.lineWidth = 1.6;
+    ctx.lineCap = 'round';
+    ctx.beginPath();
+    ctx.moveTo(-3.2, FOREARM + 3.4);
+    ctx.lineTo(3.2, FOREARM + 3.4);
+    ctx.moveTo(-2.6, FOREARM + 6.2);
+    ctx.lineTo(2.6, FOREARM + 6.2);
+    ctx.stroke();
+  }
   ctx.restore();
 }
 
@@ -693,6 +707,141 @@ function drawTears(ctx: CanvasRenderingContext2D, t: number) {
   drop(EYE_RX + 2, 0.5);
 }
 
+// ---------------- face FX (expression engine v2) ----------------
+
+/**
+ * Comic-book overlays drawn around the head. Everything is drawn with
+ * symmetric shapes (no text glyphs) so the character flip never mirrors
+ * anything into nonsense.
+ */
+function drawFaceFx(ctx: CanvasRenderingContext2D, fx: FaceFx[], t: number) {
+  if (!fx || fx.length === 0) return;
+
+  // 🔴 anger vein — pulsing cross on the temple
+  if (fx.includes('angerVein')) {
+    const pulse = 1 + Math.sin(t * 11) * 0.16;
+    ctx.save();
+    ctx.translate(HEAD_R + 6, HEAD_CY - 16);
+    ctx.scale(pulse, pulse);
+    ctx.strokeStyle = '#dc2626';
+    ctx.lineWidth = 3.4;
+    ctx.lineCap = 'round';
+    for (const [dx, dy, ex, ey] of [
+      [-5, -5, 5, 5],
+      [-5, 5, 5, -5],
+    ] as const) {
+      ctx.beginPath();
+      ctx.moveTo(dx, dy);
+      ctx.lineTo(ex, ey);
+      ctx.stroke();
+    }
+    ctx.restore();
+  }
+
+  // 💨 steam puffs rising from the top of the head
+  if (fx.includes('steam')) {
+    for (let i = 0; i < 3; i++) {
+      const ph = (t * 0.75 + i / 3) % 1;
+      const x = (i - 1) * 16 + Math.sin(ph * 6 + i * 2) * 4;
+      const y = HEAD_CY - HEAD_R - 6 - ph * 30;
+      const r = 4 + ph * 7;
+      ctx.fillStyle = `rgba(120, 113, 108, ${0.42 * (1 - ph)})`;
+      ctx.beginPath();
+      ctx.arc(x, y, r, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  }
+
+  // 💦 sweat drop flicking off the temple
+  if (fx.includes('sweat')) {
+    const ph = (t * 1.15) % 1;
+    const x = HEAD_R - 2 + ph * 26;
+    const y = HEAD_CY - 20 - Math.sin(ph * Math.PI) * 16;
+    ctx.fillStyle = `rgba(56, 189, 248, ${0.95 * (1 - ph * 0.55)})`;
+    ctx.beginPath();
+    ctx.ellipse(x, y, 3.6, 5.2, 0.5, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.strokeStyle = 'rgba(2, 132, 199, 0.5)';
+    ctx.lineWidth = 1.4;
+    ctx.stroke();
+  }
+
+  // ❗ shock lines radiating from the head
+  if (fx.includes('shockLines')) {
+    const flick = 0.65 + Math.abs(Math.sin(t * 9)) * 0.35;
+    ctx.strokeStyle = `rgba(194, 65, 12, ${flick})`;
+    ctx.lineWidth = 3.2;
+    ctx.lineCap = 'round';
+    const angles = [-125, -95, -85, -55, -25];
+    for (const aDeg of angles) {
+      const a = aDeg * D;
+      const r0 = HEAD_R + 7;
+      const r1 = HEAD_R + 15 + (aDeg % 2 === 0 ? 4 : 0);
+      ctx.beginPath();
+      ctx.moveTo(Math.cos(a) * r0, HEAD_CY + Math.sin(a) * r0);
+      ctx.lineTo(Math.cos(a) * r1, HEAD_CY + Math.sin(a) * r1);
+      ctx.stroke();
+    }
+  }
+
+  // 🎵 music notes floating up (drawn, not text — flip-safe)
+  if (fx.includes('music')) {
+    for (let i = 0; i < 2; i++) {
+      const ph = (t * 0.6 + i * 0.5) % 1;
+      const x = HEAD_R + 8 + i * 13;
+      const y = HEAD_CY - 26 - ph * 34;
+      const alpha = 0.85 * (1 - ph);
+      ctx.fillStyle = `rgba(124, 45, 18, ${alpha})`;
+      ctx.strokeStyle = `rgba(124, 45, 18, ${alpha})`;
+      ctx.lineWidth = 2.2;
+      ctx.lineCap = 'round';
+      // note head + stem + flag
+      ctx.beginPath();
+      ctx.ellipse(x, y, 3.4, 2.6, -0.4, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.beginPath();
+      ctx.moveTo(x + 3, y - 1);
+      ctx.lineTo(x + 3, y - 13);
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.moveTo(x + 3, y - 13);
+      ctx.quadraticCurveTo(x + 9, y - 11, x + 7, y - 5);
+      ctx.stroke();
+    }
+  }
+
+  // 😊 blush on the cheeks
+  if (fx.includes('blush')) {
+    ctx.fillStyle = 'rgba(244, 63, 94, 0.28)';
+    ctx.beginPath();
+    ctx.ellipse(EYE_LX - 1, HEAD_CY + 8, 6, 3.6, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.beginPath();
+    ctx.ellipse(EYE_RX + 1, HEAD_CY + 8, 6, 3.6, 0, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  // 💤 sleep z's (drawn as line-based z so mirroring stays readable)
+  if (fx.includes('zzz')) {
+    for (let i = 0; i < 3; i++) {
+      const ph = (t * 0.5 + i * 0.33) % 1;
+      const s = 4 + i * 2.4;
+      const x = HEAD_R + 8 + i * 9;
+      const y = HEAD_CY - HEAD_R - 4 - ph * 22;
+      const alpha = 0.8 * (1 - ph);
+      ctx.strokeStyle = `rgba(100, 116, 139, ${alpha})`;
+      ctx.lineWidth = 2.4;
+      ctx.lineCap = 'round';
+      ctx.beginPath();
+      ctx.moveTo(x - s, y - s);
+      ctx.lineTo(x + s, y - s);
+      ctx.lineTo(x - s, y + s);
+      ctx.lineTo(x + s, y + s);
+      ctx.stroke();
+    }
+  }
+}
+
 function drawHeadwear(ctx: CanvasRenderingContext2D, d: CharacterDesign) {
   const c = d.headwearColor;
   const dark = shade(c, -0.22);
@@ -783,6 +932,7 @@ function drawHead(ctx: CanvasRenderingContext2D, d: CharacterDesign, pose: Pose,
   if (d.glasses) drawGlasses(ctx);
   if (pose.tears) drawTears(ctx, t);
   drawHeadwear(ctx, d);
+  if (pose.fx && pose.fx.length > 0) drawFaceFx(ctx, pose.fx, t);
 
   ctx.restore();
 }
@@ -798,6 +948,7 @@ export function drawCharacter(
   d: CharacterDesign,
   pose: Pose,
   t: number = 0,
+  prop: PropName = 'none',
 ) {
   ctx.save();
   ctx.rotate(pose.bodyLean * D);
@@ -827,7 +978,19 @@ export function drawCharacter(
   drawArm(ctx, SHOULDER_LX, SHOULDER_Y, pose.shoulderL, pose.elbowL, upperArmColor, foreArmColor);
   drawTorso(ctx, d);
   drawHead(ctx, d, pose, t);
-  drawArm(ctx, SHOULDER_RX, SHOULDER_Y, pose.shoulderR, pose.elbowR, upperArmColor, foreArmColor);
+  drawArm(
+    ctx,
+    SHOULDER_RX,
+    SHOULDER_Y,
+    pose.shoulderR,
+    pose.elbowR,
+    upperArmColor,
+    foreArmColor,
+    pose.fist ?? false,
+  );
+
+  // prop in the near hand (follows the hand via forward kinematics)
+  if (prop && prop !== 'none') drawProp(ctx, prop, pose, t);
 
   ctx.restore();
 }

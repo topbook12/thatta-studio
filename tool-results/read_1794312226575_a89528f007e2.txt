@@ -1,0 +1,843 @@
+     1→// ============================================================
+     2→// ঠাট্টা স্টুডিও — Character renderer (flat cutout style, Canvas 2D)
+     3→//
+     4→// Local coordinate system: ground at y=0, character faces +x,
+     5→// height ≈ 200 units. The caller sets translation/scale/flip.
+     6→// ============================================================
+     7→
+     8→import type { CharacterDesign, Pose } from './types';
+     9→
+    10→const D = Math.PI / 180;
+    11→
+    12→/** consistent cartoon outline color */
+    13→const OUTLINE = '#4a352b';
+    14→
+    15→// ---------------- skeleton constants ----------------
+    16→const HIP_Y = -88;
+    17→const HIP_LX = -9;
+    18→const HIP_RX = 9;
+    19→const THIGH = 44;
+    20→const SHIN = 44;
+    21→const SHOULDER_Y = -142;
+    22→const SHOULDER_LX = -22;
+    23→const SHOULDER_RX = 22;
+    24→const UPPER_ARM = 32;
+    25→const FOREARM = 30;
+    26→const HEAD_CX = 0;
+    27→const HEAD_CY = -182;
+    28→const HEAD_R = 30;
+    29→const EYE_LX = -11;
+    30→const EYE_RX = 11;
+    31→const EYE_Y = HEAD_CY - 8;
+    32→const BROW_Y = HEAD_CY - 17;
+    33→const MOUTH_X = 2;
+    34→const MOUTH_Y = HEAD_CY + 15;
+    35→
+    36→// ---------------- small helpers ----------------
+    37→
+    38→function shade(hex: string, amt: number): string {
+    39→  const h = hex.replace('#', '');
+    40→  const num = parseInt(h.length === 3 ? h.replace(/./g, (c) => c + c) : h, 16);
+    41→  let r = (num >> 16) & 255;
+    42→  let g = (num >> 8) & 255;
+    43→  let b = num & 255;
+    44→  const f = (v: number) =>
+    45→    Math.max(0, Math.min(255, Math.round(amt >= 0 ? v + (255 - v) * amt : v * (1 + amt))));
+    46→  r = f(r);
+    47→  g = f(g);
+    48→  b = f(b);
+    49→  return `rgb(${r},${g},${b})`;
+    50→}
+    51→
+    52→function rr(ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h: number, r: number) {
+    53→  ctx.beginPath();
+    54→  ctx.moveTo(x + r, y);
+    55→  ctx.arcTo(x + w, y, x + w, y + h, r);
+    56→  ctx.arcTo(x + w, y + h, x, y + h, r);
+    57→  ctx.arcTo(x, y + h, x, y, r);
+    58→  ctx.arcTo(x, y, x + w, y, r);
+    59→  ctx.closePath();
+    60→}
+    61→
+    62→function capsule(
+    63→  ctx: CanvasRenderingContext2D,
+    64→  x0: number,
+    65→  y0: number,
+    66→  x1: number,
+    67→  y1: number,
+    68→  w: number,
+    69→  color: string,
+    70→  outline = true,
+    71→) {
+    72→  ctx.lineCap = 'round';
+    73→  if (outline) {
+    74→    ctx.strokeStyle = OUTLINE;
+    75→    ctx.lineWidth = w + 3.4;
+    76→    ctx.beginPath();
+    77→    ctx.moveTo(x0, y0);
+    78→    ctx.lineTo(x1, y1);
+    79→    ctx.stroke();
+    80→  }
+    81→  ctx.strokeStyle = color;
+    82→  ctx.lineWidth = w;
+    83→  ctx.beginPath();
+    84→  ctx.moveTo(x0, y0);
+    85→  ctx.lineTo(x1, y1);
+    86→  ctx.stroke();
+    87→}
+    88→
+    89→function outlinedCircle(
+    90→  ctx: CanvasRenderingContext2D,
+    91→  x: number,
+    92→  y: number,
+    93→  r: number,
+    94→  color: string,
+    95→) {
+    96→  ctx.fillStyle = color;
+    97→  ctx.beginPath();
+    98→  ctx.arc(x, y, r, 0, Math.PI * 2);
+    99→  ctx.fill();
+   100→  ctx.strokeStyle = OUTLINE;
+   101→  ctx.lineWidth = 2;
+   102→  ctx.stroke();
+   103→}
+   104→
+   105→function circle(ctx: CanvasRenderingContext2D, x: number, y: number, r: number, color: string) {
+   106→  ctx.fillStyle = color;
+   107→  ctx.beginPath();
+   108→  ctx.arc(x, y, r, 0, Math.PI * 2);
+   109→  ctx.fill();
+   110→}
+   111→
+   112→// ---------------- limbs ----------------
+   113→
+   114→function drawArm(
+   115→  ctx: CanvasRenderingContext2D,
+   116→  jx: number,
+   117→  jy: number,
+   118→  shoulder: number,
+   119→  elbow: number,
+   120→  upperColor: string,
+   121→  foreColor: string,
+   122→) {
+   123→  ctx.save();
+   124→  ctx.translate(jx, jy);
+   125→  ctx.rotate(-shoulder * D);
+   126→  capsule(ctx, 0, 0, 0, UPPER_ARM, 11, upperColor);
+   127→  ctx.translate(0, UPPER_ARM);
+   128→  ctx.rotate(elbow * D);
+   129→  capsule(ctx, 0, 0, 0, FOREARM, 9, foreColor);
+   130→  outlinedCircle(ctx, 0, FOREARM + 2, 6, foreColor);
+   131→  ctx.restore();
+   132→}
+   133→
+   134→function drawLeg(
+   135→  ctx: CanvasRenderingContext2D,
+   136→  hipX: number,
+   137→  hip: number,
+   138→  knee: number,
+   139→  thighColor: string,
+   140→  shinColor: string,
+   141→  shoeColor: string | null,
+   142→) {
+   143→  ctx.save();
+   144→  ctx.translate(hipX, HIP_Y);
+   145→  ctx.rotate(-hip * D);
+   146→  capsule(ctx, 0, 0, 0, THIGH, 14, thighColor);
+   147→  ctx.translate(0, THIGH);
+   148→  ctx.rotate(knee * D);
+   149→  capsule(ctx, 0, 0, 0, SHIN, 12, shinColor);
+   150→  ctx.save();
+   151→  ctx.translate(0, SHIN - 2);
+   152→  ctx.fillStyle = shoeColor ?? shade(shinColor, -0.22);
+   153→  ctx.beginPath();
+   154→  ctx.ellipse(5, 2, 11, 6, -0.08, 0, Math.PI * 2);
+   155→  ctx.fill();
+   156→  ctx.strokeStyle = OUTLINE;
+   157→  ctx.lineWidth = 2;
+   158→  ctx.stroke();
+   159→  ctx.restore();
+   160→  ctx.restore();
+   161→}
+   162→
+   163→function drawBottom(
+   164→  ctx: CanvasRenderingContext2D,
+   165→  d: CharacterDesign,
+   166→  pose: Pose,
+   167→) {
+   168→  const skinDk = shade(d.skin, -0.18);
+   169→  switch (d.bottomStyle) {
+   170→    case 0: // প্যান্ট
+   171→      drawLeg(ctx, HIP_LX, pose.hipL, pose.kneeL, d.bottomColor, d.bottomColor, '#3f3f46');
+   172→      drawLeg(ctx, HIP_RX, pose.hipR, pose.kneeR, d.bottomColor, d.bottomColor, '#3f3f46');
+   173→      break;
+   174→    case 1: {
+   175→      // লুঙ্গি
+   176→      drawLeg(ctx, HIP_LX, pose.hipL, pose.kneeL, d.skin, d.skin, null);
+   177→      drawLeg(ctx, HIP_RX, pose.hipR, pose.kneeR, d.skin, d.skin, null);
+   178→      const sway = Math.sin(pose.hipL * D) * 3;
+   179→      ctx.fillStyle = d.bottomColor;
+   180→      ctx.beginPath();
+   181→      ctx.moveTo(-14, HIP_Y - 6);
+   182→      ctx.lineTo(14, HIP_Y - 6);
+   183→      ctx.lineTo(19 + sway, HIP_Y + 46);
+   184→      ctx.lineTo(-19 + sway, HIP_Y + 46);
+   185→      ctx.closePath();
+   186→      ctx.fill();
+   187→      ctx.strokeStyle = shade(d.bottomColor, -0.22);
+   188→      ctx.lineWidth = 2;
+   189→      for (let i = -1; i <= 1; i++) {
+   190→        ctx.beginPath();
+   191→        ctx.moveTo(i * 9, HIP_Y - 4);
+   192→        ctx.lineTo(i * 11 + sway, HIP_Y + 44);
+   193→        ctx.stroke();
+   194→      }
+   195→      ctx.strokeStyle = shade(d.bottomColor, -0.35);
+   196→      ctx.lineWidth = 3;
+   197→      ctx.beginPath();
+   198→      ctx.moveTo(-18 + sway, HIP_Y + 44);
+   199→      ctx.lineTo(18 + sway, HIP_Y + 44);
+   200→      ctx.stroke();
+   201→      break;
+   202→    }
+   203→    case 2: // পায়জামা
+   204→      drawLeg(ctx, HIP_LX, pose.hipL, pose.kneeL, d.bottomColor, d.bottomColor, d.bottomColor);
+   205→      drawLeg(ctx, HIP_RX, pose.hipR, pose.kneeR, d.bottomColor, d.bottomColor, d.bottomColor);
+   206→      ctx.strokeStyle = shade(d.bottomColor, -0.4);
+   207→      ctx.lineWidth = 3;
+   208→      ctx.beginPath();
+   209→      ctx.moveTo(-11, HIP_Y + 2);
+   210→      ctx.lineTo(11, HIP_Y + 2);
+   211→      ctx.stroke();
+   212→      circle(ctx, 0, HIP_Y + 5, 2.6, shade(d.bottomColor, -0.4));
+   213→      break;
+   214→    case 3: {
+   215→      // স্কার্ট
+   216→      drawLeg(ctx, HIP_LX, pose.hipL, pose.kneeL, d.skin, d.skin, '#3f3f46');
+   217→      drawLeg(ctx, HIP_RX, pose.hipR, pose.kneeR, d.skin, d.skin, '#3f3f46');
+   218→      ctx.fillStyle = d.bottomColor;
+   219→      ctx.beginPath();
+   220→      ctx.moveTo(-13, HIP_Y - 6);
+   221→      ctx.lineTo(13, HIP_Y - 6);
+   222→      ctx.quadraticCurveTo(24, HIP_Y + 22, 27, HIP_Y + 50);
+   223→      ctx.lineTo(-27, HIP_Y + 50);
+   224→      ctx.quadraticCurveTo(-24, HIP_Y + 22, -13, HIP_Y - 6);
+   225→      ctx.closePath();
+   226→      ctx.fill();
+   227→      ctx.strokeStyle = shade(d.bottomColor, -0.22);
+   228→      ctx.lineWidth = 2;
+   229→      ctx.beginPath();
+   230→      ctx.moveTo(-8, HIP_Y + 4);
+   231→      ctx.quadraticCurveTo(-14, HIP_Y + 26, -17, HIP_Y + 48);
+   232→      ctx.moveTo(8, HIP_Y + 4);
+   233→      ctx.quadraticCurveTo(14, HIP_Y + 26, 17, HIP_Y + 48);
+   234→      ctx.stroke();
+   235→      break;
+   236→    }
+   237→    default:
+   238→      drawLeg(ctx, HIP_LX, pose.hipL, pose.kneeL, skinDk, skinDk, null);
+   239→      drawLeg(ctx, HIP_RX, pose.hipR, pose.kneeR, skinDk, skinDk, null);
+   240→  }
+   241→}
+   242→
+   243→// ---------------- torso ----------------
+   244→
+   245→function drawTorso(ctx: CanvasRenderingContext2D, d: CharacterDesign) {
+   246→  const dark = shade(d.topColor, -0.25);
+   247→  switch (d.topStyle) {
+   248→    case 1: {
+   249→      // পাঞ্জাবি (long kurta)
+   250→      ctx.fillStyle = d.topColor;
+   251→      ctx.beginPath();
+   252→      ctx.moveTo(-21, -150);
+   253→      ctx.quadraticCurveTo(-27, -120, -26, -70);
+   254→      ctx.lineTo(26, -70);
+   255→      ctx.quadraticCurveTo(27, -120, 21, -150);
+   256→      ctx.closePath();
+   257→      ctx.fill();
+   258→      ctx.strokeStyle = OUTLINE;
+   259→      ctx.lineWidth = 2.4;
+   260→      ctx.stroke();
+   261→      // subtle side shading
+   262→      ctx.save();
+   263→      ctx.clip();
+   264→      const g1 = ctx.createLinearGradient(-26, 0, 26, 0);
+   265→      g1.addColorStop(0, 'rgba(255,255,255,0.14)');
+   266→      g1.addColorStop(0.55, 'rgba(255,255,255,0)');
+   267→      g1.addColorStop(1, 'rgba(0,0,0,0.12)');
+   268→      ctx.fillStyle = g1;
+   269→      ctx.fillRect(-30, -155, 60, 90);
+   270→      ctx.restore();
+   271→      ctx.strokeStyle = dark;
+   272→      ctx.lineWidth = 2;
+   273→      ctx.beginPath();
+   274→      ctx.moveTo(0, -148);
+   275→      ctx.lineTo(6, -132);
+   276→      ctx.moveTo(0, -148);
+   277→      ctx.lineTo(-6, -132);
+   278→      ctx.stroke();
+   279→      for (let i = 0; i < 3; i++) circle(ctx, 2, -126 + i * 14, 1.8, dark);
+   280→      break;
+   281→    }
+   282→    case 2: // শার্ট
+   283→      ctx.fillStyle = d.topColor;
+   284→      rr(ctx, -23, -148, 46, 62, 10);
+   285→      ctx.fill();
+   286→      ctx.strokeStyle = OUTLINE;
+   287→      ctx.lineWidth = 2.4;
+   288→      ctx.stroke();
+   289→      ctx.fillStyle = shade(d.topColor, 0.25);
+   290→      ctx.beginPath();
+   291→      ctx.moveTo(-6, -148);
+   292→      ctx.lineTo(0, -138);
+   293→      ctx.lineTo(-12, -132);
+   294→      ctx.closePath();
+   295→      ctx.fill();
+   296→      ctx.beginPath();
+   297→      ctx.moveTo(6, -148);
+   298→      ctx.lineTo(0, -138);
+   299→      ctx.lineTo(12, -132);
+   300→      ctx.closePath();
+   301→      ctx.fill();
+   302→      ctx.strokeStyle = dark;
+   303→      ctx.lineWidth = 2;
+   304→      ctx.beginPath();
+   305→      ctx.moveTo(6, -128);
+   306→      ctx.lineTo(16, -128);
+   307→      ctx.lineTo(16, -114);
+   308→      ctx.lineTo(6, -114);
+   309→      ctx.closePath();
+   310→      ctx.stroke();
+   311→      break;
+   312→    case 3: {
+   313→      // কুর্তি
+   314→      ctx.fillStyle = d.topColor;
+   315→      ctx.beginPath();
+   316→      ctx.moveTo(-20, -150);
+   317→      ctx.quadraticCurveTo(-30, -118, -29, -62);
+   318→      ctx.lineTo(29, -62);
+   319→      ctx.quadraticCurveTo(30, -118, 20, -150);
+   320→      ctx.closePath();
+   321→      ctx.fill();
+   322→      ctx.strokeStyle = OUTLINE;
+   323→      ctx.lineWidth = 2.4;
+   324→      ctx.stroke();
+   325→      ctx.save();
+   326→      ctx.clip();
+   327→      const g2 = ctx.createLinearGradient(-29, 0, 29, 0);
+   328→      g2.addColorStop(0, 'rgba(255,255,255,0.15)');
+   329→      g2.addColorStop(0.55, 'rgba(255,255,255,0)');
+   330→      g2.addColorStop(1, 'rgba(0,0,0,0.12)');
+   331→      ctx.fillStyle = g2;
+   332→      ctx.fillRect(-32, -155, 64, 98);
+   333→      ctx.restore();
+   334→      ctx.strokeStyle = shade(d.topColor, -0.2);
+   335→      ctx.lineWidth = 2;
+   336→      ctx.beginPath();
+   337→      ctx.moveTo(0, -146);
+   338→      ctx.lineTo(0, -128);
+   339→      ctx.stroke();
+   340→      circle(ctx, 0, -124, 2.6, shade(d.topColor, -0.3));
+   341→      break;
+   342→    }
+   343→    case 4: // ভেস্ট
+   344→      ctx.fillStyle = d.skin;
+   345→      rr(ctx, -22, -148, 44, 60, 12);
+   346→      ctx.fill();
+   347→      ctx.strokeStyle = OUTLINE;
+   348→      ctx.lineWidth = 2.4;
+   349→      ctx.stroke();
+   350→      ctx.fillStyle = d.topColor;
+   351→      ctx.beginPath();
+   352→      ctx.moveTo(-23, -148);
+   353→      ctx.lineTo(-3, -148);
+   354→      ctx.lineTo(-3, -90);
+   355→      ctx.lineTo(-23, -90);
+   356→      ctx.closePath();
+   357→      ctx.fill();
+   358→      ctx.strokeStyle = OUTLINE;
+   359→      ctx.lineWidth = 2.2;
+   360→      ctx.stroke();
+   361→      ctx.beginPath();
+   362→      ctx.moveTo(23, -148);
+   363→      ctx.lineTo(3, -148);
+   364→      ctx.lineTo(3, -90);
+   365→      ctx.lineTo(23, -90);
+   366→      ctx.closePath();
+   367→      ctx.fill();
+   368→      ctx.stroke();
+   369→      ctx.strokeStyle = shade(d.topColor, -0.25);
+   370→      ctx.lineWidth = 2.4;
+   371→      ctx.beginPath();
+   372→      ctx.moveTo(-3, -146);
+   373→      ctx.lineTo(3, -146);
+   374→      ctx.stroke();
+   375→      break;
+   376→    default: // টি-শার্ট
+   377→      ctx.fillStyle = d.topColor;
+   378→      rr(ctx, -23, -148, 46, 62, 14);
+   379→      ctx.fill();
+   380→      ctx.strokeStyle = OUTLINE;
+   381→      ctx.lineWidth = 2.4;
+   382→      ctx.stroke();
+   383→      ctx.save();
+   384→      ctx.clip();
+   385→      const g0 = ctx.createLinearGradient(-23, 0, 23, 0);
+   386→      g0.addColorStop(0, 'rgba(255,255,255,0.14)');
+   387→      g0.addColorStop(0.55, 'rgba(255,255,255,0)');
+   388→      g0.addColorStop(1, 'rgba(0,0,0,0.12)');
+   389→      ctx.fillStyle = g0;
+   390→      ctx.fillRect(-26, -152, 52, 70);
+   391→      ctx.restore();
+   392→      ctx.strokeStyle = shade(d.topColor, -0.18);
+   393→      ctx.lineWidth = 2;
+   394→      ctx.beginPath();
+   395→      ctx.moveTo(-8, -148);
+   396→      ctx.quadraticCurveTo(0, -140, 8, -148);
+   397→      ctx.stroke();
+   398→  }
+   399→  // waist line
+   400→  ctx.strokeStyle = 'rgba(0,0,0,0.12)';
+   401→  ctx.lineWidth = 2;
+   402→  ctx.beginPath();
+   403→  ctx.moveTo(-20, HIP_Y - 2);
+   404→  ctx.lineTo(20, HIP_Y - 2);
+   405→  ctx.stroke();
+   406→}
+   407→
+   408→// ---------------- head & face ----------------
+   409→
+   410→function drawHairBack(ctx: CanvasRenderingContext2D, d: CharacterDesign) {
+   411→  if (d.hairStyle === 4) {
+   412→    // লম্বা চুল (behind head)
+   413→    ctx.fillStyle = d.hairColor;
+   414→    ctx.beginPath();
+   415→    ctx.moveTo(-HEAD_R - 2, HEAD_CY - 12);
+   416→    ctx.quadraticCurveTo(-HEAD_R - 8, HEAD_CY + 30, -HEAD_R - 4, HEAD_CY + 46);
+   417→    ctx.lineTo(HEAD_R + 4, HEAD_CY + 46);
+   418→    ctx.quadraticCurveTo(HEAD_R + 8, HEAD_CY + 30, HEAD_R + 2, HEAD_CY - 12);
+   419→    ctx.closePath();
+   420→    ctx.fill();
+   421→  }
+   422→}
+   423→
+   424→function drawHair(ctx: CanvasRenderingContext2D, d: CharacterDesign) {
+   425→  const hc = d.hairColor;
+   426→  const topY = HEAD_CY - HEAD_R;
+   427→  ctx.fillStyle = hc;
+   428→  switch (d.hairStyle) {
+   429→    case 0: // টাক
+   430→      ctx.strokeStyle = hc;
+   431→      ctx.lineWidth = 5;
+   432→      ctx.lineCap = 'round';
+   433→      ctx.beginPath();
+   434→      ctx.arc(-HEAD_R + 4, HEAD_CY - 6, 6, 0.5, 2.4);
+   435→      ctx.stroke();
+   436→      ctx.beginPath();
+   437→      ctx.arc(HEAD_R - 4, HEAD_CY - 6, 6, 0.7, 2.6);
+   438→      ctx.stroke();
+   439→      break;
+   440→    case 1: // ছোট চুল
+   441→      ctx.beginPath();
+   442→      ctx.arc(HEAD_CX, HEAD_CY - 2, HEAD_R + 1, Math.PI * 1.02, Math.PI * 1.98);
+   443→      ctx.quadraticCurveTo(HEAD_CX + 12, HEAD_CY - HEAD_R + 4, HEAD_CX - 8, topY + 8);
+   444→      ctx.closePath();
+   445→      ctx.fill();
+   446→      break;
+   447→    case 2: {
+   448→      // কাঁকানো (spiky)
+   449→      ctx.beginPath();
+   450→      ctx.moveTo(-HEAD_R, HEAD_CY - 8);
+   451→      const spikes = 6;
+   452→      for (let i = 0; i <= spikes; i++) {
+   453→        const x = -HEAD_R + (i * (HEAD_R * 2)) / spikes;
+   454→        const baseY = topY + 6 + Math.abs(i - spikes / 2) * 2;
+   455→        const sx = -HEAD_R + ((i + 0.5) * (HEAD_R * 2)) / spikes;
+   456→        ctx.lineTo(sx, baseY - 12);
+   457→        ctx.lineTo(x, baseY);
+   458→      }
+   459→      ctx.quadraticCurveTo(0, HEAD_CY - HEAD_R - 2, -HEAD_R, HEAD_CY - 8);
+   460→      ctx.closePath();
+   461→      ctx.fill();
+   462→      break;
+   463→    }
+   464→    case 3: // মাঝ বিভক্ত
+   465→      ctx.beginPath();
+   466→      ctx.arc(HEAD_CX, HEAD_CY - 2, HEAD_R + 1, Math.PI * 1.0, Math.PI * 2.0);
+   467→      ctx.quadraticCurveTo(HEAD_CX + 8, HEAD_CY - HEAD_R + 6, HEAD_CX + 4, topY + 4);
+   468→      ctx.quadraticCurveTo(HEAD_CX, HEAD_CY - HEAD_R + 14, HEAD_CX - 4, topY + 4);
+   469→      ctx.quadraticCurveTo(HEAD_CX - 8, HEAD_CY - HEAD_R + 6, HEAD_CX - HEAD_R - 1, HEAD_CY - 2);
+   470→      ctx.closePath();
+   471→      ctx.fill();
+   472→      break;
+   473→    case 4: // লম্বা — সামনের ফ্রিঞ্জ
+   474→      ctx.beginPath();
+   475→      ctx.arc(HEAD_CX, HEAD_CY - 2, HEAD_R + 1, Math.PI * 1.02, Math.PI * 1.98);
+   476→      ctx.quadraticCurveTo(HEAD_CX + 14, HEAD_CY - HEAD_R + 8, HEAD_CX + 10, topY + 16);
+   477→      ctx.quadraticCurveTo(HEAD_CX - 6, HEAD_CY - HEAD_R + 12, HEAD_CX - 14, topY + 12);
+   478→      ctx.closePath();
+   479→      ctx.fill();
+   480→      break;
+   481→    case 5: // খোপা
+   482→      ctx.beginPath();
+   483→      ctx.arc(HEAD_CX, HEAD_CY - 2, HEAD_R + 1, Math.PI * 1.02, Math.PI * 1.98);
+   484→      ctx.closePath();
+   485→      ctx.fill();
+   486→      circle(ctx, HEAD_CX, topY - 7, 10, hc);
+   487→      circle(ctx, HEAD_CX, topY - 7, 5, shade(hc, -0.25));
+   488→      break;
+   489→  }
+   490→}
+   491→
+   492→function drawBeard(ctx: CanvasRenderingContext2D, d: CharacterDesign) {
+   493→  const c = d.hairColor;
+   494→  if (d.beardStyle === 1 || d.beardStyle === 3) {
+   495→    // গোঁফ
+   496→    ctx.strokeStyle = c;
+   497→    ctx.lineWidth = 4.5;
+   498→    ctx.lineCap = 'round';
+   499→    ctx.beginPath();
+   500→    ctx.arc(-5, MOUTH_Y - 9, 6, Math.PI * 1.15, Math.PI * 1.95);
+   501→    ctx.stroke();
+   502→    ctx.beginPath();
+   503→    ctx.arc(8, MOUTH_Y - 9, 6, Math.PI * 1.05, Math.PI * 1.85);
+   504→    ctx.stroke();
+   505→  }
+   506→  if (d.beardStyle === 2 || d.beardStyle === 3) {
+   507→    ctx.fillStyle = c;
+   508→    ctx.beginPath();
+   509→    ctx.arc(HEAD_CX, HEAD_CY + 4, HEAD_R + 1, 0.45, Math.PI - 0.45);
+   510→    ctx.closePath();
+   511→    ctx.fill();
+   512→  }
+   513→}
+   514→
+   515→function drawEyes(ctx: CanvasRenderingContext2D, d: CharacterDesign, pose: Pose) {
+   516→  const st = pose.eyeState;
+   517→  const drawEye = (x: number) => {
+   518→    if (st === 'blink' || st === 'closed') {
+   519→      ctx.strokeStyle = '#3b2f2a';
+   520→      ctx.lineWidth = 2.6;
+   521→      ctx.lineCap = 'round';
+   522→      ctx.beginPath();
+   523→      ctx.arc(x, EYE_Y + 3, 6, 0.25 * Math.PI, 0.75 * Math.PI);
+   524→      ctx.stroke();
+   525→      return;
+   526→    }
+   527→    if (st === 'happy') {
+   528→      ctx.strokeStyle = '#3b2f2a';
+   529→      ctx.lineWidth = 3;
+   530→      ctx.lineCap = 'round';
+   531→      ctx.beginPath();
+   532→      ctx.arc(x, EYE_Y + 4, 6.5, Math.PI * 1.15, Math.PI * 1.85);
+   533→      ctx.stroke();
+   534→      return;
+   535→    }
+   536→    const big = d.eyeStyle === 3;
+   537→    const r = d.eyeStyle === 2 ? 4.5 : big ? 9.5 : d.eyeStyle === 1 ? 6.5 : 7.5;
+   538→    const ry = d.eyeStyle === 2 ? 3.5 : big ? 9.5 : d.eyeStyle === 1 ? 8 : 7.5;
+   539→    ctx.fillStyle = '#ffffff';
+   540→    ctx.beginPath();
+   541→    ctx.ellipse(x, EYE_Y, r, ry, 0, 0, Math.PI * 2);
+   542→    ctx.fill();
+   543→    ctx.strokeStyle = 'rgba(0,0,0,0.35)';
+   544→    ctx.lineWidth = 1.6;
+   545→    ctx.stroke();
+   546→    const pr = d.eyeStyle === 2 ? 2.2 : big ? 4.4 : 3.2;
+   547→    circle(ctx, x + 1.5, EYE_Y + 0.5, pr, '#2b2118');
+   548→    circle(ctx, x + 2.8, EYE_Y - 1.8, pr * 0.35, '#ffffff');
+   549→  };
+   550→  drawEye(EYE_LX);
+   551→  drawEye(EYE_RX);
+   552→}
+   553→
+   554→function drawBrows(ctx: CanvasRenderingContext2D, pose: Pose, d: CharacterDesign) {
+   555→  const w = d.browStyle === 1 ? 5 : 3.2;
+   556→  ctx.strokeStyle = d.hairColor;
+   557→  ctx.lineWidth = w;
+   558→  ctx.lineCap = 'round';
+   559→  const yBase = pose.browState === 'raised' ? BROW_Y - 4 : BROW_Y;
+   560→  const drawBrow = (x: number, sign: number) => {
+   561→    ctx.save();
+   562→    ctx.translate(x, yBase);
+   563→    if (pose.browState === 'angry') ctx.rotate(sign * 0.35);
+   564→    if (pose.browState === 'sad') ctx.rotate(-sign * 0.35);
+   565→    ctx.beginPath();
+   566→    ctx.moveTo(-7, 1);
+   567→    ctx.quadraticCurveTo(0, -3, 7, 1);
+   568→    ctx.stroke();
+   569→    ctx.restore();
+   570→  };
+   571→  drawBrow(EYE_LX, -1);
+   572→  drawBrow(EYE_RX, 1);
+   573→}
+   574→
+   575→function drawNose(ctx: CanvasRenderingContext2D, d: CharacterDesign) {
+   576→  ctx.strokeStyle = shade(d.skin, -0.35);
+   577→  ctx.lineWidth = 2.4;
+   578→  ctx.lineCap = 'round';
+   579→  ctx.beginPath();
+   580→  ctx.arc(2, HEAD_CY + 2, 4.5, Math.PI * 1.15, Math.PI * 1.9);
+   581→  ctx.stroke();
+   582→}
+   583→
+   584→function drawMouth(ctx: CanvasRenderingContext2D, d: CharacterDesign, pose: Pose) {
+   585→  const open = Math.max(0, Math.min(1, pose.mouthOpen));
+   586→  const x = MOUTH_X;
+   587→  const y = MOUTH_Y;
+   588→  ctx.lineCap = 'round';
+   589→
+   590→  if (open > 0.2 || pose.expression === 'laugh') {
+   591→    const rx = pose.expression === 'laugh' ? 13 : 8 + 4 * open;
+   592→    const ry = pose.expression === 'laugh' ? 11 : 3 + 10 * open;
+   593→    ctx.fillStyle = '#8c2f39';
+   594→    ctx.beginPath();
+   595→    ctx.ellipse(x, y + 2, rx, ry, 0, 0, Math.PI * 2);
+   596→    ctx.fill();
+   597→    ctx.strokeStyle = 'rgba(0,0,0,0.4)';
+   598→    ctx.lineWidth = 1.6;
+   599→    ctx.stroke();
+   600→    ctx.fillStyle = '#f43f5e';
+   601→    ctx.beginPath();
+   602→    ctx.ellipse(x, y + 2 + ry * 0.55, rx * 0.62, ry * 0.4, 0, 0, Math.PI * 2);
+   603→    ctx.fill();
+   604→    return;
+   605→  }
+   606→
+   607→  ctx.strokeStyle = '#5b3a34';
+   608→  ctx.lineWidth = 2.8;
+   609→  switch (pose.expression) {
+   610→    case 'frown':
+   611→    case 'angry':
+   612→      ctx.beginPath();
+   613→      ctx.arc(x, y + 7, 8, Math.PI * 1.15, Math.PI * 1.85);
+   614→      ctx.stroke();
+   615→      break;
+   616→    case 'cry':
+   617→      ctx.beginPath();
+   618→      ctx.arc(x, y + 9, 7, Math.PI * 1.1, Math.PI * 1.9);
+   619→      ctx.stroke();
+   620→      break;
+   621→    case 'surprised':
+   622→      ctx.fillStyle = '#8c2f39';
+   623→      ctx.beginPath();
+   624→      ctx.ellipse(x, y + 2, 4.5, 6, 0, 0, Math.PI * 2);
+   625→      ctx.fill();
+   626→      break;
+   627→    case 'smile':
+   628→      ctx.beginPath();
+   629→      ctx.arc(x, y - 3, 9, Math.PI * 0.15, Math.PI * 0.85);
+   630→      ctx.stroke();
+   631→      break;
+   632→    default: {
+   633→      // resting mouth style
+   634→      switch (d.mouthStyle) {
+   635→        case 0:
+   636→          ctx.beginPath();
+   637→          ctx.arc(x, y - 3, 9, Math.PI * 0.18, Math.PI * 0.82);
+   638→          ctx.stroke();
+   639→          break;
+   640→        case 1:
+   641→          ctx.beginPath();
+   642→          ctx.moveTo(x - 8, y + 1);
+   643→          ctx.lineTo(x + 8, y + 1);
+   644→          ctx.stroke();
+   645→          break;
+   646→        case 2:
+   647→          ctx.beginPath();
+   648→          ctx.arc(x, y + 6, 8, Math.PI * 1.15, Math.PI * 1.85);
+   649→          ctx.stroke();
+   650→          break;
+   651→        default:
+   652→          ctx.fillStyle = '#8c2f39';
+   653→          ctx.beginPath();
+   654→          ctx.arc(x, y - 2, 7, Math.PI * 0.1, Math.PI * 0.9);
+   655→          ctx.closePath();
+   656→          ctx.fill();
+   657→      }
+   658→    }
+   659→  }
+   660→}
+   661→
+   662→function drawGlasses(ctx: CanvasRenderingContext2D) {
+   663→  ctx.strokeStyle = '#44403c';
+   664→  ctx.lineWidth = 2.4;
+   665→  ctx.beginPath();
+   666→  ctx.arc(EYE_LX - 1, EYE_Y, 9.5, 0, Math.PI * 2);
+   667→  ctx.stroke();
+   668→  ctx.beginPath();
+   669→  ctx.arc(EYE_RX + 1, EYE_Y, 9.5, 0, Math.PI * 2);
+   670→  ctx.stroke();
+   671→  ctx.beginPath();
+   672→  ctx.moveTo(EYE_LX + 8, EYE_Y - 1);
+   673→  ctx.lineTo(EYE_RX - 8, EYE_Y - 1);
+   674→  ctx.stroke();
+   675→  ctx.beginPath();
+   676→  ctx.moveTo(EYE_LX - 10.5, EYE_Y - 1);
+   677→  ctx.lineTo(-HEAD_R + 2, EYE_Y - 4);
+   678→  ctx.moveTo(EYE_RX + 10.5, EYE_Y - 1);
+   679→  ctx.lineTo(HEAD_R - 2, EYE_Y - 4);
+   680→  ctx.stroke();
+   681→}
+   682→
+   683→function drawTears(ctx: CanvasRenderingContext2D, t: number) {
+   684→  const drop = (x: number, phase: number) => {
+   685→    const p = ((t * 0.9 + phase) % 1);
+   686→    const y = EYE_Y + 6 + p * 34;
+   687→    ctx.fillStyle = 'rgba(103, 232, 249, 0.95)';
+   688→    ctx.beginPath();
+   689→    ctx.ellipse(x, y, 3.4, 5, 0, 0, Math.PI * 2);
+   690→    ctx.fill();
+   691→  };
+   692→  drop(EYE_LX - 2, 0);
+   693→  drop(EYE_RX + 2, 0.5);
+   694→}
+   695→
+   696→function drawHeadwear(ctx: CanvasRenderingContext2D, d: CharacterDesign) {
+   697→  const c = d.headwearColor;
+   698→  const dark = shade(c, -0.22);
+   699→  switch (d.headwearStyle) {
+   700→    case 1: // টুপি
+   701→      ctx.fillStyle = c;
+   702→      ctx.beginPath();
+   703→      ctx.arc(HEAD_CX, HEAD_CY - 6, HEAD_R + 1, Math.PI * 1.06, Math.PI * 1.94);
+   704→      ctx.closePath();
+   705→      ctx.fill();
+   706→      rr(ctx, -HEAD_R + 4, HEAD_CY - 20, HEAD_R * 2 - 8, 9, 4);
+   707→      ctx.fill();
+   708→      ctx.strokeStyle = dark;
+   709→      ctx.lineWidth = 1.6;
+   710→      ctx.beginPath();
+   711→      ctx.moveTo(-HEAD_R + 5, HEAD_CY - 16);
+   712→      ctx.lineTo(HEAD_R - 5, HEAD_CY - 16);
+   713→      ctx.stroke();
+   714→      break;
+   715→    case 2: // ক্যাপ
+   716→      ctx.fillStyle = c;
+   717→      ctx.beginPath();
+   718→      ctx.arc(HEAD_CX, HEAD_CY - 4, HEAD_R, Math.PI * 1.02, Math.PI * 1.98);
+   719→      ctx.closePath();
+   720→      ctx.fill();
+   721→      ctx.fillStyle = dark;
+   722→      ctx.beginPath();
+   723→      ctx.ellipse(HEAD_CX + 16, HEAD_CY - 14, 16, 4.5, 0.12, 0, Math.PI * 2);
+   724→      ctx.fill();
+   725→      circle(ctx, HEAD_CX, HEAD_CY - HEAD_R - 4, 3.2, dark);
+   726→      break;
+   727→    case 3: // পাগড়ি
+   728→      ctx.fillStyle = c;
+   729→      ctx.beginPath();
+   730→      ctx.ellipse(HEAD_CX, HEAD_CY - 16, HEAD_R + 2, 12, 0, 0, Math.PI * 2);
+   731→      ctx.fill();
+   732→      ctx.beginPath();
+   733→      ctx.ellipse(HEAD_CX, HEAD_CY - 28, HEAD_R - 4, 10, 0, 0, Math.PI * 2);
+   734→      ctx.fill();
+   735→      ctx.beginPath();
+   736→      ctx.ellipse(HEAD_CX, HEAD_CY - 38, HEAD_R - 10, 8, 0, 0, Math.PI * 2);
+   737→      ctx.fill();
+   738→      ctx.strokeStyle = dark;
+   739→      ctx.lineWidth = 2;
+   740→      ctx.beginPath();
+   741→      ctx.moveTo(-HEAD_R - 1, HEAD_CY - 18);
+   742→      ctx.quadraticCurveTo(0, HEAD_CY - 10, HEAD_R + 1, HEAD_CY - 18);
+   743→      ctx.stroke();
+   744→      break;
+   745→  }
+   746→}
+   747→
+   748→function drawHead(ctx: CanvasRenderingContext2D, d: CharacterDesign, pose: Pose, t: number) {
+   749→  ctx.save();
+   750→  ctx.translate(0, -150);
+   751→  ctx.rotate((pose.headTilt + pose.headNod) * D);
+   752→  ctx.translate(-0, 150);
+   753→
+   754→  // neck
+   755→  capsule(ctx, 0, -148, 0, HEAD_CY + HEAD_R - 6, 12, shade(d.skin, -0.12));
+   756→
+   757→  // ears
+   758→  circle(ctx, -HEAD_R + 1, HEAD_CY + 4, 6, shade(d.skin, -0.08));
+   759→  circle(ctx, HEAD_R - 1, HEAD_CY + 4, 6, shade(d.skin, -0.08));
+   760→
+   761→  drawHairBack(ctx, d);
+   762→
+   763→  // head
+   764→  circle(ctx, HEAD_CX, HEAD_CY, HEAD_R, d.skin);
+   765→  ctx.strokeStyle = OUTLINE;
+   766→  ctx.lineWidth = 2.2;
+   767→  ctx.beginPath();
+   768→  ctx.arc(HEAD_CX, HEAD_CY, HEAD_R, 0, Math.PI * 2);
+   769→  ctx.stroke();
+   770→
+   771→  // soft top-left highlight for volume
+   772→  ctx.fillStyle = 'rgba(255,255,255,0.16)';
+   773→  ctx.beginPath();
+   774→  ctx.ellipse(HEAD_CX - 10, HEAD_CY - 14, 12, 8, -0.5, 0, Math.PI * 2);
+   775→  ctx.fill();
+   776→
+   777→  drawHair(ctx, d);
+   778→  drawBeard(ctx, d);
+   779→  drawBrows(ctx, pose, d);
+   780→  drawEyes(ctx, d, pose);
+   781→  drawNose(ctx, d);
+   782→  drawMouth(ctx, d, pose);
+   783→  if (d.glasses) drawGlasses(ctx);
+   784→  if (pose.tears) drawTears(ctx, t);
+   785→  drawHeadwear(ctx, d);
+   786→
+   787→  ctx.restore();
+   788→}
+   789→
+   790→// ---------------- main entry ----------------
+   791→
+   792→/**
+   793→ * Draw a character. The ctx must already be translated to the character's
+   794→ * ground point, and pre-scaled (and flipped via scale(-1,1) if needed).
+   795→ */
+   796→export function drawCharacter(
+   797→  ctx: CanvasRenderingContext2D,
+   798→  d: CharacterDesign,
+   799→  pose: Pose,
+   800→  t: number = 0,
+   801→) {
+   802→  ctx.save();
+   803→  ctx.rotate(pose.bodyLean * D);
+   804→  ctx.translate(pose.xOff, -pose.yOff);
+   805→
+   806→  // soft ground shadow (radial fade)
+   807→  const sg = ctx.createRadialGradient(0, 2, 2, 0, 2, 38);
+   808→  sg.addColorStop(0, 'rgba(0,0,0,0.24)');
+   809→  sg.addColorStop(1, 'rgba(0,0,0,0)');
+   810→  ctx.fillStyle = sg;
+   811→  ctx.beginPath();
+   812→  ctx.ellipse(0, 2, 38, 9, 0, 0, Math.PI * 2);
+   813→  ctx.fill();
+   814→
+   815→  // squash & stretch about the ground point (cartoon physics)
+   816→  const sq = Math.max(-0.9, Math.min(0.9, pose.squash ?? 0));
+   817→  if (sq !== 0) ctx.scale(1 + sq * 0.16, 1 - sq * 0.14);
+   818→
+   819→  // far arm behind torso
+   820→  const sleeveLong = d.topStyle === 1 || d.topStyle === 2 || d.topStyle === 3;
+   821→  const sleeveless = d.topStyle === 4;
+   822→  const upperArmColor = sleeveless ? d.skin : d.topColor;
+   823→  const foreArmColor = sleeveLong ? d.topColor : d.skin;
+   824→
+   825→  drawLegSide(ctx, d, pose);
+   826→  drawBottom(ctx, d, pose);
+   827→  drawArm(ctx, SHOULDER_LX, SHOULDER_Y, pose.shoulderL, pose.elbowL, upperArmColor, foreArmColor);
+   828→  drawTorso(ctx, d);
+   829→  drawHead(ctx, d, pose, t);
+   830→  drawArm(ctx, SHOULDER_RX, SHOULDER_Y, pose.shoulderR, pose.elbowR, upperArmColor, foreArmColor);
+   831→
+   832→  ctx.restore();
+   833→}
+   834→
+   835→function drawLegSide(ctx: CanvasRenderingContext2D, d: CharacterDesign, pose: Pose) {
+   836→  // For pant/pajama the drawBottom handles legs; here only ensure bare-leg
+   837→  // drawing happens for lungi/skirt (inside drawBottom). Nothing needed here
+   838→  // separately — kept for clarity/future layering.
+   839→  void ctx;
+   840→  void d;
+   841→  void pose;
+   842→}
+   843→
