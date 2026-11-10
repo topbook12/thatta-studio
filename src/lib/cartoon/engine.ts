@@ -77,7 +77,8 @@ export class CartoonStage {
   private scene: Scene | null = null;
   private designs = new Map<string, CharacterDesign>();
   private durations: Record<string, number> = {}; // beatId -> seconds (audio-aware)
-  private envelopes: Record<string, number[]> = {}; // beatId -> mouth amplitude @24fps
+  private envelopes: Record<string, number[]> = {}; // beatId -> jaw-open viseme @24fps
+  private wideEnvelopes: Record<string, number[]> = {}; // beatId -> mouth-wide viseme @24fps
   private callbacks: StageCallbacks = {};
   private interactions: StageInteractions = {};
   private playing = false;
@@ -163,9 +164,10 @@ export class CartoonStage {
     }
   }
 
-  /** mouth-amplitude envelopes per beat id (samples at 24 fps) */
-  setEnvelopes(map: Record<string, number[]>) {
+  /** viseme envelopes per beat id (samples at 24 fps) */
+  setEnvelopes(map: Record<string, number[]>, wideMap?: Record<string, number[]>) {
     this.envelopes = map;
+    this.wideEnvelopes = wideMap ?? {};
   }
 
   /** global playback speed 0.25..2.5 */
@@ -545,8 +547,9 @@ export class CartoonStage {
         localT = beatElapsed * speed;
         pose = computePose(beat.action, localT, beat.text.trim().length > 0);
 
-        // ---- real lip-sync: audio envelope drives the mouth ----
+        // ---- real viseme lip-sync: audio envelopes drive the mouth ----
         const env = this.envelopes[beat.id];
+        const wideEnv = this.wideEnvelopes[beat.id];
         if (env && env.length > 0 && beat.text.trim().length > 0) {
           const fi = beatElapsed * 24;
           const i0 = Math.max(0, Math.min(env.length - 1, Math.floor(fi)));
@@ -554,6 +557,15 @@ export class CartoonStage {
           const frac = fi - Math.floor(fi);
           const amp = lerp(env[i0], env[i1], frac);
           pose.mouthOpen = Math.max(0.06, Math.min(1, 0.12 + amp * 1.05));
+          // “ee/ai” viseme widens the mouth horizontally when present
+          if (wideEnv && wideEnv.length > 0) {
+            const w0 = wideEnv[Math.max(0, Math.min(wideEnv.length - 1, Math.floor(fi)))];
+            const w1 =
+              wideEnv[Math.max(0, Math.min(wideEnv.length - 1, Math.floor(fi) + 1))] ?? w0;
+            pose.mouthWide = 0.18 + lerp(w0, w1, frac) * 0.82;
+          } else {
+            pose.mouthWide = 0.25 + amp * 0.35;
+          }
           // tiny speech head-bob for liveliness
           pose.headNod += (amp - 0.35) * 2.2;
         }

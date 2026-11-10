@@ -1,9 +1,13 @@
 // ============================================================
-// ঠাট্টা স্টুডিও — TTS audio cache + lip-sync analysis
+// ঠাট্টা স্টুডিও — TTS audio cache + VISEME lip-sync analysis
 // Each generated voice line is decoded once; we keep:
 //  • duration (accurate, from decoded PCM)
 //  • waveform peaks (~24/sec) for the timeline UI
-//  • amplitude envelope (~24/sec) that drives real lip-sync
+//  • TWO viseme envelopes (~24/sec) that drive real cartoon lip-sync:
+//      - openEnv : low-band (200–1000 Hz) energy → jaw OPEN (a/o/aw)
+//      - wideEnv : high-band (1.5–5 kHz) energy → mouth WIDE (e/i/ai)
+//    This is a lightweight spectral viseme model — vowels that differ
+//    in tongue height produce visibly different cartoon mouth shapes.
 // ============================================================
 
 export interface CachedAudio {
@@ -11,8 +15,12 @@ export interface CachedAudio {
   duration: number;
   /** waveform peaks 0..1, ~24 per second (timeline display) */
   peaks: number[];
-  /** mouth amplitude 0..1, ~24 per second (lip-sync) */
+  /** combined mouth amplitude 0..1 (legacy — equals openEnv when available) */
   envelope: number[];
+  /** jaw-open viseme 0..1 (a/o vowels) — Sprint 5 */
+  openEnv: number[];
+  /** mouth-widening viseme 0..1 (e/i vowels) — Sprint 5 */
+  wideEnv: number[];
 }
 
 const cache = new Map<string, CachedAudio>();
@@ -47,73 +55,167 @@ export function getAudioDuration(url: string): Promise<number> {
 
 const FPS = 24;
 
-/**
- * Decode audio and compute duration + per-frame RMS envelope.
- * Returns null when the browser cannot decode the blob.
- */
-async function analyzeBlob(blob: Blob): Promise<{
-  duration: number;
-  peaks: number[];
-  envelope: number[];
-} | null> {
-  try {
-    const AC: typeof AudioContext =
-      window.AudioContext ??
-      (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
-    if (!AC) return null;
-    const ctx = new AC();
-    const buf = await ctx.decodeAudioData(await blob.arrayBuffer());
-    const data = buf.getChannelData(0);
-    const frameLen = Math.max(1, Math.floor(buf.sampleRate / FPS));
-    const frames = Math.max(1, Math.floor(data.length / frameLen));
+// ---------------- compact radix-2 FFT (for band energies) ----------------
 
-    const raw: number[] = new Array(frames);
-    for (let f = 0; f < frames; f++) {
-      let sum = 0;
-      const off = f * frameLen;
-      for (let i = 0; i < frameLen; i++) {
-        const v = data[off + i] ?? 0;
-        sum += v * v;
-      }
-      raw[f] = Math.sqrt(sum / frameLen);
+/** In-place iterative radix-2 FFT. re/im must be power-of-two length. */
+function fft(re: Float32Array, im: Float32Array) {
+  const n = re.length;
+  // bit-reversal permutation
+  for (let i = 1, j = 0; i < n; i++) {
+    let bit = n >> 1;
+    for (; j & bit; bit >>= 1) j ^= bit;
+    j ^= bit;
+    if (i < j) {
+      let tmp = re[i];
+      re[i] = re[j];
+      re[j] = tmp;
+      tmp = im[i];
+      im[i] = im[j];
+      im[j] = tmp;
     }
-
-    let max = 0;
-    for (const r of raw) if (r > max) max = r;
-    const norm = max > 0.0001 ? 1 / max : 0;
-
-    const peaks = raw.map((r) => Math.min(1, r * norm));
-    // gentle gamma so quiet syllables still move the mouth a bit
-    const envelope = peaks.map((p) => Math.min(1, Math.pow(p, 0.72)));
-
-    const duration = buf.duration;
-    ctx.close().catch(() => {});
-    return { duration, peaks, envelope };
-  } catch {
-    return null;
+  }
+  // butterflies
+  for (let len = 2; len <= n; len <<= 1) {
+    const ang = (-2 * Math.PI) / len;
+    const wr = Math.cos(ang);
+    const wi = Math.sin(ang);
+    for (let i = 0; i < n; i += len) {
+      let cr = 1;
+      let ci = 0;
+      for (let k = 0; k < len / 2; k++) {
+        const ur = re[i + k];
+        const ui = im[i + k];
+        const vrIdx = i + k + len / 2;
+        const vr = re[vrIdx] * cr - im[vrIdx] * ci;
+        const vi = re[vrIdx] * ci + im[vrIdx] * cr;
+        re[i + k] = ur + vr;
+        im[i + k] = ui + vi;
+        re[vrIdx] = ur - vr;
+        im[vrIdx] = ui - vi;
+        const ncr = cr * wr - ci * wi;
+        ci = cr * wi + ci * wr;
+        cr = ncr;
+      }
+    }
   }
 }
 
-/** Fallback envelope when decoding fails — a believable flap pattern. */
-function syntheticEnvelope(duration: number): { peaks: number[]; envelope: number[] } {
+interface BandEnvelopes {
+  peaks: number[];
+  open: number[];
+  wide: number[];
+}
+
+/**
+ * Spectral viseme analysis: per 24fps frame compute RMS plus the share of
+ * energy in the "open vowel" band (200–1000 Hz) vs the "wide vowel" band
+ * (1.5–5 kHz). Volume gates both envelopes so the mouth rests when silent.
+ */
+function spectralBands(
+  data: Float32Array,
+  sampleRate: number,
+): BandEnvelopes {
+  const frameLen = Math.max(1, Math.floor(sampleRate / FPS));
+  const frames = Math.max(1, Math.floor(data.length / frameLen));
+  const N = 1024; // fft size (covers ~23ms at 44.1kHz)
+  const hann = new Float32Array(N);
+  for (let i = 0; i < N; i++) hann[i] = 0.5 - 0.5 * Math.cos((2 * Math.PI * i) / (N - 1));
+
+  const binLo = Math.max(1, Math.floor((200 / sampleRate) * N));
+  const binOpenHi = Math.floor((1000 / sampleRate) * N);
+  const binWideLo = Math.floor((1500 / sampleRate) * N);
+  const binWideHi = Math.min(N / 2 - 1, Math.floor((5000 / sampleRate) * N));
+
+  const re = new Float32Array(N);
+  const im = new Float32Array(N);
+
+  const peaks: number[] = new Array(frames);
+  const openRaw: number[] = new Array(frames);
+  const wideRaw: number[] = new Array(frames);
+
+  for (let f = 0; f < frames; f++) {
+    const off = f * frameLen;
+    // windowed frame (centered), zero-padded to N
+    const start = off - Math.floor((N - frameLen) / 2);
+    let rms = 0;
+    for (let i = 0; i < N; i++) {
+      const v = data[start + i] ?? 0;
+      rms += v * v;
+      re[i] = v * hann[i];
+      im[i] = 0;
+    }
+    peaks[f] = Math.sqrt(rms / N);
+
+    fft(re, im);
+    let total = 0;
+    let openE = 0;
+    let wideE = 0;
+    for (let k = 1; k < N / 2; k++) {
+      const mag = Math.sqrt(re[k] * re[k] + im[k] * im[k]);
+      total += mag;
+      if (k >= binLo && k < binOpenHi) openE += mag;
+      if (k >= binWideLo && k <= binWideHi) wideE += mag;
+    }
+    const safe = total > 1e-6 ? 1 / total : 0;
+    openRaw[f] = openE * safe; // 0..~0.8 share of energy
+    wideRaw[f] = wideE * safe;
+  }
+
+  // normalize peaks
+  let maxP = 0;
+  for (const p of peaks) if (p > maxP) maxP = p;
+  const pNorm = maxP > 0.0001 ? 1 / maxP : 0;
+  const peaksN = peaks.map((p) => Math.min(1, p * pNorm));
+
+  // normalize the raw band shares to a lively 0..1 curve, gated by volume
+  const normBand = (raw: number[], gamma: number, gain: number): number[] => {
+    let m = 0;
+    for (const r of raw) if (r > m) m = r;
+    const scale = m > 1e-6 ? gain / m : 0;
+    return raw.map((r, i) => {
+      const vol = Math.min(1, Math.pow(peaksN[i], 0.65)); // volume gate
+      const shaped = Math.pow(Math.min(1, r * scale), gamma);
+      return Math.min(1, shaped * vol);
+    });
+  };
+
+  const open = normBand(openRaw, 0.62, 1.0);
+  const wide = normBand(wideRaw, 0.7, 1.0);
+
+  return { peaks: peaksN, open, wide };
+}
+
+/**
+ * Legacy fallback (used when FFT decoding fails): RMS envelope + a
+ * believable flap pattern so the mouth still moves.
+ */
+function syntheticEnvelopes(duration: number): BandEnvelopes {
   const frames = Math.max(8, Math.round(duration * FPS));
   const peaks: number[] = [];
+  const open: number[] = [];
+  const wide: number[] = [];
   for (let i = 0; i < frames; i++) {
     const v = Math.abs(Math.sin(i * 0.9) * 0.7 + Math.sin(i * 0.23) * 0.3);
-    peaks.push(0.15 + v * 0.7);
+    const amp = 0.15 + v * 0.7;
+    peaks.push(amp);
+    open.push(amp);
+    // alternate open/wide vowels every ~5 frames for a lively pattern
+    const vowelPhase = Math.sin(i * 0.55);
+    wide.push(Math.max(0, amp * (vowelPhase > 0.2 ? 0.85 : 0.15)));
   }
-  return { peaks, envelope: peaks };
+  return { peaks, open, wide };
 }
 
-/** Generate Bangla voice for a dialogue line via /api/tts (with lip-sync analysis). */
+/** Generate Bangla voice for a dialogue line via /api/tts (with viseme analysis). */
 export async function generateVoice(
   text: string,
   voice: string,
+  speed = 1,
 ): Promise<CachedAudio> {
   const res = await fetch('/api/tts', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ text, voice }),
+    body: JSON.stringify({ text, voice, speed }),
   });
   if (!res.ok) {
     const msg = await res.json().catch(() => ({}));
@@ -122,20 +224,31 @@ export async function generateVoice(
   const blob = await res.blob();
   const url = URL.createObjectURL(blob);
 
-  const analysis = await analyzeBlob(blob);
   let duration: number;
   let peaks: number[];
-  let envelope: number[];
-  if (analysis && analysis.duration > 0.1) {
-    duration = analysis.duration;
-    peaks = analysis.peaks;
-    envelope = analysis.envelope;
-  } else {
+  let open: number[];
+  let wide: number[];
+  try {
+    const AC: typeof AudioContext =
+      window.AudioContext ??
+      (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
+    if (!AC) throw new Error('no audio context');
+    const ctx = new AC();
+    const buf = await ctx.decodeAudioData(await blob.arrayBuffer());
+    const bands = spectralBands(buf.getChannelData(0), buf.sampleRate);
+    duration = buf.duration;
+    peaks = bands.peaks;
+    open = bands.open;
+    wide = bands.wide;
+    ctx.close().catch(() => {});
+    if (!(duration > 0.1)) throw new Error('too short');
+  } catch {
     duration = await getAudioDuration(url);
-    const syn = syntheticEnvelope(duration);
+    const syn = syntheticEnvelopes(duration);
     peaks = syn.peaks;
-    envelope = syn.envelope;
+    open = syn.open;
+    wide = syn.wide;
   }
 
-  return { url, duration, peaks, envelope };
+  return { url, duration, peaks, envelope: open, openEnv: open, wideEnv: wide };
 }

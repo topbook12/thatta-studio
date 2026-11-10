@@ -26,6 +26,7 @@ export function basePose(): Pose {
     hipR: 0,
     kneeR: 0,
     mouthOpen: 0,
+    mouthWide: 0,
     eyeState: 'open',
     browState: 'normal',
     expression: 'neutral',
@@ -485,6 +486,161 @@ export function computePose(action: ActionName, t: number, speaking: boolean): P
       p.fx = t > 1 ? ['sweat'] : []; // strain sweat kicks in after a second
       p.expression = 'neutral';
       p.mouthOpen = speaking ? 0.2 + 0.6 * Math.abs(Math.sin(t * 12)) : 0.15;
+      if (blinking(t)) p.eyeState = 'blink';
+      break;
+    }
+    case 'kick': {
+      // 1.3s cycle: knee windup → leg whip → settle (Gopal-style comedy kick)
+      const cyc = (t % 1.3) / 1.3;
+      let hip: number;
+      let knee: number;
+      let lean: number;
+      if (cyc < 0.34) {
+        // anticipation: knee lifts, torso counter-leans back
+        const k = cyc / 0.34;
+        hip = -k * 40;
+        knee = 18 + k * 62;
+        lean = -k * 8;
+      } else if (cyc < 0.56) {
+        // fast leg whip out
+        const k = (cyc - 0.34) / 0.22;
+        hip = -40 + k * 118;
+        knee = 80 - k * 74;
+        lean = -8 + k * 18;
+        p.squash = Math.sin(k * Math.PI) * 0.22;
+      } else {
+        // follow-through: damped leg return
+        const k = (cyc - 0.56) / 0.44;
+        const wob = Math.min(1, k * 6) * settle(k, 10, 4.2) * 7;
+        hip = 78 * (1 - k) + wob;
+        knee = 6 + (1 - k) * 8;
+        lean = 10 * (1 - k);
+      }
+      p.hipR = hip;
+      p.kneeR = knee;
+      // supporting leg absorbs the impact
+      p.hipL = -6 + Math.sin(cyc * Math.PI) * 5;
+      p.kneeL = 10 + Math.sin(cyc * Math.PI) * 8;
+      // arms windmill opposite the leg for balance
+      p.shoulderL = 20 - hip * 0.7 + Math.sin(t * 9) * 4;
+      p.elbowL = -30;
+      p.shoulderR = 30 + hip * 0.5;
+      p.elbowR = -50;
+      p.bodyLean = lean;
+      p.yOff = Math.sin(cyc * Math.PI) * 3;
+      p.fist = true;
+      p.expression = 'angry';
+      p.browState = 'angry';
+      p.mouthOpen = speaking ? 0.25 + 0.6 * Math.abs(Math.sin(t * 13)) : 0.3;
+      break;
+    }
+    case 'shiver': {
+      // frightened trembling: high-freq jitter + chattering teeth
+      const j = Math.sin(t * 26) * 1.6;
+      p.xOff = j;
+      p.yOff = Math.abs(Math.sin(t * 22)) * 1.2;
+      p.bodyLean = -4 + Math.sin(t * 17) * 1.6; // cowering back
+      p.headTilt = Math.sin(t * 21 - 0.3) * 3.5; // head trails the shake
+      // arms hug the body, hands trembling
+      p.shoulderL = 46 + Math.sin(t * 24) * 3;
+      p.elbowL = -108 + Math.sin(t * 24 - 0.5) * 4;
+      p.shoulderR = 46 + Math.sin(t * 24 + 1.4) * 3;
+      p.elbowR = -108 + Math.sin(t * 24 + 0.9) * 4;
+      p.kneeL = 8;
+      p.kneeR = 6; // knees knocking
+      p.mouthOpen = 0.1 + Math.abs(Math.sin(t * 21)) * 0.14; // b-b-b-chat chatter
+      p.eyeState = 'wide';
+      p.browState = 'sad';
+      p.expression = 'frown';
+      p.fx = ['sweat']; // ঘাম — ভয়ে
+      break;
+    }
+    case 'eat': {
+      // delight-eating cycle: hand to mouth, chewing with a happy cheeks bounce
+      const cyc = (t % 1.5) / 1.5;
+      const bite = cyc < 0.38 ? Math.sin((cyc / 0.38) * Math.PI) : 0;
+      // near hand carries the bite up to the mouth
+      p.shoulderR = 10 + bite * 96;
+      p.elbowR = -10 - bite * 92;
+      p.shoulderL = 8 + Math.sin(t * 2.1) * 4;
+      p.elbowL = -12;
+      // chewing: mouth flaps after every bite
+      const chew = cyc > 0.42 ? Math.abs(Math.sin(t * 11)) : 0;
+      p.mouthOpen = Math.max(bite * 0.5, chew * 0.42);
+      p.mouthWide = 0.35 + chew * 0.3; // cheeks puffed wide
+      p.headNod = bite * -6 + chew * 1.4; // head dips toward the hand
+      p.yOff = Math.sin(t * 2.3) * 1.4;
+      p.squash = chew * 0.05;
+      p.expression = 'laugh'; // happy eyes + raised brows — মিষ্টি মজা!
+      if (blinking(t)) p.eyeState = 'blink';
+      break;
+    }
+    case 'sleep': {
+      // deep sleep: slow breathing, head droops, zzz FX float up
+      const br = Math.sin(t * 1.15);
+      p.squash = br * 0.055; // slow deep breathing
+      p.yOff = br * 1.6;
+      p.headNod = 16 + br * 4; // head drooped forward
+      p.headTilt = 7 + Math.sin(t * 0.5) * 2;
+      p.bodyLean = 6 + br * 1.2;
+      p.shoulderL = 10 + br * 3;
+      p.shoulderR = 10 + br * 3;
+      p.elbowL = -4;
+      p.elbowR = -4;
+      p.kneeL = 4;
+      p.kneeR = 4;
+      p.eyeState = 'closed';
+      p.browState = 'normal';
+      p.expression = 'neutral';
+      p.mouthOpen = 0.06 + Math.max(0, br) * 0.06; // snore mouth
+      p.fx = ['zzz']; // 💤
+      break;
+    }
+    case 'celebrate': {
+      // জয়ধোঁয়া! — fist-pump hops with layered follow-through
+      const cyc = (t % 1.6) / 1.6;
+      const hop = Math.sin(Math.min(1, cyc * 2.1) * Math.PI); // 0..1..0
+      p.yOff = hop * 26;
+      p.squash = -hop * 0.3 + (cyc > 0.55 ? Math.sin(((cyc - 0.55) / 0.45) * Math.PI) * 0.35 : 0);
+      // arms pump up, elbows trailing (overlapping action)
+      p.shoulderL = 150 - hop * 34 + Math.sin(t * 13) * 5;
+      p.shoulderR = 150 - hop * 34 - Math.sin(t * 13) * 5;
+      p.elbowL = -6 + Math.sin(t * 13 - 0.5) * 10;
+      p.elbowR = -6 - Math.sin(t * 13 - 0.5) * 10;
+      p.fist = true; // জয়ের মুষ্টি!
+      p.hipL = -8 - hop * 12;
+      p.hipR = -4 - hop * 10;
+      p.kneeL = 12 + hop * 18;
+      p.kneeR = 8 + hop * 14;
+      p.headTilt = Math.sin(t * 6.5) * 4;
+      p.headNod = -hop * 7; // face up to the sky
+      p.eyeState = 'happy';
+      p.browState = 'raised';
+      p.expression = 'laugh';
+      p.mouthOpen = 0.55 + hop * 0.3; // “জয় গোপাল!”
+      p.mouthWide = 0.5;
+      break;
+    }
+    case 'sneak': {
+      // টিপটো — hunched tiptoe walk, exaggerated slow swing, guilty look
+      const ph = t * TAU * 0.9; // slow careful steps
+      p.hipL = Math.sin(ph) * 17;
+      p.hipR = Math.sin(ph + Math.PI) * 17;
+      p.kneeL = Math.max(0, Math.sin(ph + 1.3)) * 26;
+      p.kneeR = Math.max(0, Math.sin(ph + Math.PI + 1.3)) * 26;
+      p.yOff = 4 + Math.abs(Math.sin(ph)) * 2.6; // on tiptoes
+      p.bodyLean = 13 + Math.sin(ph) * 1.5; // hunched forward
+      p.headNod = 9 + Math.sin(ph * 2 - 0.5) * 2.4; // head craned ahead
+      p.headTilt = Math.sin(t * 1.2) * 3; // checking around
+      // arms tucked, hands dangling like a cartoon burglar
+      p.shoulderL = 38 + Math.sin(ph + Math.PI) * 9;
+      p.shoulderR = 38 + Math.sin(ph) * 9;
+      p.elbowL = -92 + lagSin(ph + Math.PI, 0.5) * 7;
+      p.elbowR = -92 + lagSin(ph, 0.5) * 7;
+      p.eyeState = 'wide';
+      p.browState = 'raised';
+      p.expression = 'frown';
+      p.mouthOpen = speaking ? 0.1 + 0.4 * Math.abs(Math.sin(t * 9)) : 0.05;
       if (blinking(t)) p.eyeState = 'blink';
       break;
     }

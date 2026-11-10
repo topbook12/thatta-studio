@@ -20,7 +20,14 @@ export type ActionName =
   | 'surprise'
   | 'dance'
   | 'fall'
-  | 'push';
+  | 'push'
+  // Sprint 4 asset-library expansion
+  | 'kick' // লাথি মারছে
+  | 'shiver' // ভয়ে কাঁপছে
+  | 'eat' // মিষ্টি খাচ্ছে
+  | 'sleep' // ঘুমাচ্ছে
+  | 'celebrate' // জয়ধোঁয়া উদযাপন
+  | 'sneak'; // চুরির প্ল্যানে টিপটো
 
 export type BgName =
   | 'village'
@@ -31,7 +38,12 @@ export type BgName =
   | 'rajcourt'
   | 'school'
   | 'ghat'
-  | 'night';
+  | 'night'
+  // Sprint 4 asset-library expansion
+  | 'temple' // কালীবাড়ির উঠান
+  | 'river' // নদীপথ — নৌকা
+  | 'kitchen' // রান্নাঘর
+  | 'jungle'; // জঙ্গলের পথ
 
 /** Easing for beat-level movement (walk path etc.) */
 export type EasingName =
@@ -96,7 +108,13 @@ export type PropName =
   | 'umbrella' // ছাতা
   | 'pot' // কলসি
   | 'basket' // মাছের টোকরি
-  | 'fan'; // হাতপাখা
+  | 'fan' // হাতপাখা
+  // Sprint 4 asset-library expansion
+  | 'laddu' // মিষ্টির থালা
+  | 'book' // পোথি/বই
+  | 'lamp' // কুপি
+  | 'sack' // বস্তা
+  | 'flower'; // ফুলের তোড়া
 
 /** A character placed into the stage scene. */
 export interface PlacedCharacter {
@@ -133,6 +151,8 @@ export interface SceneBeat {
   speed?: number;
   /** easing used for the walk-to-target motion (default easeInOut) */
   easing?: EasingName;
+  /** TTS voice speaking rate for this line (0.5..2, default 1) — Sprint 5 */
+  voiceSpeed?: number;
 }
 
 export interface Scene {
@@ -158,6 +178,8 @@ export interface Pose {
   hipR: number;
   kneeR: number;
   mouthOpen: number;
+  /** horizontal mouth stretch 0..1 — viseme lip-sync “ee/ai” widening (Sprint 5) */
+  mouthWide: number;
   eyeState: EyeState;
   browState: BrowState;
   expression: Expression;

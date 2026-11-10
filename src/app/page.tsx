@@ -1,14 +1,24 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useSyncExternalStore } from "react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import StudioTab from "@/components/tabs/studio-tab";
 import CreatorTab from "@/components/tabs/creator-tab";
 import CoursesTab from "@/components/tabs/courses-tab";
 import { Clapperboard, GraduationCap, Sparkles, UserRound } from "lucide-react";
 
+const emptySubscribe = () => () => {};
+
 export default function Home() {
   const [tab, setTab] = useState("studio");
+  // The studio store seeds itself with random UUIDs (module level) and
+  // rehydrates from localStorage — render tab content only after mount so
+  // server HTML never conflicts with client state (no hydration mismatch).
+  const mounted = useSyncExternalStore(
+    emptySubscribe,
+    () => true,
+    () => false,
+  );
 
   return (
     <div className="min-h-screen flex flex-col bg-amber-50">
@@ -65,13 +75,19 @@ export default function Home() {
           </TabsList>
 
           <TabsContent value="studio" className="mt-0 focus-visible:outline-none">
-            <StudioTab onOpenCreator={() => setTab("creator")} />
+            {mounted ? (
+              <StudioTab onOpenCreator={() => setTab("creator")} />
+            ) : (
+              <div className="flex h-64 items-center justify-center rounded-2xl border border-amber-200 bg-white/60 text-sm font-medium text-amber-700">
+                স্টুডিও লোড হচ্ছে...
+              </div>
+            )}
           </TabsContent>
           <TabsContent value="creator" className="mt-0 focus-visible:outline-none">
-            <CreatorTab />
+            {mounted ? <CreatorTab /> : null}
           </TabsContent>
           <TabsContent value="courses" className="mt-0 focus-visible:outline-none">
-            <CoursesTab onOpenStudio={() => setTab("studio")} />
+            {mounted ? <CoursesTab onOpenStudio={() => setTab("studio")} /> : null}
           </TabsContent>
         </Tabs>
       </main>

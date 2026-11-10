@@ -878,6 +878,511 @@ function drawNight(ctx: CanvasRenderingContext2D) {
   ctx.fill();
 }
 
+// ---------------- temple (কালীবাড়ির উঠান) — Sprint 4 ----------------
+
+function drawTemple(ctx: CanvasRenderingContext2D) {
+  const horizon = 480;
+  skyGradient(ctx, '#fefce8', '#fcd34d', horizon);
+  sun(ctx, 170, 120);
+  cloud(ctx, 820, 100, 0.75);
+
+  // courtyard ground — packed earth
+  ctx.fillStyle = '#e7c58f';
+  ctx.fillRect(0, horizon, STAGE_W, STAGE_H - horizon);
+  ctx.fillStyle = '#d9b06e';
+  ctx.fillRect(0, GROUND_Y - 10, STAGE_W, STAGE_H - GROUND_Y + 10);
+  // flagstone lines
+  ctx.strokeStyle = 'rgba(146, 106, 54, 0.35)';
+  ctx.lineWidth = 2;
+  for (let i = 0; i < 6; i++) {
+    const y = horizon + 30 + i * 38;
+    ctx.beginPath();
+    ctx.moveTo(0, y);
+    ctx.lineTo(STAGE_W, y - 6);
+    ctx.stroke();
+  }
+
+  // temple sanctum (far center-left): stepped plinth + curved bangla roof
+  const tx = 210;
+  const ty = horizon - 10;
+  // plinth steps
+  ctx.fillStyle = '#c8b18c';
+  rr(ctx, tx - 30, ty + 24, 300, 22, 3);
+  ctx.fillStyle = '#bda67f';
+  rr(ctx, tx - 14, ty + 4, 268, 22, 3);
+  // walls
+  ctx.fillStyle = '#e2c390';
+  rr(ctx, tx, ty - 96, 240, 102, 4);
+  ctx.strokeStyle = '#926a36';
+  ctx.lineWidth = 2.5;
+  ctx.strokeRect(tx, ty - 96, 240, 102);
+  // char-chala curved roof
+  ctx.fillStyle = '#b91c1c';
+  ctx.beginPath();
+  ctx.moveTo(tx - 26, ty - 96);
+  ctx.quadraticCurveTo(tx + 30, ty - 156, tx + 120, ty - 160);
+  ctx.quadraticCurveTo(tx + 210, ty - 156, tx + 266, ty - 96);
+  ctx.quadraticCurveTo(tx + 120, ty - 132, tx - 26, ty - 96);
+  ctx.closePath();
+  ctx.fill();
+  ctx.strokeStyle = '#7f1d1d';
+  ctx.lineWidth = 3;
+  ctx.stroke();
+  // kalash finial
+  ctx.fillStyle = '#fbbf24';
+  ctx.beginPath();
+  ctx.arc(tx + 120, ty - 170, 8, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.fillRect(tx + 117, ty - 186, 6, 12);
+  // arched door with garland
+  ctx.fillStyle = '#3b2412';
+  ctx.beginPath();
+  ctx.moveTo(tx + 92, ty + 2);
+  ctx.lineTo(tx + 92, ty - 52);
+  ctx.quadraticCurveTo(tx + 120, ty - 78, tx + 148, ty - 52);
+  ctx.lineTo(tx + 148, ty + 2);
+  ctx.closePath();
+  ctx.fill();
+  // marigold garland over the door
+  ctx.strokeStyle = '#f59e0b';
+  ctx.lineWidth = 5;
+  ctx.beginPath();
+  ctx.moveTo(tx + 88, ty - 58);
+  ctx.quadraticCurveTo(tx + 120, ty - 38, tx + 152, ty - 58);
+  ctx.stroke();
+  ctx.fillStyle = '#fbbf24';
+  for (let i = 0; i < 6; i++) {
+    const gx = 92 + i * 12;
+    ctx.beginPath();
+    ctx.arc(tx + gx, ty - 52 + Math.sin((i / 5) * Math.PI) * 12, 4.4, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  // prayer flags right side
+  ctx.fillStyle = '#7c3aed';
+  rr(ctx, 990, horizon - 190, 8, 190, 2);
+  ctx.fillStyle = '#dc2626';
+  rr(ctx, 1150, horizon - 160, 8, 160, 2);
+  const colors = ['#dc2626', '#f59e0b', '#16a34a', '#7c3aed', '#0891b2'];
+  ctx.strokeStyle = '#57534e';
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.moveTo(994, horizon - 188);
+  ctx.quadraticCurveTo(1072, horizon - 172, 1154, horizon - 158);
+  ctx.stroke();
+  for (let i = 0; i < 5; i++) {
+    const p = (i + 0.5) / 5;
+    const fx = 994 + p * 160;
+    const fy = horizon - 188 + p * 28 + Math.sin(p * Math.PI) * 6;
+    ctx.fillStyle = colors[i];
+    ctx.beginPath();
+    ctx.moveTo(fx - 11, fy);
+    ctx.lineTo(fx + 11, fy);
+    ctx.lineTo(fx + 8, fy + 22);
+    ctx.lineTo(fx - 8, fy + 22);
+    ctx.closePath();
+    ctx.fill();
+  }
+
+  // big banyan-ish tree left edge
+  ctx.strokeStyle = '#6d4c2f';
+  ctx.lineWidth = 16;
+  ctx.beginPath();
+  ctx.moveTo(60, horizon + 150);
+  ctx.quadraticCurveTo(40, horizon + 40, 70, horizon - 60);
+  ctx.stroke();
+  ctx.fillStyle = '#166534';
+  bush(ctx, 10, horizon - 70, 2.6, '#166534');
+  bush(ctx, 90, horizon - 40, 2.1, '#15803d');
+
+  // diya lamps (oil lamps) near the steps
+  const diya = (x: number, y: number) => {
+    ctx.fillStyle = '#b45309';
+    ctx.beginPath();
+    ctx.ellipse(x, y, 9, 4.4, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = 'rgba(251, 191, 36, 0.85)';
+    ctx.beginPath();
+    ctx.ellipse(x, y - 5, 3, 5.5, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = 'rgba(251, 191, 36, 0.22)';
+    ctx.beginPath();
+    ctx.arc(x, y - 10, 16, 0, Math.PI * 2);
+    ctx.fill();
+  };
+  diya(160, GROUND_Y + 6);
+  diya(1120, GROUND_Y + 4);
+  diya(620, GROUND_Y + 10);
+}
+
+// ---------------- river (নদীপথ — নৌকা) — Sprint 4 ----------------
+
+function drawRiver(ctx: CanvasRenderingContext2D) {
+  const horizon = 430;
+  skyGradient(ctx, '#f0fdfa', '#bae6fd', horizon);
+  sun(ctx, 1010, 110);
+  cloud(ctx, 260, 110, 0.85);
+  cloud(ctx, 660, 80, 0.6);
+
+  // far bank — trees strip
+  ctx.fillStyle = '#4d7c0f';
+  for (let i = 0; i < 12; i++) {
+    const bx = i * 115 + 30;
+    const by = horizon - 6 + (i % 3) * 8;
+    ctx.beginPath();
+    ctx.ellipse(bx, by - 26, 52, 30, 0, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  ctx.fillStyle = '#365314';
+  ctx.fillRect(0, horizon - 10, STAGE_W, 14);
+
+  // river water
+  const wg = ctx.createLinearGradient(0, horizon, 0, STAGE_H);
+  wg.addColorStop(0, '#0ea5e9');
+  wg.addColorStop(1, '#0369a1');
+  ctx.fillStyle = wg;
+  ctx.fillRect(0, horizon, STAGE_W, STAGE_H - horizon);
+
+  // boat near right (wooden kosha boat)
+  const bxf = 940;
+  const byf = 560;
+  ctx.save();
+  ctx.translate(bxf, byf);
+  ctx.rotate(-0.045);
+  ctx.fillStyle = '#92400e';
+  ctx.beginPath();
+  ctx.moveTo(-110, 0);
+  ctx.quadraticCurveTo(0, 46, 110, 0);
+  ctx.quadraticCurveTo(0, 22, -110, 0);
+  ctx.closePath();
+  ctx.fill();
+  ctx.strokeStyle = '#5b3010';
+  ctx.lineWidth = 3;
+  ctx.stroke();
+  // boat rim
+  ctx.strokeStyle = '#b45309';
+  ctx.lineWidth = 6;
+  ctx.beginPath();
+  ctx.moveTo(-110, 0);
+  ctx.quadraticCurveTo(0, 26, 110, 0);
+  ctx.stroke();
+  // boatman oar
+  ctx.strokeStyle = '#78350f';
+  ctx.lineWidth = 4.5;
+  ctx.beginPath();
+  ctx.moveTo(-30, 6);
+  ctx.lineTo(-72, -34);
+  ctx.stroke();
+  ctx.restore();
+  // boat reflection
+  ctx.fillStyle = 'rgba(7, 40, 66, 0.28)';
+  ctx.beginPath();
+  ctx.ellipse(bxf, byf + 22, 96, 10, 0, 0, Math.PI * 2);
+  ctx.fill();
+
+  // near bank (foreground bottom) — mud ghat edge with grass
+  ctx.fillStyle = '#c9a25e';
+  ctx.beginPath();
+  ctx.moveTo(0, STAGE_H);
+  ctx.lineTo(0, GROUND_Y + 26);
+  ctx.quadraticCurveTo(STAGE_W / 2, GROUND_Y - 8, STAGE_W, GROUND_Y + 40);
+  ctx.lineTo(STAGE_W, STAGE_H);
+  ctx.closePath();
+  ctx.fill();
+  ctx.fillStyle = '#4d7c0f';
+  for (let i = 0; i < 14; i++) {
+    const gx = 40 + i * 92 + (i % 3) * 20;
+    ctx.beginPath();
+    ctx.ellipse(gx, GROUND_Y + 34 + (i % 4) * 9, 26, 7, 0, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  // bamboo posts at the bank edge
+  for (const px of [180, 1060]) {
+    ctx.strokeStyle = '#a16207';
+    ctx.lineWidth = 9;
+    ctx.beginPath();
+    ctx.moveTo(px, GROUND_Y + 22);
+    ctx.lineTo(px + 6, GROUND_Y - 66);
+    ctx.stroke();
+    ctx.strokeStyle = '#7c4a03';
+    ctx.lineWidth = 2.5;
+    ctx.beginPath();
+    ctx.moveTo(px - 3, GROUND_Y - 20);
+    ctx.lineTo(px + 9, GROUND_Y - 24);
+    ctx.moveTo(px - 1, GROUND_Y - 44);
+    ctx.lineTo(px + 11, GROUND_Y - 48);
+    ctx.stroke();
+  }
+}
+
+// ---------------- kitchen (রান্নাঘর) — Sprint 4 ----------------
+
+function drawKitchen(ctx: CanvasRenderingContext2D) {
+  // warm mud-plastered interior
+  const wg = ctx.createLinearGradient(0, 0, 0, STAGE_H);
+  wg.addColorStop(0, '#a3542e');
+  wg.addColorStop(0.55, '#b96b3d');
+  wg.addColorStop(1, '#8f4a28');
+  ctx.fillStyle = wg;
+  ctx.fillRect(0, 0, STAGE_W, STAGE_H);
+  // floor
+  ctx.fillStyle = '#7c3f20';
+  ctx.fillRect(0, 520, STAGE_W, STAGE_H - 520);
+  ctx.fillStyle = '#6b3419';
+  ctx.fillRect(0, GROUND_Y, STAGE_W, STAGE_H - GROUND_Y);
+  // floor mats
+  ctx.fillStyle = '#a16207';
+  rr(ctx, 420, 600, 440, 40, 6);
+  ctx.strokeStyle = 'rgba(68, 38, 12, 0.55)';
+  ctx.lineWidth = 2.5;
+  for (let i = 0; i < 5; i++) {
+    ctx.beginPath();
+    ctx.moveTo(430 + i * 88, 602);
+    ctx.lineTo(430 + i * 88, 638);
+    ctx.stroke();
+  }
+
+  // back wall — window with evening light
+  ctx.fillStyle = '#5b2f16';
+  rr(ctx, 760, 120, 190, 150, 8);
+  ctx.fillStyle = '#fcd34d';
+  rr(ctx, 772, 132, 166, 126, 5);
+  // light beam
+  const lg = ctx.createLinearGradient(855, 260, 855, 640);
+  lg.addColorStop(0, 'rgba(253, 224, 71, 0.34)');
+  lg.addColorStop(1, 'rgba(253, 224, 71, 0)');
+  ctx.fillStyle = lg;
+  ctx.beginPath();
+  ctx.moveTo(772, 258);
+  ctx.lineTo(938, 258);
+  ctx.lineTo(1010, 640);
+  ctx.lineTo(700, 640);
+  ctx.closePath();
+  ctx.fill();
+
+  // shelf with clay pots (left wall)
+  ctx.fillStyle = '#5b2f16';
+  rr(ctx, 90, 250, 300, 16, 3);
+  const pot = (x: number, y: number, s: number, c: string) => {
+    ctx.fillStyle = c;
+    ctx.beginPath();
+    ctx.ellipse(x, y, 22 * s, 18 * s, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillRect(x - 9 * s, y - 26 * s, 18 * s, 12 * s);
+  };
+  pot(140, 232, 1, '#c2691a');
+  pot(200, 232, 0.8, '#d1791f');
+  pot(258, 232, 1.1, '#b05615');
+  pot(320, 232, 0.7, '#c2691a');
+  // hanging utensils from the ceiling
+  ctx.strokeStyle = '#3f2412';
+  ctx.lineWidth = 3;
+  for (const hx of [180, 240, 300, 360, 420]) {
+    const hang = 70 + ((hx * 13) % 40);
+    ctx.beginPath();
+    ctx.moveTo(hx, 0);
+    ctx.lineTo(hx, hang);
+    ctx.stroke();
+    ctx.fillStyle = '#9ca3af';
+    ctx.beginPath();
+    ctx.arc(hx, hang + 16, 15, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = '#6b7280';
+    ctx.beginPath();
+    ctx.arc(hx, hang + 16, 9, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  // chula (clay stove) with smoke — right side
+  ctx.fillStyle = '#8b4513';
+  ctx.beginPath();
+  ctx.ellipse(1090, 560, 95, 70, 0, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.fillStyle = '#6d3410';
+  rr(ctx, 1020, 470, 145, 60, 10);
+  ctx.fillStyle = '#1c1917';
+  ctx.beginPath();
+  ctx.arc(1075, 486, 22, 0, Math.PI * 2);
+  ctx.fill();
+  // fire glow
+  ctx.fillStyle = 'rgba(234, 88, 12, 0.9)';
+  ctx.beginPath();
+  ctx.ellipse(1075, 486, 15, 11, 0, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.fillStyle = 'rgba(251, 191, 36, 0.95)';
+  ctx.beginPath();
+  ctx.ellipse(1075, 489, 8, 7, 0, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.fillStyle = 'rgba(234, 88, 12, 0.16)';
+  ctx.beginPath();
+  ctx.arc(1075, 480, 46, 0, Math.PI * 2);
+  ctx.fill();
+  // pot on the stove
+  ctx.fillStyle = '#3f3f46';
+  ctx.beginPath();
+  ctx.ellipse(1075, 452, 34, 20, 0, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.fillStyle = '#52525b';
+  ctx.beginPath();
+  ctx.ellipse(1075, 440, 28, 12, 0, 0, Math.PI * 2);
+  ctx.fill();
+  // steam puffs (static base — dynamic in ambient)
+  ctx.fillStyle = 'rgba(255,255,255,0.3)';
+  ctx.beginPath();
+  ctx.ellipse(1075, 408, 12, 16, 0, 0, Math.PI * 2);
+  ctx.fill();
+
+  // sack of rice (left foreground)
+  ctx.fillStyle = '#d6b25e';
+  ctx.beginPath();
+  ctx.moveTo(150, GROUND_Y + 8);
+  ctx.quadraticCurveTo(140, GROUND_Y - 80, 215, GROUND_Y - 88);
+  ctx.quadraticCurveTo(290, GROUND_Y - 80, 280, GROUND_Y + 8);
+  ctx.closePath();
+  ctx.fill();
+  ctx.strokeStyle = '#a16207';
+  ctx.lineWidth = 2.5;
+  ctx.stroke();
+  ctx.beginPath();
+  ctx.moveTo(165, GROUND_Y - 62);
+  ctx.quadraticCurveTo(215, GROUND_Y - 74, 265, GROUND_Y - 62);
+  ctx.stroke();
+  ctx.fillStyle = '#8a5a2b';
+  ctx.font = '600 20px "Hind Siliguri", sans-serif';
+  ctx.textAlign = 'center';
+  ctx.fillText('চাল', 215, GROUND_Y - 22);
+}
+
+// ---------------- jungle (জঙ্গলের পথ) — Sprint 4 ----------------
+
+function drawJungle(ctx: CanvasRenderingContext2D) {
+  const horizon = 470;
+  // misty green depths
+  const bg = ctx.createLinearGradient(0, 0, 0, horizon);
+  bg.addColorStop(0, '#dcfce7');
+  bg.addColorStop(1, '#86efac');
+  ctx.fillStyle = bg;
+  ctx.fillRect(0, 0, STAGE_W, horizon);
+  ctx.fillStyle = '#4ade80';
+  ctx.fillRect(0, horizon, STAGE_W, STAGE_H - horizon);
+  ctx.fillStyle = '#22c55e';
+  ctx.fillRect(0, GROUND_Y - 8, STAGE_W, STAGE_H - GROUND_Y + 8);
+
+  // layered canopy silhouettes
+  ctx.fillStyle = 'rgba(20, 83, 45, 0.5)';
+  for (let i = 0; i < 9; i++) {
+    const cx = i * 160 + (i % 2) * 60;
+    ctx.beginPath();
+    ctx.ellipse(cx, 60 + (i % 3) * 26, 110, 52, 0, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  ctx.fillStyle = 'rgba(22, 101, 52, 0.75)';
+  for (let i = 0; i < 8; i++) {
+    const cx = i * 180 + 90;
+    ctx.beginPath();
+    ctx.ellipse(cx, 130 + (i % 2) * 30, 96, 46, 0, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  // hanging vines
+  ctx.strokeStyle = '#166534';
+  ctx.lineWidth = 3.5;
+  ctx.lineCap = 'round';
+  for (const vx of [140, 330, 560, 800, 1010, 1190]) {
+    const vl = 90 + ((vx * 7) % 90);
+    ctx.beginPath();
+    ctx.moveTo(vx, 150);
+    ctx.quadraticCurveTo(vx + 10, 150 + vl * 0.6, vx - 4, 150 + vl);
+    ctx.stroke();
+    ctx.fillStyle = '#15803d';
+    ctx.beginPath();
+    ctx.ellipse(vx - 4, 150 + vl + 6, 9, 5, 0.4, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  // distant trunks
+  for (const tx of [110, 420, 700, 1000, 1230]) {
+    ctx.strokeStyle = '#6d4c2f';
+    ctx.lineWidth = 14;
+    ctx.beginPath();
+    ctx.moveTo(tx, horizon + 30);
+    ctx.quadraticCurveTo(tx + 8, horizon - 80, tx - 4, horizon - 170);
+    ctx.stroke();
+  }
+
+  // giant banyan left with aerial roots
+  ctx.strokeStyle = '#5d4037';
+  ctx.lineWidth = 26;
+  ctx.beginPath();
+  ctx.moveTo(80, GROUND_Y + 10);
+  ctx.quadraticCurveTo(60, horizon + 40, 90, horizon - 140);
+  ctx.stroke();
+  ctx.lineWidth = 8;
+  for (const rx of [40, 105, 130]) {
+    ctx.beginPath();
+    ctx.moveTo(80 + (rx - 85) * 0.4, horizon - 120);
+    ctx.quadraticCurveTo(rx, horizon + 10, rx + 6, GROUND_Y + 6);
+    ctx.stroke();
+  }
+  bush(ctx, 30, horizon - 150, 3.4, '#166534');
+  bush(ctx, 150, horizon - 120, 2.8, '#15803d');
+
+  // the dirt path winding into the woods
+  ctx.fillStyle = '#d9b06e';
+  ctx.beginPath();
+  ctx.moveTo(430, STAGE_H);
+  ctx.quadraticCurveTo(500, GROUND_Y + 40, 660, GROUND_Y + 6);
+  ctx.quadraticCurveTo(760, horizon + 40, 820, horizon - 20);
+  ctx.lineTo(920, horizon - 20);
+  ctx.quadraticCurveTo(850, GROUND_Y + 20, 900, GROUND_Y + 40);
+  ctx.quadraticCurveTo(1010, GROUND_Y + 80, 1120, STAGE_H);
+  ctx.closePath();
+  ctx.fill();
+  // path pebbles
+  ctx.fillStyle = 'rgba(146, 106, 54, 0.5)';
+  for (let i = 0; i < 10; i++) {
+    ctx.beginPath();
+    ctx.arc(500 + i * 62 + (i % 3) * 14, GROUND_Y + 30 + (i % 4) * 26, 5, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  // big leaves foreground right
+  const leaf = (x: number, y: number, a: number, s: number) => {
+    ctx.save();
+    ctx.translate(x, y);
+    ctx.rotate(a);
+    ctx.fillStyle = '#16a34a';
+    ctx.beginPath();
+    ctx.ellipse(0, -34 * s, 17 * s, 40 * s, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.strokeStyle = '#14532d';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(0, 4);
+    ctx.lineTo(0, -70 * s);
+    ctx.stroke();
+    ctx.restore();
+  };
+  leaf(1160, GROUND_Y + 24, -0.5, 1.35);
+  leaf(1230, GROUND_Y + 30, 0.35, 1.6);
+  leaf(1090, GROUND_Y + 32, -0.15, 1.15);
+  // mushrooms
+  const shroom = (x: number, y: number, s: number) => {
+    ctx.fillStyle = '#fef3c7';
+    ctx.fillRect(x - 4 * s, y - 12 * s, 8 * s, 12 * s);
+    ctx.fillStyle = '#dc2626';
+    ctx.beginPath();
+    ctx.ellipse(x, y - 12 * s, 11 * s, 7 * s, 0, Math.PI, 0);
+    ctx.fill();
+    ctx.fillStyle = '#fff';
+    ctx.beginPath();
+    ctx.arc(x - 4 * s, y - 15 * s, 2 * s, 0, Math.PI * 2);
+    ctx.arc(x + 4 * s, y - 14 * s, 1.8 * s, 0, Math.PI * 2);
+    ctx.fill();
+  };
+  shroom(370, GROUND_Y + 14, 1.2);
+  shroom(400, GROUND_Y + 20, 0.9);
+}
+
 // ---------------- ambient life (dynamic overlay, drawn per frame) ----------------
 
 /**
@@ -969,13 +1474,101 @@ export function drawAmbient(
     }
     case 'room':
     case 'school':
-    case 'rajcourt': {
+    case 'rajcourt':
+    case 'kitchen': {
       // floating dust motes in warm light
       for (let i = 0; i < 10; i++) {
         const x = 200 + ((i * 263 + t * 9) % 880);
         const y = 180 + Math.sin(t * 0.9 + i * 1.3) * 120 + ((i * 53) % 160);
         ctx.globalAlpha = 0.12 + 0.1 * Math.sin(t * 1.6 + i);
         circle(ctx, x, y, 2.4, '#fff7ed');
+      }
+      ctx.globalAlpha = 1;
+      if (name === 'kitchen') {
+        // chula smoke + steam rising from the stove pot
+        for (let i = 0; i < 4; i++) {
+          const p = ((t * 0.5 + i * 0.25) % 1);
+          const sx = 1075 + Math.sin(t * 1.6 + i * 2) * 16;
+          const sy = 400 - p * 190;
+          ctx.globalAlpha = 0.3 * (1 - p);
+          circle(ctx, sx, sy, 9 + p * 17, '#e7e5e4');
+        }
+        ctx.globalAlpha = 1;
+      }
+      break;
+    }
+    case 'temple': {
+      // diya flames flicker + gentle incense smoke
+      for (const [dx, dy] of [
+        [160, GROUND_Y - 2],
+        [1120, GROUND_Y - 4],
+        [620, GROUND_Y + 2],
+      ] as const) {
+        const fl = 0.75 + 0.25 * Math.sin(t * 11 + dx);
+        ctx.globalAlpha = 0.5 * fl;
+        ctx.fillStyle = '#fde047';
+        ctx.beginPath();
+        ctx.ellipse(dx, dy - 6, 4.5, 8 * fl, 0, 0, Math.PI * 2);
+        ctx.fill();
+      }
+      ctx.globalAlpha = 1;
+      // incense smoke curling up from the door
+      for (let i = 0; i < 3; i++) {
+        const p = ((t * 0.35 + i * 0.33) % 1);
+        const sx = 330 + Math.sin(t * 1.3 + i * 2.2) * 22;
+        const sy = 430 - p * 150;
+        ctx.globalAlpha = 0.16 * (1 - p);
+        circle(ctx, sx, sy, 7 + p * 14, '#e7e5e4');
+      }
+      ctx.globalAlpha = 1;
+      drift(6, 100, 0.6, 0.55, 700);
+      break;
+    }
+    case 'river': {
+      // water shimmer bands + drifting boat bob
+      ctx.strokeStyle = 'rgba(255, 255, 255, 0.5)';
+      ctx.lineWidth = 3;
+      ctx.lineCap = 'round';
+      for (let i = 0; i < 9; i++) {
+        const y = 470 + i * 26;
+        const x = 100 + ((i * 300 + t * 34) % 1100);
+        ctx.globalAlpha = 0.25 + 0.3 * Math.sin(t * 3 + i * 1.3);
+        ctx.beginPath();
+        ctx.moveTo(x, y);
+        ctx.quadraticCurveTo(x + 40, y - 5, x + 84, y);
+        ctx.stroke();
+      }
+      ctx.globalAlpha = 1;
+      drift(12, 100, 0.85, 0.8, 100);
+      break;
+    }
+    case 'jungle': {
+      // drifting fireflies + falling leaves
+      for (let i = 0; i < 7; i++) {
+        const fx = 160 + ((i * 401 + t * 18) % 950);
+        const fy = 300 + Math.sin(t * 1.5 + i * 2.3) * 110 + (i % 3) * 60;
+        const glow = 0.35 + 0.55 * Math.abs(Math.sin(t * 2.2 + i));
+        ctx.globalAlpha = glow * 0.7;
+        ctx.fillStyle = '#bef264';
+        ctx.beginPath();
+        ctx.arc(fx, fy, 3, 0, Math.PI * 2);
+        ctx.fill();
+      }
+      ctx.globalAlpha = 1;
+      // falling leaves
+      for (let i = 0; i < 5; i++) {
+        const p = ((t * 0.12 + i * 0.21) % 1);
+        const lx = 220 + i * 210 + Math.sin(t * 1.4 + i * 2) * 46;
+        const ly = 130 + p * 430;
+        ctx.save();
+        ctx.translate(lx, ly);
+        ctx.rotate(t * 2.2 + i);
+        ctx.globalAlpha = 0.8;
+        ctx.fillStyle = ['#16a34a', '#22c55e', '#15803d', '#4ade80', '#65a30d'][i];
+        ctx.beginPath();
+        ctx.ellipse(0, 0, 11, 5.5, 0, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.restore();
       }
       ctx.globalAlpha = 1;
       break;
@@ -995,6 +1588,10 @@ const RENDERERS: Record<BgName, (ctx: CanvasRenderingContext2D) => void> = {
   school: drawSchool,
   ghat: drawGhat,
   night: drawNight,
+  temple: drawTemple,
+  river: drawRiver,
+  kitchen: drawKitchen,
+  jungle: drawJungle,
 };
 
 /** Get (or build) the cached background canvas. Client-side only. */

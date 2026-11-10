@@ -30,6 +30,7 @@ import {
   EASING_OPTIONS,
   PROP_OPTIONS,
   SPEED_OPTIONS,
+  VOICE_SPEED_OPTIONS,
 } from "@/lib/cartoon/presets";
 import { CartoonStage } from "@/lib/cartoon/engine";
 import { getCachedAudio, generateVoice, setCachedAudio } from "@/lib/tts-cache";
@@ -155,6 +156,8 @@ export default function StudioTab({
   const [moveTo, setMoveTo] = useState(50);
   const [beatSpeed, setBeatSpeed] = useState(1);
   const [beatEasing, setBeatEasing] = useState<EasingName>("easeInOut");
+  // TTS voice speaking rate for this line (0.5..2) — Sprint 5
+  const [voiceSpeed, setVoiceSpeed] = useState(1);
   // null = auto (end of this actor's track); number = pinned absolute start
   const [beatStart, setBeatStart] = useState<number | null>(null);
 
@@ -212,20 +215,25 @@ export default function StudioTab({
     stageRef.current?.setScene(scene, designs);
   }, [scene, designs]);
 
-  // audio-aware durations + lip-sync envelopes + timeline data stay in sync
+  // audio-aware durations + viseme lip-sync envelopes + timeline data stay in sync
   useEffect(() => {
     const durMap: Record<string, number> = {};
     const envMap: Record<string, number[]> = {};
+    const wideMap: Record<string, number[]> = {};
     for (const b of scene.beats) {
       const a = getCachedAudio(b.id);
       if (a) {
         durMap[b.id] = Math.max(b.duration, a.duration + 0.3);
-        if (a.envelope?.length) envMap[b.id] = a.envelope;
+        const open = a.openEnv?.length ? a.openEnv : a.envelope;
+        if (open?.length) {
+          envMap[b.id] = open;
+          if (a.wideEnv?.length) wideMap[b.id] = a.wideEnv;
+        }
       }
     }
     const stage = stageRef.current;
     stage?.setDurations(durMap);
-    stage?.setEnvelopes(envMap);
+    stage?.setEnvelopes(envMap, wideMap);
   }, [scene.beats, audioVersion]);
 
   // global playback speed
@@ -456,7 +464,11 @@ export default function StudioTab({
     const design = designs.find((d) => d.id === placed?.designId);
     setGenBusyId(beat.id);
     try {
-      const audio = await generateVoice(beat.text, design?.voice ?? "tongtong");
+      const audio = await generateVoice(
+        beat.text,
+        design?.voice ?? "tongtong",
+        beat.voiceSpeed ?? 1,
+      );
       setCachedAudio(beat.id, audio);
       setAudioVersion((v) => v + 1);
       if (!silent)
@@ -586,6 +598,7 @@ export default function StudioTab({
     setMoveTo(50);
     setBeatSpeed(1);
     setBeatEasing("easeInOut");
+    setVoiceSpeed(1);
     setBeatStart(null);
     stageRef.current?.setEditBeat(null);
   };
@@ -613,6 +626,7 @@ export default function StudioTab({
       moveTo: action === "walk" || action === "run" ? moveTo : undefined,
       speed: beatSpeed !== 1 ? beatSpeed : undefined,
       easing: action === "walk" || action === "run" ? beatEasing : undefined,
+      voiceSpeed: voiceSpeed !== 1 ? voiceSpeed : undefined,
     };
     if (editingBeatId) {
       updateBeat(editingBeatId, payload);
@@ -637,6 +651,7 @@ export default function StudioTab({
     setMoveTo(b.moveTo ?? 50);
     setBeatSpeed(b.speed ?? 1);
     setBeatEasing(b.easing ?? "easeInOut");
+    setVoiceSpeed(b.voiceSpeed ?? 1);
     setBeatStart(b.start ?? 0);
     // walk/run beats show the draggable destination flag on the stage
     stageRef.current?.setEditBeat(
@@ -1124,6 +1139,11 @@ export default function StudioTab({
                             🚶 হাঁটবে {bnNum(Math.round(b.moveTo))}% পর্যন্ত
                           </span>
                         )}
+                        {b.voiceSpeed != null && b.voiceSpeed !== 1 && (
+                          <span className="rounded-full bg-teal-100 px-2 py-0.5 text-xs font-medium text-teal-800">
+                            🗣 ×{bnNum(b.voiceSpeed)}
+                          </span>
+                        )}
                       </div>
                     </div>
                   );
@@ -1242,6 +1262,34 @@ export default function StudioTab({
                 <p className="text-xs text-amber-600">
                   সংলাপ সাবটাইটেল হিসেবে দেখাবে আর 🎙 বাটনে চাপলে বাংলা ভয়েস তৈরি হবে।
                 </p>
+              </div>
+
+              {/* Sprint 5 — per-line voice speaking rate */}
+              <div className="flex items-center gap-2.5 rounded-xl border border-teal-200 bg-teal-50/60 p-3">
+                <Volume2 className="h-4 w-4 shrink-0 text-teal-700" />
+                <div className="flex-1 space-y-1">
+                  <Label className="text-sm font-semibold text-teal-900">
+                    ভয়েসের কথার গতি
+                  </Label>
+                  <p className="text-xs text-teal-700">
+                    ধীরে = নাটকীয় ভাব, দ্রুত = ঝকঝকে কমেডি। বদলালে আবার 🎙 ভয়েস বানান।
+                  </p>
+                </div>
+                <Select
+                  value={String(voiceSpeed)}
+                  onValueChange={(v) => setVoiceSpeed(Number(v))}
+                >
+                  <SelectTrigger className="h-9 w-[92px] shrink-0 border-teal-300 text-sm">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {VOICE_SPEED_OPTIONS.map((s) => (
+                      <SelectItem key={s} value={String(s)}>
+                        ×{bnNum(s)}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
               </div>
 
               {action === "walk" || action === "run" ? (

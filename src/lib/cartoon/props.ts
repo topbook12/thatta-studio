@@ -253,6 +253,237 @@ function drawFan(ctx: CanvasRenderingContext2D, t: number) {
   grip(ctx, '#eab88a');
 }
 
+// ---------------- Sprint 4 props ----------------
+
+/** মিষ্টির থালা — plate of laddus held flat on the palm, tempting wobble */
+function drawLaddu(ctx: CanvasRenderingContext2D, t: number) {
+  ctx.rotate(Math.sin(t * 2.9) * 4 * D - 8 * D);
+  // plate (elliptical, held flat)
+  ctx.fillStyle = '#e2e8f0';
+  ctx.beginPath();
+  ctx.ellipse(0, 2, 21, 8.5, 0, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.strokeStyle = OUTLINE;
+  ctx.lineWidth = 2.3;
+  ctx.stroke();
+  ctx.fillStyle = '#cbd5e1';
+  ctx.beginPath();
+  ctx.ellipse(0, 0, 21, 8, 0, 0, Math.PI);
+  ctx.fill();
+  // three laddus — round motichoor with boondi texture
+  const laddu = (x: number, y: number, r: number) => {
+    ctx.fillStyle = '#f59e0b';
+    ctx.beginPath();
+    ctx.arc(x, y, r, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.strokeStyle = OUTLINE;
+    ctx.lineWidth = 2;
+    ctx.stroke();
+    // boondi dots
+    ctx.fillStyle = 'rgba(217, 119, 6, 0.85)';
+    for (const [dx, dy] of [
+      [-3, -2],
+      [3, 1],
+      [0, 3],
+      [2, -3],
+      [-3, 3],
+    ] as const) {
+      ctx.beginPath();
+      ctx.arc(x + dx * r * 0.28, y + dy * r * 0.28, r * 0.16, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    // shine
+    ctx.fillStyle = 'rgba(255, 255, 255, 0.5)';
+    ctx.beginPath();
+    ctx.ellipse(x - r * 0.32, y - r * 0.35, r * 0.2, r * 0.11, -0.6, 0, Math.PI * 2);
+    ctx.fill();
+  };
+  laddu(-10, -7, 8);
+  laddu(8, -6.5, 8.5);
+  laddu(-1, -13, 7.5);
+  grip(ctx, '#eab88a');
+}
+
+/** পোথি/বই — palm-leaf book held open, pages flutter */
+function drawBook(ctx: CanvasRenderingContext2D, t: number) {
+  ctx.rotate(Math.sin(t * 1.9) * 3 * D - 12 * D);
+  // open pages (two spread halves)
+  const flutter = Math.sin(t * 4.4) * 2;
+  ctx.fillStyle = '#fef3c7';
+  ctx.beginPath();
+  ctx.moveTo(-20, -14);
+  ctx.quadraticCurveTo(-10, -17, 0, -13 + flutter * 0.4);
+  ctx.lineTo(0, 8);
+  ctx.quadraticCurveTo(-10, 12, -20, 9);
+  ctx.closePath();
+  ctx.fill();
+  ctx.strokeStyle = OUTLINE;
+  ctx.lineWidth = 2.2;
+  ctx.stroke();
+  ctx.beginPath();
+  ctx.moveTo(0, -13 + flutter * 0.4);
+  ctx.quadraticCurveTo(10, -17, 20, -14 + flutter);
+  ctx.lineTo(20 + flutter, 9);
+  ctx.quadraticCurveTo(10, 12, 0, 8);
+  ctx.closePath();
+  ctx.fill();
+  ctx.stroke();
+  // written lines (gopal's grand plan!)
+  ctx.strokeStyle = 'rgba(87, 60, 40, 0.6)';
+  ctx.lineWidth = 1.4;
+  for (let i = 0; i < 3; i++) {
+    ctx.beginPath();
+    ctx.moveTo(-16, -8 + i * 5);
+    ctx.lineTo(-4, -8 + i * 5);
+    ctx.moveTo(4, -8 + i * 5);
+    ctx.lineTo(16, -8 + i * 5);
+    ctx.stroke();
+  }
+  // spine
+  ctx.strokeStyle = '#8a5a2b';
+  ctx.lineWidth = 2.6;
+  ctx.beginPath();
+  ctx.moveTo(0, -13);
+  ctx.lineTo(0, 8);
+  ctx.stroke();
+  grip(ctx, '#eab88a');
+}
+
+/** কুপি — hurricane lamp, flame flickers + soft glow */
+function drawLamp(ctx: CanvasRenderingContext2D, t: number) {
+  ctx.rotate(Math.sin(t * 2.1) * 3 * D - 4 * D);
+  // base + fuel bowl
+  ctx.fillStyle = '#b45309';
+  ctx.beginPath();
+  ctx.ellipse(0, 12, 11, 5, 0, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.strokeStyle = OUTLINE;
+  ctx.lineWidth = 2.2;
+  ctx.stroke();
+  // glass chimney
+  ctx.fillStyle = 'rgba(224, 242, 254, 0.55)';
+  ctx.beginPath();
+  ctx.moveTo(-8, 9);
+  ctx.quadraticCurveTo(-10, -8, -6, -26);
+  ctx.lineTo(6, -26);
+  ctx.quadraticCurveTo(10, -8, 8, 9);
+  ctx.closePath();
+  ctx.fill();
+  ctx.strokeStyle = 'rgba(120, 72, 20, 0.8)';
+  ctx.lineWidth = 2;
+  ctx.stroke();
+  // brass cap + loop handle
+  ctx.fillStyle = '#d97706';
+  ctx.beginPath();
+  ctx.roundRect(-8, -32, 16, 7, 3);
+  ctx.fill();
+  ctx.stroke();
+  ctx.strokeStyle = '#92400e';
+  ctx.lineWidth = 3;
+  ctx.beginPath();
+  ctx.arc(11, -28, 5, -Math.PI / 2, Math.PI / 2);
+  ctx.stroke();
+  // flickering flame
+  const fl = Math.sin(t * 12) * 0.18 + Math.sin(t * 7.3) * 0.1;
+  ctx.fillStyle = 'rgba(251, 191, 36, 0.95)';
+  ctx.beginPath();
+  ctx.ellipse(0, -14 + fl, 3.4, 7.5 + fl * 4, 0, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.fillStyle = 'rgba(255, 251, 235, 0.95)';
+  ctx.beginPath();
+  ctx.ellipse(0, -12 + fl, 1.6, 3.6 + fl * 2, 0, 0, Math.PI * 2);
+  ctx.fill();
+  // warm glow halo
+  const gl = ctx.createRadialGradient(0, -14, 4, 0, -14, 46);
+  gl.addColorStop(0, `rgba(251, 191, 36, ${0.28 + fl * 0.12})`);
+  gl.addColorStop(1, 'rgba(251, 191, 36, 0)');
+  ctx.fillStyle = gl;
+  ctx.beginPath();
+  ctx.arc(0, -14, 46, 0, Math.PI * 2);
+  ctx.fill();
+  grip(ctx, '#eab88a');
+}
+
+/** বস্তা — jute sack slung from the hand, bulges with loot */
+function drawSack(ctx: CanvasRenderingContext2D, t: number) {
+  ctx.rotate(Math.sin(t * 2.4 + 0.5) * 5 * D);
+  // rope tie around the neck
+  capsule(ctx, 0, 0, 0, 10, 2.6, '#8a6a4a');
+  // bulging body
+  ctx.fillStyle = '#d6b25e';
+  ctx.beginPath();
+  ctx.moveTo(-11, 10);
+  ctx.quadraticCurveTo(-19, 30, -11, 44);
+  ctx.quadraticCurveTo(0, 54, 11, 44);
+  ctx.quadraticCurveTo(19, 30, 11, 10);
+  ctx.closePath();
+  ctx.fill();
+  ctx.strokeStyle = OUTLINE;
+  ctx.lineWidth = 2.4;
+  ctx.stroke();
+  // jute weave cross-lines
+  ctx.strokeStyle = 'rgba(146, 106, 54, 0.6)';
+  ctx.lineWidth = 1.4;
+  for (let i = 0; i < 3; i++) {
+    const y = 20 + i * 9;
+    ctx.beginPath();
+    ctx.moveTo(-16 + i, y);
+    ctx.lineTo(16 - i, y);
+    ctx.stroke();
+  }
+  // tied neck knot
+  ctx.strokeStyle = '#8a6a4a';
+  ctx.lineWidth = 3.2;
+  ctx.beginPath();
+  ctx.moveTo(-7, 10);
+  ctx.quadraticCurveTo(0, 15, 7, 10);
+  ctx.stroke();
+  // a laddu peeking from the top (of course!)
+  ctx.fillStyle = '#f59e0b';
+  ctx.beginPath();
+  ctx.arc(2, 6, 5.5, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.strokeStyle = OUTLINE;
+  ctx.lineWidth = 1.8;
+  ctx.stroke();
+  grip(ctx, '#eab88a');
+}
+
+/** ফুলের তোড়া — garland bunch of marigolds & hibiscus */
+function drawFlower(ctx: CanvasRenderingContext2D, t: number) {
+  ctx.rotate(Math.sin(t * 2.6) * 6 * D - 6 * D);
+  // stem binding
+  capsule(ctx, 0, 0, 0, -12, 3, '#4d7c0f');
+  // bloom cluster
+  const bloom = (x: number, y: number, r: number, c: string) => {
+    ctx.fillStyle = c;
+    for (let i = 0; i < 6; i++) {
+      const a = (i / 6) * Math.PI * 2;
+      ctx.beginPath();
+      ctx.ellipse(x + Math.cos(a) * r * 0.62, y + Math.sin(a) * r * 0.62, r * 0.44, r * 0.44, 0, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    ctx.fillStyle = '#fde047';
+    ctx.beginPath();
+    ctx.arc(x, y, r * 0.34, 0, Math.PI * 2);
+    ctx.fill();
+  };
+  bloom(-8, -22, 8, '#f97316'); // marigold
+  bloom(7, -26, 7.5, '#dc2626'); // hibiscus
+  bloom(0, -36, 7, '#f59e0b');
+  bloom(-13, -33, 6, '#dc2626');
+  bloom(11, -37, 5.5, '#f97316');
+  // leaves poking out
+  ctx.fillStyle = '#16a34a';
+  ctx.beginPath();
+  ctx.ellipse(-12, -12, 8, 3.6, -0.7, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.beginPath();
+  ctx.ellipse(12, -14, 8, 3.6, 0.7, 0, Math.PI * 2);
+  ctx.fill();
+  grip(ctx, '#eab88a');
+}
+
 // ---------------- entry point ----------------
 
 /**
@@ -286,6 +517,21 @@ export function drawProp(
       break;
     case 'fan':
       drawFan(ctx, t);
+      break;
+    case 'laddu':
+      drawLaddu(ctx, t);
+      break;
+    case 'book':
+      drawBook(ctx, t);
+      break;
+    case 'lamp':
+      drawLamp(ctx, t);
+      break;
+    case 'sack':
+      drawSack(ctx, t);
+      break;
+    case 'flower':
+      drawFlower(ctx, t);
       break;
   }
   ctx.restore();

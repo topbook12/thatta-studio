@@ -79,13 +79,19 @@ export const ACTION_OPTIONS: { id: ActionName; label: string; emoji: string }[] 
   { id: 'point', label: 'ইশারা করছে', emoji: '👉' },
   { id: 'angry', label: 'রেগে আছে', emoji: '😠' },
   { id: 'slap', label: 'চাপরাস মারছে', emoji: '🖐️' },
+  { id: 'kick', label: 'লাথি মারছে', emoji: '🦵' },
+  { id: 'push', label: 'ঠেলছে', emoji: '💪' },
   { id: 'bow', label: 'নমস্কার করছে', emoji: '🙏' },
   { id: 'think', label: 'ভাবছে', emoji: '🤔' },
   { id: 'surprise', label: 'অবাক হয়েছে', emoji: '😲' },
+  { id: 'shiver', label: 'ভয়ে কাঁপছে', emoji: '😨' },
   { id: 'dance', label: 'নাচছে', emoji: '💃' },
   { id: 'jump', label: 'লাফাচ্ছে', emoji: '🤸' },
+  { id: 'celebrate', label: 'জয়ধোঁয়া করছে', emoji: '🎉' },
+  { id: 'eat', label: 'মিষ্টি খাচ্ছে', emoji: '😋' },
+  { id: 'sleep', label: 'ঘুমাচ্ছে', emoji: '😴' },
+  { id: 'sneak', label: 'চুরির প্ল্যানে', emoji: '🥷' },
   { id: 'fall', label: 'পড়ে যাচ্ছে', emoji: '🤕' },
-  { id: 'push', label: 'ঠেলছে', emoji: '💪' },
   { id: 'nod', label: 'মাথা নাড়ছে', emoji: '🙂' },
   { id: 'cry', label: 'কাঁদছে', emoji: '😭' },
 ];
@@ -103,19 +109,26 @@ export const EASING_OPTIONS: { id: EasingName; label: string }[] = [
 /** গ্লোবাল প্লেব্যাক স্পিড অপশন */
 export const SPEED_OPTIONS = [0.5, 0.75, 1, 1.25, 1.5, 2] as const;
 
+/** ভয়েসের কথার গতি (TTS speaking rate) — Sprint 5 */
+export const VOICE_SPEED_OPTIONS = [0.75, 1, 1.25, 1.5] as const;
+
 export const BG_OPTIONS: { id: BgName; label: string }[] = [
   { id: 'village', label: '🏡 গ্রামের বাড়ি' },
   { id: 'bazaar', label: '🏪 বাজার' },
   { id: 'field', label: '🌾 ধানখেত' },
-  { id: 'room', label: '🛋️ ঘরের ভেতর' },
+  { id: 'river', label: '⛵ নদীপথ' },
   { id: 'pond', label: '🛶 পুকুরপাড়' },
+  { id: 'jungle', label: '🌴 জঙ্গলের পথ' },
+  { id: 'room', label: '🛋️ ঘরের ভেতর' },
+  { id: 'kitchen', label: '🍳 রান্নাঘর' },
   { id: 'rajcourt', label: '👑 রাজসভা' },
+  { id: 'temple', label: '🪔 কালীবাড়ি' },
   { id: 'school', label: '🏫 স্কুল' },
   { id: 'ghat', label: '🛕 ঘাট' },
   { id: 'night', label: '🌙 রাতের গ্রাম' },
 ];
 
-/** হাতে ধরা যায় এমন প্রপ (Sprint 2) */
+/** হাতে ধরা যায় এমন প্রপ (Sprint 2 + Sprint 4) */
 export const PROP_OPTIONS: { id: PropName; label: string; emoji: string }[] = [
   { id: 'none', label: 'কিছু না', emoji: '🚫' },
   { id: 'stick', label: 'লাঠি', emoji: '🦯' },
@@ -123,6 +136,11 @@ export const PROP_OPTIONS: { id: PropName; label: string; emoji: string }[] = [
   { id: 'pot', label: 'কলসি', emoji: '🏺' },
   { id: 'basket', label: 'মাছের টোকরি', emoji: '🧺' },
   { id: 'fan', label: 'হাতপাখা', emoji: '🪭' },
+  { id: 'laddu', label: 'মিষ্টির থালা', emoji: '🍬' },
+  { id: 'book', label: 'পোথি', emoji: '📖' },
+  { id: 'lamp', label: 'কুপি', emoji: '🏮' },
+  { id: 'sack', label: 'বস্তা', emoji: '🎒' },
+  { id: 'flower', label: 'ফুলের তোড়া', emoji: '🌸' },
 ];
 
 // ---------------- Design factory ----------------
@@ -282,6 +300,7 @@ export function starterScene(cast: CharacterDesign[]): Scene {
     x: 32,
     scale: 1.15,
     flip: false,
+    prop: 'laddu', // গোপালের হাতে মিষ্টি — Sprint 4
   };
   const placedPolice: PlacedCharacter = {
     uid: newId(),
@@ -325,6 +344,20 @@ export function starterScene(cast: CharacterDesign[]): Scene {
       easing: 'easeInOut',
       text: 'জ্যে মামা! ভুল করিনি আর কখনো, কথা দিলাম!',
     },
+    {
+      // Sprint 4 finale — Gopal eats his laddus (hand-prop follows the action!)
+      action: 'eat',
+      start: 15.8,
+      duration: 3,
+      text: 'এবার মিষ্টির মজা! মুহুঁ মুহুঁ...',
+    },
+    {
+      // জয় গোপাল! (new celebrate action)
+      action: 'celebrate',
+      start: 18.8,
+      duration: 2.8,
+      text: 'জয় গোপাল! মিষ্টি তো আছেই, ভয় কীসের!',
+    },
   ];
   return {
     background: 'village',
@@ -332,7 +365,9 @@ export function starterScene(cast: CharacterDesign[]): Scene {
     beats: beats.map((b, i) => ({
       ...b,
       id: newId(),
-      actorUid: i % 2 === 0 ? placedGopal.uid : placedPolice.uid,
+      // explicit actor per line (finale lines are all Gopal's)
+      actorUid:
+        i === 1 || i === 3 ? placedPolice.uid : placedGopal.uid,
     })),
   };
 }

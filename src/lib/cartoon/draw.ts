@@ -597,12 +597,16 @@ function drawNose(ctx: CanvasRenderingContext2D, d: CharacterDesign) {
 
 function drawMouth(ctx: CanvasRenderingContext2D, d: CharacterDesign, pose: Pose) {
   const open = Math.max(0, Math.min(1, pose.mouthOpen));
+  // viseme widening: 0 = round “a/o” shape, 1 = stretched “e/i” grin (Sprint 5)
+  const wide = Math.max(0, Math.min(1, pose.mouthWide ?? 0));
   const x = MOUTH_X;
   const y = MOUTH_Y;
   ctx.lineCap = 'round';
 
   if (open > 0.2 || pose.expression === 'laugh') {
-    const rx = pose.expression === 'laugh' ? 13 : 8 + 4 * open;
+    // widen horizontally with the “ee” viseme, narrow toward an “o” shape
+    const baseRx = pose.expression === 'laugh' ? 13 : 8 + 4 * open;
+    const rx = Math.max(5, baseRx + wide * 5 - (1 - wide) * open * 2);
     const ry = pose.expression === 'laugh' ? 11 : 3 + 10 * open;
     ctx.fillStyle = '#8c2f39';
     ctx.beginPath();
@@ -615,6 +619,13 @@ function drawMouth(ctx: CanvasRenderingContext2D, d: CharacterDesign, pose: Pose
     ctx.beginPath();
     ctx.ellipse(x, y + 2 + ry * 0.55, rx * 0.62, ry * 0.4, 0, 0, Math.PI * 2);
     ctx.fill();
+    // upper teeth strip for wide visemes — reads as “eee!”
+    if (wide > 0.55 && open > 0.25 && pose.expression !== 'laugh') {
+      ctx.fillStyle = '#fff';
+      ctx.beginPath();
+      ctx.roundRect(x - rx * 0.75, y + 2 - ry * 0.92, rx * 1.5, ry * 0.42, 2);
+      ctx.fill();
+    }
     return;
   }
 
