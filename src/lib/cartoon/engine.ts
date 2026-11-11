@@ -11,10 +11,10 @@
 // ============================================================
 
 import { drawAmbient, getBackgroundCanvas } from './backgrounds';
+import { depthAlpha, depthScale, groundYAt, worldXAt } from './depth';
 import { drawCharacter } from './draw';
 import { basePose, computePose, easingByName } from './pose';
 import {
-  GROUND_Y,
   STAGE_H,
   STAGE_W,
   type CharacterDesign,
@@ -33,6 +33,47 @@ function lerp(a: number, b: number, t: number) {
 
 function clamp(v: number, lo: number, hi: number) {
   return Math.max(lo, Math.min(hi, v));
+}
+
+/** Sprint 6 — camera state of one frame (pure function of scene time) */
+interface CamState {
+  zoom: number;
+  cx: number;
+  cy: number;
+  shakeX: number;
+  shakeY: number;
+}
+
+/** a character projected onto the screen for overlay drawing */
+interface RenderedChar {
+  uid: string;
+  name: string;
+  wx: number;
+  gy: number;
+  s: number;
+  speaking: boolean;
+}
+
+/**
+ * Sprint 6 — deterministic impact-shake amplitude (px) for an action at
+ * local time `lt` (already speed-scaled). Slap strike, jump landing,
+ * fall tip and kick whip all kick the camera — comic-book impact.
+ */
+function impactAmp(action: SceneBeat['action'], lt: number): number {
+  const decay = (dt: number, a: number, rate: number) =>
+    dt >= 0 && dt <= 0.7 ? a * Math.exp(-dt * rate) : 0;
+  switch (action) {
+    case 'slap':
+      return decay((lt % 1.1 - 0.62) * 1.1, 9, 7);
+    case 'jump':
+      return decay((lt % 1.15 - 0.78) * 1.15, 7, 7);
+    case 'fall':
+      return decay((lt % 2.2 - 0.55) * 2.2, 8, 5);
+    case 'kick':
+      return decay((lt % 1.3 - 0.56) * 1.3, 5, 8);
+    default:
+      return 0;
+  }
 }
 
 /** sequential start fallback for beats without an absolute `start` */
@@ -91,6 +132,14 @@ export class CartoonStage {
   private activeIds = new Set<string>();
   /** the beat whose walk-target flag is editable on stage */
   private editBeatId: string | null = null;
+  /** camera state of the last rendered frame (hit-tests & overlays use it) */
+  private lastCam: CamState = {
+    zoom: 1,
+    cx: STAGE_W / 2,
+    cy: STAGE_H / 2,
+    shakeX: 0,
+    shakeY: 0,
+  };
 
   // selection / dragging
   private selectedUid: string | null = null;
@@ -200,6 +249,62 @@ export class CartoonStage {
     this.editBeatId = beatId;
   }
 
+  /**
+   * Sprint 6 — cinematic camera state at scene time `t` (pure function):
+   * an active shot eases zoom + focus towards a character (chest-level
+   * tracking) or a fixed pan point; impacts add deterministic shake.
+   */
+  private cameraAt(t: number): CamState {
+    let zoom = 1;
+    let cx = STAGE_W / 2;
+    let cy = STAGE_H / 2;
+    const shots = this.scene?.camera?.shots ?? [];
+    const shot = shots.find((s) => s.start <= t && t < s.end);
+    if (shot) {
+      const k = easingByName(shot.easing ?? 'easeInOut')(
+        Math.min(1, (t - shot.start) / 0.55),
+      );
+      const targetZoom = Math.max(1, Math.min(2.4, shot.zoom ?? 1.3));
+      zoom = 1 + (targetZoom - 1) * k;
+      let fx = STAGE_W / 2;
+      let fy = STAGE_H / 2;
+      const placed = shot.focusUid
+        ? this.scene?.characters.find((c) => c.uid === shot.focusUid)
+        : undefined;
+      if (placed) {
+        const pos = this.charPosAt(placed.uid, t, placed);
+        const dz = depthScale(pos.z);
+        fx = worldXAt(pos.x, pos.z);
+        fy = groundYAt(pos.z) - 118 * placed.scale * dz; // chest-level framing
+      } else if (shot.panX != null) {
+        fx = (shot.panX / 100) * STAGE_W;
+        fy = STAGE_H * 0.62;
+      }
+      // keep the viewport inside the stage
+      const viewW = STAGE_W / zoom;
+      const viewH = STAGE_H / zoom;
+      fx = Math.max(viewW / 2, Math.min(STAGE_W - viewW / 2, fx));
+      fy = Math.max(viewH / 2, Math.min(STAGE_H - viewH / 2, fy));
+      cx = STAGE_W / 2 + (fx - STAGE_W / 2) * k;
+      cy = STAGE_H / 2 + (fy - STAGE_H / 2) * k;
+    }
+    // impact shake — only while actually playing (never jitter while scrubbing)
+    let shakeX = 0;
+    let shakeY = 0;
+    if (this.scene?.camera?.shake !== false && this.playing) {
+      let amp = 0;
+      for (const w of this.activeAt(this.layout(), t)) {
+        const lt = (t - w.start) * (w.beat.speed ?? 1);
+        amp = Math.max(amp, impactAmp(w.beat.action, lt));
+      }
+      if (amp > 0.05) {
+        shakeX = Math.sin(t * 61.7) * amp;
+        shakeY = Math.cos(t * 47.3) * amp * 0.6;
+      }
+    }
+    return { zoom, cx, cy, shakeX, shakeY };
+  }
+
   // ---------------- timeline layout ----------------
 
   /** All beat windows sorted by start time (parallel-safe). */
@@ -227,25 +332,59 @@ export class CartoonStage {
   }
 
   /**
-   * Where does this character stand at scene time `t`?
-   * Deterministic walk-chain: x = the destination of the latest walk that
-   * already finished before t (so chained walks never teleport).
+   * Where does this character stand at scene time `t` (base x px + depth z)?
+   * Deterministic walk-chain: position = the destination of the latest
+   * walk/run that already finished before t (so chained walks never teleport).
+   * Sprint 6: the chain also carries depth (moveZ) for real 3D paths.
    */
-  private charXAt(uid: string, t: number, placed: PlacedCharacter): number {
+  private charPosAt(
+    uid: string,
+    t: number,
+    placed: PlacedCharacter,
+  ): { x: number; z: number } {
     let x = (placed.x / 100) * STAGE_W;
+    let z = placed.z ?? 0;
     let best: BeatWindow | null = null;
     for (const w of this.layout()) {
       if (
         w.beat.actorUid === uid &&
         (w.beat.action === 'walk' || w.beat.action === 'run') &&
-        w.beat.moveTo != null &&
+        (w.beat.moveTo != null || w.beat.moveZ != null) &&
         w.end <= t + 1e-6
       ) {
         if (!best || w.end > best.end) best = w;
       }
     }
-    if (best && best.beat.moveTo != null) x = (best.beat.moveTo / 100) * STAGE_W;
-    return x;
+    if (best) {
+      if (best.beat.moveTo != null) x = (best.beat.moveTo / 100) * STAGE_W;
+      if (best.beat.moveZ != null) z = best.beat.moveZ;
+    }
+    return { x, z };
+  }
+
+  /** how many completed 'turn' (3D flip) beats this character finished before t */
+  private turnCountAt(uid: string, t: number): number {
+    let n = 0;
+    for (const w of this.layout()) {
+      if (
+        w.beat.actorUid === uid &&
+        w.beat.action === 'turn' &&
+        w.end <= t + 1e-6
+      ) {
+        n++;
+      }
+    }
+    return n;
+  }
+
+  private worldToScreenX(x: number): number {
+    const c = this.lastCam;
+    return (x - c.cx) * c.zoom + STAGE_W / 2 + c.shakeX;
+  }
+
+  private worldToScreenY(y: number): number {
+    const c = this.lastCam;
+    return (y - c.cy) * c.zoom + STAGE_H / 2 + c.shakeY;
   }
 
   // ---------------- transport ----------------
@@ -320,29 +459,37 @@ export class CartoonStage {
     return ((e.clientY - rect.top) / rect.height) * STAGE_H;
   }
 
-  /** x of the editable walk-target flag, or null when not shown */
-  private flagX(): number | null {
+  /** screen position of the editable walk-target flag, or null when not shown */
+  private flagScreenPos(): { x: number; y: number } | null {
     if (this.playing || !this.editBeatId || !this.scene) return null;
     const beat = this.scene.beats.find((b) => b.id === this.editBeatId);
     if (!beat) return null;
     if (beat.action !== 'walk' && beat.action !== 'run') return null;
     if (beat.moveTo == null) return null;
-    return (beat.moveTo / 100) * STAGE_W;
+    const z = beat.moveZ ?? 0;
+    return {
+      x: this.worldToScreenX(worldXAt((beat.moveTo / 100) * STAGE_W, z)),
+      y: this.worldToScreenY(groundYAt(z)),
+    };
   }
 
   private overFlag(x: number, y: number): boolean {
-    const fx = this.flagX();
-    if (fx == null) return false;
-    return Math.abs(x - fx) <= 30 && y >= GROUND_Y - 92 && y <= GROUND_Y + 18;
+    const f = this.flagScreenPos();
+    if (!f) return false;
+    return Math.abs(x - f.x) <= 30 && y >= f.y - 92 && y <= f.y + 18;
   }
 
   private hitCharacter(x: number, y: number): PlacedCharacter | null {
     if (!this.scene) return null;
+    const t = this.sceneTime;
     for (let i = this.scene.characters.length - 1; i >= 0; i--) {
       const c = this.scene.characters[i];
-      const cx = (c.x / 100) * STAGE_W;
-      const s = c.scale;
-      if (Math.abs(x - cx) < 60 * s && y > GROUND_Y - 245 * s && y < GROUND_Y + 14) {
+      const pos = this.charPosAt(c.uid, t, c);
+      const dz = depthScale(pos.z);
+      const wx = worldXAt(pos.x, pos.z);
+      const gy = groundYAt(pos.z);
+      const s = c.scale * dz;
+      if (Math.abs(x - wx) < 60 * s && y > gy - 245 * s && y < gy + 14) {
         return c;
       }
     }
@@ -503,12 +650,40 @@ export class CartoonStage {
       return;
     }
 
-    // background
+    const t = this.sceneTime;
+    const inScene = this.playing || t > 0;
+    const wins = this.layout();
+    const active = inScene ? this.activeAt(wins, t) : [];
+    const cam = this.cameraAt(t);
+    this.lastCam = cam;
+
+    // one active window per actor (latest start wins)
+    const activeByActor = new Map<string, BeatWindow>();
+    for (const w of active) {
+      const prev = activeByActor.get(w.beat.actorUid);
+      if (!prev || w.start > prev.start) activeByActor.set(w.beat.actorUid, w);
+    }
+
+    // ----- cinematic camera transform (zoom + pan + impact shake) -----
+    ctx.save();
+    ctx.translate(STAGE_W / 2 + cam.shakeX, STAGE_H / 2 + cam.shakeY);
+    ctx.scale(cam.zoom, cam.zoom);
+    ctx.translate(-cam.cx, -cam.cy);
+
+    // background with subtle parallax (oversized so panning never shows edges)
     try {
-      ctx.drawImage(getBackgroundCanvas(this.scene.background), 0, 0);
+      const px = (cam.cx - STAGE_W / 2) * 0.12;
+      const py = (cam.cy - STAGE_H / 2) * 0.12;
+      ctx.drawImage(
+        getBackgroundCanvas(this.scene.background),
+        -64 + px,
+        -36 + py,
+        STAGE_W * 1.1,
+        STAGE_H * 1.1,
+      );
     } catch {
       ctx.fillStyle = '#fde68a';
-      ctx.fillRect(0, 0, STAGE_W, STAGE_H);
+      ctx.fillRect(-100, -100, STAGE_W + 200, STAGE_H + 200);
     }
 
     // living background layer (clouds, fireflies, shimmer…)
@@ -518,34 +693,33 @@ export class CartoonStage {
       /* ambient is decorative — never break the stage */
     }
 
-    const t = this.sceneTime;
-    const inScene = this.playing || t > 0;
-    const wins = this.layout();
-    const active = inScene ? this.activeAt(wins, t) : [];
-
-    // one active window per actor (latest start wins)
-    const activeByActor = new Map<string, BeatWindow>();
-    for (const w of active) {
-      const prev = activeByActor.get(w.beat.actorUid);
-      if (!prev || w.start > prev.start) activeByActor.set(w.beat.actorUid, w);
-    }
+    const rendered: RenderedChar[] = [];
 
     for (const placed of this.scene.characters) {
       const design = this.designs.get(placed.designId);
       if (!design) continue;
 
       const w = inScene ? (activeByActor.get(placed.uid) ?? null) : null;
-      let worldX = this.charXAt(placed.uid, inScene ? t : 0, placed);
-      let flip = placed.flip;
+      const pos = this.charPosAt(placed.uid, inScene ? t : 0, placed);
+      let baseX = pos.x;
+      let z = pos.z;
+      let flip =
+        placed.flip !==
+        (this.turnCountAt(placed.uid, inScene ? t : 0) % 2 === 1);
       let pose = basePose();
       let localT = this.animT;
+      let extraScaleX = 1;
 
       if (w) {
         const beat = w.beat;
         const beatElapsed = Math.max(0, t - w.start);
         const speed = clamp(beat.speed ?? 1, 0.25, 2.5);
         localT = beatElapsed * speed;
-        pose = computePose(beat.action, localT, beat.text.trim().length > 0);
+        pose = computePose(
+          beat.action === 'turn' ? 'idle' : beat.action,
+          localT,
+          beat.text.trim().length > 0,
+        );
 
         // ---- real viseme lip-sync: audio envelopes drive the mouth ----
         const env = this.envelopes[beat.id];
@@ -572,41 +746,74 @@ export class CartoonStage {
 
         if (
           (beat.action === 'walk' || beat.action === 'run') &&
-          beat.moveTo != null
+          (beat.moveTo != null || beat.moveZ != null)
         ) {
           const dur = Math.max(0.3, w.end - w.start);
           const progress = Math.min(1, beatElapsed / dur);
           const eased = easingByName(beat.easing ?? 'easeInOut')(progress);
-          const startX = this.charXAt(placed.uid, w.start, placed);
-          const targetX = (beat.moveTo / 100) * STAGE_W;
-          worldX = lerp(startX, targetX, eased);
-          flip = targetX < startX;
+          const from = this.charPosAt(placed.uid, w.start, placed);
+          const targetX =
+            beat.moveTo != null ? (beat.moveTo / 100) * STAGE_W : from.x;
+          const targetZ = beat.moveZ != null ? beat.moveZ : from.z;
+          baseX = lerp(from.x, targetX, eased);
+          z = lerp(from.z, targetZ, eased);
+          if (beat.moveTo != null) flip = targetX < from.x;
+        }
+
+        if (beat.action === 'turn') {
+          // 3D perspective flip: squash through zero, swap facing at midpoint
+          const k = Math.min(1, beatElapsed / 0.7);
+          const e = easingByName('easeInOut')(k);
+          extraScaleX = Math.max(0.08, Math.abs(Math.cos(e * Math.PI)));
+          flip = k >= 0.5 ? !placed.flip : placed.flip;
         }
       } else {
         pose = computePose('idle', localT, false);
       }
 
-      const s = placed.scale;
+      // ----- pseudo-3D projection: scale, ground line, atmospheric haze -----
+      const dz = depthScale(z);
+      const gy = groundYAt(z);
+      const wx = worldXAt(baseX, z);
+      const s = placed.scale * dz;
+
       ctx.save();
-      ctx.translate(worldX, GROUND_Y);
-      ctx.scale(flip ? -s : s, s);
+      ctx.globalAlpha = depthAlpha(z);
+      ctx.translate(wx, gy);
+      ctx.scale((flip ? -1 : 1) * s * extraScaleX, s);
       drawCharacter(ctx, design, pose, localT, placed.prop ?? 'none');
       ctx.restore();
 
-      // selection ring
-      if (this.selectedUid === placed.uid) {
+      rendered.push({ uid: placed.uid, name: design.name, wx, gy, s, speaking: !!w });
+    }
+
+    ctx.restore(); // ---- end camera transform ----
+
+    // selection ring (screen space — stays crisp under any camera)
+    for (const r of rendered) {
+      if (this.selectedUid === r.uid) {
+        const sxp = this.worldToScreenX(r.wx);
+        const syp = this.worldToScreenY(r.gy + 4);
+        const rad = 46 * r.s * cam.zoom;
         ctx.save();
         ctx.strokeStyle = 'rgba(234, 88, 12, 0.85)';
         ctx.lineWidth = 3;
         ctx.setLineDash([9, 7]);
         ctx.beginPath();
-        ctx.ellipse(worldX, GROUND_Y + 4, 46 * s, 11 * s, 0, 0, Math.PI * 2);
+        ctx.ellipse(sxp, syp, rad, rad * 0.24, 0, 0, Math.PI * 2);
         ctx.stroke();
         ctx.restore();
       }
+    }
 
-      if (w) {
-        this.drawSpeakerPill(design.name, worldX, s);
+    // speaker pills
+    for (const r of rendered) {
+      if (r.speaking) {
+        this.drawSpeakerPill(
+          r.name,
+          this.worldToScreenX(r.wx),
+          this.worldToScreenY(r.gy - 232 * r.s) - 16,
+        );
       }
     }
 
@@ -619,10 +826,16 @@ export class CartoonStage {
         w.beat.moveTo != null
       ) {
         const actor = this.scene.characters.find((c) => c.uid === w.beat.actorUid);
-        const fromX = actor
-          ? this.charXAt(w.beat.actorUid, w.start, actor)
-          : STAGE_W / 2;
-        this.drawWalkFlag(fromX, w.beat.moveTo);
+        const from = actor
+          ? this.charPosAt(w.beat.actorUid, w.start, actor)
+          : { x: STAGE_W / 2, z: 0 };
+        const zT = w.beat.moveZ ?? 0;
+        this.drawWalkFlag(
+          this.worldToScreenX(worldXAt(from.x, from.z)),
+          this.worldToScreenY(groundYAt(from.z)),
+          this.worldToScreenX(worldXAt((w.beat.moveTo / 100) * STAGE_W, zT)),
+          this.worldToScreenY(groundYAt(zT)),
+        );
       }
     }
 
@@ -639,18 +852,18 @@ export class CartoonStage {
     this.drawWatermark();
   }
 
-  private drawWalkFlag(fromX: number, moveToPct: number) {
+  /** walk-target flag in SCREEN space (from/to are projected world points) */
+  private drawWalkFlag(fromX: number, fromY: number, flagX: number, flagY: number) {
     const ctx = this.ctx;
-    const flagX = (moveToPct / 100) * STAGE_W;
     ctx.save();
 
-    // dashed walk path along the ground
+    // dashed walk path along the ground (depth-projected)
     ctx.strokeStyle = 'rgba(5, 150, 105, 0.7)';
     ctx.lineWidth = 3;
     ctx.setLineDash([10, 8]);
     ctx.beginPath();
-    ctx.moveTo(fromX, GROUND_Y + 6);
-    ctx.lineTo(flagX, GROUND_Y + 6);
+    ctx.moveTo(fromX, fromY + 6);
+    ctx.lineTo(flagX, flagY + 6);
     ctx.stroke();
     ctx.setLineDash([]);
 
@@ -658,23 +871,23 @@ export class CartoonStage {
     ctx.strokeStyle = '#065f46';
     ctx.lineWidth = 4;
     ctx.beginPath();
-    ctx.moveTo(flagX, GROUND_Y + 6);
-    ctx.lineTo(flagX, GROUND_Y - 64);
+    ctx.moveTo(flagX, flagY + 6);
+    ctx.lineTo(flagX, flagY - 64);
     ctx.stroke();
 
     // pennant
     ctx.fillStyle = '#10b981';
     ctx.beginPath();
-    ctx.moveTo(flagX, GROUND_Y - 64);
-    ctx.lineTo(flagX + 46, GROUND_Y - 52);
-    ctx.lineTo(flagX, GROUND_Y - 40);
+    ctx.moveTo(flagX, flagY - 64);
+    ctx.lineTo(flagX + 46, flagY - 52);
+    ctx.lineTo(flagX, flagY - 40);
     ctx.closePath();
     ctx.fill();
 
     // draggable base knob
     ctx.fillStyle = '#059669';
     ctx.beginPath();
-    ctx.arc(flagX, GROUND_Y + 6, 11, 0, Math.PI * 2);
+    ctx.arc(flagX, flagY + 6, 11, 0, Math.PI * 2);
     ctx.fill();
     ctx.strokeStyle = '#ecfdf5';
     ctx.lineWidth = 3;
@@ -689,28 +902,27 @@ export class CartoonStage {
     const label = 'গন্তব্য — টেনে বদলান';
     const w = ctx.measureText(label).width + 20;
     ctx.beginPath();
-    ctx.roundRect(labelX - w / 2, GROUND_Y - 92, w, 26, 13);
+    ctx.roundRect(labelX - w / 2, flagY - 92, w, 26, 13);
     ctx.fill();
     ctx.fillStyle = '#ecfdf5';
-    ctx.fillText(label, labelX, GROUND_Y - 78);
+    ctx.fillText(label, labelX, flagY - 78);
 
     ctx.restore();
   }
 
-  private drawSpeakerPill(name: string, worldX: number, s: number) {
+  private drawSpeakerPill(name: string, screenX: number, screenY: number) {
     const ctx = this.ctx;
-    const y = GROUND_Y - 232 * s - 16;
     ctx.font = '600 24px "Hind Siliguri", sans-serif';
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
     const w = ctx.measureText(name).width + 34;
-    const cx = Math.max(w / 2 + 8, Math.min(STAGE_W - w / 2 - 8, worldX));
+    const cx = Math.max(w / 2 + 8, Math.min(STAGE_W - w / 2 - 8, screenX));
     ctx.fillStyle = 'rgba(124, 45, 18, 0.88)';
     ctx.beginPath();
-    ctx.roundRect(cx - w / 2, y - 19, w, 38, 19);
+    ctx.roundRect(cx - w / 2, screenY - 19, w, 38, 19);
     ctx.fill();
     ctx.fillStyle = '#fff7ed';
-    ctx.fillText(name, cx, y + 1);
+    ctx.fillText(name, cx, screenY + 1);
   }
 
   private drawSubtitle(text: string) {

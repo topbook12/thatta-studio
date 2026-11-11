@@ -963,16 +963,20 @@ export function drawCharacter(
 ) {
   ctx.save();
   ctx.rotate(pose.bodyLean * D);
-  ctx.translate(pose.xOff, -pose.yOff);
 
-  // soft ground shadow (radial fade)
-  const sg = ctx.createRadialGradient(0, 2, 2, 0, 2, 38);
-  sg.addColorStop(0, 'rgba(0,0,0,0.24)');
+  // soft ground shadow (radial fade) — stays ON THE GROUND while the body
+  // jumps (drawn before the y translate), shrinking & fading with height
+  const airH = Math.max(0, pose.yOff); // height above ground (units)
+  const airK = 1 / (1 + airH / 46);
+  const sg = ctx.createRadialGradient(0, 2, 2, 0, 2, 38 * airK);
+  sg.addColorStop(0, `rgba(0,0,0,${(0.24 * airK).toFixed(3)})`);
   sg.addColorStop(1, 'rgba(0,0,0,0)');
   ctx.fillStyle = sg;
   ctx.beginPath();
-  ctx.ellipse(0, 2, 38, 9, 0, 0, Math.PI * 2);
+  ctx.ellipse(0, 2, 38 * airK, 9 * airK, 0, 0, Math.PI * 2);
   ctx.fill();
+
+  ctx.translate(pose.xOff, -pose.yOff);
 
   // squash & stretch about the ground point (cartoon physics)
   const sq = Math.max(-0.9, Math.min(0.9, pose.squash ?? 0));

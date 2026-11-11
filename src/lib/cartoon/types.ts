@@ -27,7 +27,9 @@ export type ActionName =
   | 'eat' // মিষ্টি খাচ্ছে
   | 'sleep' // ঘুমাচ্ছে
   | 'celebrate' // জয়ধোঁয়া উদযাপন
-  | 'sneak'; // চুরির প্ল্যানে টিপটো
+  | 'sneak' // চুরির প্ল্যানে টিপটো
+  // Sprint 6 — pseudo-3D movement
+  | 'turn'; // ঘুরে দাঁড়াচ্ছে (3D perspective flip)
 
 export type BgName =
   | 'village'
@@ -127,6 +129,11 @@ export interface PlacedCharacter {
   flip: boolean;
   /** prop held in the near hand (older saved scenes may omit → 'none') */
   prop?: PropName;
+  /**
+   * Sprint 6 — depth (Z) in px: 0 = stage plane, + = farther (smaller),
+   * − = closer to the camera (bigger). Older saved scenes omit → 0.
+   */
+  z?: number;
 }
 
 /** One action/dialogue unit of the cartoon ("beat"). */
@@ -153,12 +160,47 @@ export interface SceneBeat {
   easing?: EasingName;
   /** TTS voice speaking rate for this line (0.5..2, default 1) — Sprint 5 */
   voiceSpeed?: number;
+  /**
+   * Sprint 6 — walk/run can travel INTO the scene (3D depth path).
+   * Target depth in px (−120..480). Omitted → stay at the current depth.
+   */
+  moveZ?: number;
+}
+
+/**
+ * Sprint 6 — a cinematic camera shot: the virtual camera eases towards
+ * a focus point (a character or a fixed pan position) and zooms in/out.
+ * Pure function of scene time — deterministic for scrubbing & export.
+ */
+export interface CameraShot {
+  id: string;
+  /** seconds */
+  start: number;
+  /** seconds (exclusive) */
+  end: number;
+  /** zoom factor 1..2.4 */
+  zoom: number;
+  /** follow this character (chest-level tracking shot) */
+  focusUid?: string | null;
+  /** when focusUid is null: horizontal pan target, 0..100 (% of stage) */
+  panX?: number;
+  /** transition easing into the shot (default easeInOut) */
+  easing?: EasingName;
+}
+
+/** Scene-level cinematic camera state. */
+export interface SceneCamera {
+  shots: CameraShot[];
+  /** impact camera-shake on slap/jump/fall/kick (default true) */
+  shake?: boolean;
 }
 
 export interface Scene {
   background: BgName;
   characters: PlacedCharacter[];
   beats: SceneBeat[];
+  /** Sprint 6 — cinematic camera (older saved scenes omit) */
+  camera?: SceneCamera;
 }
 
 /** Per-frame skeleton/face state computed from an action. */

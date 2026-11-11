@@ -59,6 +59,7 @@ import {
   Square,
   Trash2,
   UserPlus,
+  Video,
   Volume2,
   X,
 } from "lucide-react";
@@ -124,6 +125,10 @@ export default function StudioTab({
     moveBeatTo,
     setDesigns,
     setScene,
+    addCameraShot,
+    updateCameraShot,
+    removeCameraShot,
+    setCameraShake,
   } = useStudio();
 
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -154,6 +159,8 @@ export default function StudioTab({
   const [duration, setDuration] = useState(3);
   const [text, setText] = useState("");
   const [moveTo, setMoveTo] = useState(50);
+  // Sprint 6 — 3D depth target for walk/run beats
+  const [moveZ, setMoveZ] = useState(0);
   const [beatSpeed, setBeatSpeed] = useState(1);
   const [beatEasing, setBeatEasing] = useState<EasingName>("easeInOut");
   // TTS voice speaking rate for this line (0.5..2) — Sprint 5
@@ -596,6 +603,7 @@ export default function StudioTab({
     setDuration(3);
     setText("");
     setMoveTo(50);
+    setMoveZ(0);
     setBeatSpeed(1);
     setBeatEasing("easeInOut");
     setVoiceSpeed(1);
@@ -624,6 +632,8 @@ export default function StudioTab({
           ? Math.max(0, beatStart ?? 0)
           : undefined,
       moveTo: action === "walk" || action === "run" ? moveTo : undefined,
+      // 3D depth path — 0 = stage plane (towards camera when negative)
+      moveZ: action === "walk" || action === "run" ? moveZ : undefined,
       speed: beatSpeed !== 1 ? beatSpeed : undefined,
       easing: action === "walk" || action === "run" ? beatEasing : undefined,
       voiceSpeed: voiceSpeed !== 1 ? voiceSpeed : undefined,
@@ -649,6 +659,7 @@ export default function StudioTab({
     setDuration(b.duration);
     setText(b.text);
     setMoveTo(b.moveTo ?? 50);
+    setMoveZ(b.moveZ ?? scene.characters.find((c) => c.uid === b.actorUid)?.z ?? 0);
     setBeatSpeed(b.speed ?? 1);
     setBeatEasing(b.easing ?? "easeInOut");
     setVoiceSpeed(b.voiceSpeed ?? 1);
@@ -838,7 +849,7 @@ export default function StudioTab({
           )}
           {!playing && !exporting && scene.characters.length > 0 && (
             <p className="rounded-lg border border-amber-200 bg-amber-50/60 px-3 py-2 text-xs text-amber-700">
-              ✋ টিপ: ক্যারেক্টার টেনে সরান • টাইমলাইনে হাঁটার দৃশ্য বাছলে স্টেজে 🚩 সবুজ পতাকা টেনে গন্তব্য বদলান!
+              ✋ টিপ: ক্যারেক্টার টেনে সরান • গভীরতা (3D) স্লাইডারে দূরে-কাছে বদলান • হাঁটার দৃশ্যে 🚩 পতাকা টেনে গন্তব্য ঠিক করুন!
             </p>
           )}
         </CardContent>
@@ -969,6 +980,22 @@ export default function StudioTab({
                         </div>
                         <div>
                           <div className="mb-1 flex justify-between text-xs text-amber-800">
+                            <span>গভীরতা (3D)</span>
+                            <span>{bnNum(Math.round(c.z ?? 0))}</span>
+                          </div>
+                          <Slider
+                            value={[c.z ?? 0]}
+                            min={-120}
+                            max={480}
+                            step={10}
+                            onValueChange={(v) => updatePlaced(c.uid, { z: v[0] })}
+                          />
+                          <p className="mt-1 text-[11px] leading-snug text-amber-600">
+                            বাড়ালে ক্যারেক্টার দূরে ছোট হবে, কমালে ক্যামেরার কাছে বড় — সত্যিকারের 3D অনুভূতি!
+                          </p>
+                        </div>
+                        <div>
+                          <div className="mb-1 flex justify-between text-xs text-amber-800">
                             <span>হাতের জিনিস</span>
                             <span>
                               {
@@ -1033,6 +1060,161 @@ export default function StudioTab({
                   )}
                 </p>
               )}
+            </CardContent>
+          </Card>
+
+          {/* Sprint 6 — cinematic camera */}
+          <Card className="border-amber-200">
+            <CardHeader className="pb-3">
+              <CardTitle className="text-orange-800">🎥 সিনেমাটিক ক্যামেরা</CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              <div className="flex items-center justify-between rounded-xl border border-amber-200 bg-amber-50/60 p-3">
+                <div className="space-y-0.5">
+                  <p className="text-sm font-semibold text-amber-900">ইমপ্যাক্ট শেক</p>
+                  <p className="text-xs text-amber-700">
+                    থাপ্পড়/লাফ/পড়ে যাওয়ায় ক্যামেরা কেঁপে উঠবে — কমেডি ইমপ্যাক্ট!
+                  </p>
+                </div>
+                <Switch
+                  checked={scene.camera?.shake !== false}
+                  onCheckedChange={setCameraShake}
+                  aria-label="ইমপ্যাক্ট শেক চালু/বন্ধ"
+                />
+              </div>
+
+              {(scene.camera?.shots ?? []).length === 0 ? (
+                <p className="rounded-lg border border-dashed border-amber-300 p-3 text-xs text-amber-700">
+                  শট যোগ করলে নির্দিষ্ট সময়ে ক্যামেরা ক্যারেক্টারের উপর মসৃণভাবে জুম করবে —
+                  সিনেমার মতো ফোকাস, প্রিমিয়াম ফিনিশিং!
+                </p>
+              ) : (
+                <div className="thatta-scroll max-h-80 space-y-3 overflow-y-auto pr-1">
+                  {(scene.camera?.shots ?? []).map((shot) => (
+                    <div
+                      key={shot.id}
+                      className="space-y-2.5 rounded-xl border border-amber-200 bg-white p-3"
+                    >
+                      <div className="flex items-center justify-between">
+                        <p className="text-sm font-bold text-amber-950">
+                          🎯 {bnNum(shot.start)}–{bnNum(shot.end)} সে.
+                        </p>
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          className="h-7 border-rose-200 px-2 text-rose-700 hover:bg-rose-50"
+                          onClick={() => removeCameraShot(shot.id)}
+                          aria-label="শট মুছুন"
+                        >
+                          <Trash2 className="h-3 w-3" />
+                        </Button>
+                      </div>
+                      <div className="grid grid-cols-2 gap-2">
+                        <div>
+                          <Label className="text-xs text-amber-800">শুরু (সে.)</Label>
+                          <Input
+                            type="number"
+                            min={0}
+                            step={0.5}
+                            value={shot.start}
+                            onChange={(e) =>
+                              updateCameraShot(shot.id, {
+                                start: Math.max(0, Number(e.target.value) || 0),
+                              })
+                            }
+                            className="h-8 border-amber-200 text-xs"
+                          />
+                        </div>
+                        <div>
+                          <Label className="text-xs text-amber-800">শেষ (সে.)</Label>
+                          <Input
+                            type="number"
+                            min={0.5}
+                            step={0.5}
+                            value={shot.end}
+                            onChange={(e) =>
+                              updateCameraShot(shot.id, {
+                                end: Math.max(0.5, Number(e.target.value) || 0.5),
+                              })
+                            }
+                            className="h-8 border-amber-200 text-xs"
+                          />
+                        </div>
+                      </div>
+                      <div>
+                        <div className="flex justify-between text-xs text-amber-800">
+                          <span>জুম</span>
+                          <span>×{bnNum(shot.zoom.toFixed(1))}</span>
+                        </div>
+                        <Slider
+                          value={[shot.zoom]}
+                          min={1}
+                          max={2.4}
+                          step={0.1}
+                          onValueChange={(v) => updateCameraShot(shot.id, { zoom: v[0] })}
+                        />
+                      </div>
+                      <div>
+                        <Label className="text-xs text-amber-800">কার উপর ফোকাস</Label>
+                        <Select
+                          value={shot.focusUid ?? "__pan"}
+                          onValueChange={(v) =>
+                            updateCameraShot(shot.id, {
+                              focusUid: v === "__pan" ? null : v,
+                              panX: v === "__pan" ? (shot.panX ?? 50) : undefined,
+                            })
+                          }
+                        >
+                          <SelectTrigger className="h-8 border-amber-200 text-xs">
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="__pan">নির্দিষ্ট জায়গায় প্যান</SelectItem>
+                            {scene.characters.map((c) => (
+                              <SelectItem key={c.uid} value={c.uid}>
+                                {designNameOf(c.uid) ?? "অজানা"}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
+                      {shot.focusUid == null && (
+                        <div>
+                          <div className="flex justify-between text-xs text-amber-800">
+                            <span>প্যান অবস্থান</span>
+                            <span>{bnNum(Math.round(shot.panX ?? 50))}%</span>
+                          </div>
+                          <Slider
+                            value={[shot.panX ?? 50]}
+                            min={10}
+                            max={90}
+                            step={5}
+                            onValueChange={(v) =>
+                              updateCameraShot(shot.id, { panX: v[0] })
+                            }
+                          />
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}
+              <Button
+                variant="outline"
+                className="w-full border-orange-300 text-orange-700 hover:bg-orange-50"
+                onClick={() =>
+                  addCameraShot({
+                    start: 0,
+                    end: 3,
+                    zoom: 1.4,
+                    focusUid: scene.characters[0]?.uid ?? null,
+                    easing: "easeInOut",
+                  })
+                }
+                disabled={scene.characters.length === 0}
+              >
+                <Video className="mr-2 h-4 w-4" /> ক্যামেরা শট যোগ করুন
+              </Button>
             </CardContent>
           </Card>
         </div>
@@ -1137,6 +1319,11 @@ export default function StudioTab({
                         {b.moveTo != null && (
                           <span className="text-xs text-amber-600">
                             🚶 হাঁটবে {bnNum(Math.round(b.moveTo))}% পর্যন্ত
+                          </span>
+                        )}
+                        {(b.moveZ ?? 0) !== 0 && (
+                          <span className="text-xs text-amber-600">
+                            🎥 গভীরে {bnNum(Math.round(b.moveZ ?? 0))} পর্যন্ত
                           </span>
                         )}
                         {b.voiceSpeed != null && b.voiceSpeed !== 1 && (
@@ -1326,6 +1513,26 @@ export default function StudioTab({
                         ))}
                       </SelectContent>
                     </Select>
+                  </div>
+                  <div className="space-y-2 rounded-xl border border-teal-200 bg-teal-50/50 p-3">
+                    <div className="flex justify-between">
+                      <Label className="text-sm font-semibold text-teal-900">
+                        গভীরে যাবে (3D ডেপথ)
+                      </Label>
+                      <span className="text-sm font-semibold text-teal-800">
+                        {bnNum(Math.round(moveZ))}
+                      </span>
+                    </div>
+                    <Slider
+                      value={[moveZ]}
+                      min={-120}
+                      max={480}
+                      step={10}
+                      onValueChange={(v) => setMoveZ(v[0])}
+                    />
+                    <p className="text-xs text-teal-700">
+                      বাড়ালে ক্যারেক্টার হাঁটতে হাঁটতে দূরে ছোট হয়ে যাবে, কমালে ক্যামেরার দিকে বড় হয়ে আসবে — সিনেমার 3D মুভমেন্ট!
+                    </p>
                   </div>
                 </div>
               ) : null}

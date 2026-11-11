@@ -12,6 +12,7 @@ import {
 } from './cartoon/presets';
 import type {
   BgName,
+  CameraShot,
   CharacterDesign,
   PlacedCharacter,
   Scene,
@@ -43,6 +44,12 @@ export interface StudioState {
   moveBeatTo: (id: string, start: number, actorUid?: string) => void;
   setScene: (s: Scene) => void;
   clearBeats: () => void;
+
+  // Sprint 6 — cinematic camera
+  addCameraShot: (shot: Omit<CameraShot, 'id'>) => void;
+  updateCameraShot: (id: string, patch: Partial<CameraShot>) => void;
+  removeCameraShot: (id: string) => void;
+  setCameraShake: (on: boolean) => void;
 }
 
 export const useStudio = create<StudioState>()(
@@ -165,6 +172,53 @@ export const useStudio = create<StudioState>()(
         })),
       setScene: (sc) => set({ scene: normalizeScene(sc) }),
       clearBeats: () => set((s) => ({ scene: { ...s.scene, beats: [] } })),
+
+      // Sprint 6 — cinematic camera
+      addCameraShot: (shot) =>
+        set((s) => ({
+          scene: {
+            ...s.scene,
+            camera: {
+              shots: [
+                ...(s.scene.camera?.shots ?? []),
+                { ...shot, id: newId() },
+              ],
+              shake: s.scene.camera?.shake,
+            },
+          },
+        })),
+      updateCameraShot: (id, patch) =>
+        set((s) => ({
+          scene: {
+            ...s.scene,
+            camera: {
+              shots: (s.scene.camera?.shots ?? []).map((x) =>
+                x.id === id ? { ...x, ...patch } : x,
+              ),
+              shake: s.scene.camera?.shake,
+            },
+          },
+        })),
+      removeCameraShot: (id) =>
+        set((s) => ({
+          scene: {
+            ...s.scene,
+            camera: {
+              shots: (s.scene.camera?.shots ?? []).filter((x) => x.id !== id),
+              shake: s.scene.camera?.shake,
+            },
+          },
+        })),
+      setCameraShake: (on) =>
+        set((s) => ({
+          scene: {
+            ...s.scene,
+            camera: {
+              shots: s.scene.camera?.shots ?? [],
+              shake: on,
+            },
+          },
+        })),
     }),
     {
       name: 'thatta-studio-v1',

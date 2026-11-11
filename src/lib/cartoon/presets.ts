@@ -94,6 +94,7 @@ export const ACTION_OPTIONS: { id: ActionName; label: string; emoji: string }[] 
   { id: 'fall', label: 'পড়ে যাচ্ছে', emoji: '🤕' },
   { id: 'nod', label: 'মাথা নাড়ছে', emoji: '🙂' },
   { id: 'cry', label: 'কাঁদছে', emoji: '😭' },
+  { id: 'turn', label: 'ঘুরে দাঁড়াচ্ছে (3D)', emoji: '🔄' },
 ];
 
 /** walk/run এর গতিপথের easing অপশন */
@@ -267,6 +268,7 @@ function sequentialStart(beats: SceneBeat[], i: number): number {
 /**
  * Fill in absolute `start` times for beats loaded from old projects and
  * clamp walk/speed fields into safe ranges. Idempotent.
+ * Sprint 6: also normalizes depth (z/moveZ) and the cinematic camera.
  */
 export function normalizeScene(scene: Scene): Scene {
   const beats = scene.beats.map((b, i) => {
@@ -279,13 +281,32 @@ export function normalizeScene(scene: Scene): Scene {
       start,
       moveTo:
         b.action === 'walk' || b.action === 'run' ? b.moveTo : undefined,
+      moveZ:
+        b.action === 'walk' || b.action === 'run'
+          ? Math.max(-120, Math.min(480, Math.round(b.moveZ ?? 0)))
+          : undefined,
       speed:
         b.speed != null
           ? Math.max(0.25, Math.min(2.5, b.speed))
           : undefined,
     };
   });
-  return { ...scene, beats };
+  const characters = scene.characters.map((c) => ({
+    ...c,
+    z: c.z != null ? Math.max(-120, Math.min(480, Math.round(c.z))) : undefined,
+  }));
+  const camera = {
+    shots: (scene.camera?.shots ?? [])
+      .filter((s) => s.end > s.start)
+      .map((s) => ({
+        ...s,
+        start: Math.max(0, Math.round(s.start * 20) / 20),
+        end: Math.max(0.3, Math.round(s.end * 20) / 20),
+        zoom: Math.max(1, Math.min(2.4, s.zoom ?? 1.3)),
+      })),
+    shake: scene.camera?.shake !== false,
+  };
+  return { ...scene, beats, characters, camera };
 }
 
 // ---------------- Starter scene (demo cartoon) ----------------
