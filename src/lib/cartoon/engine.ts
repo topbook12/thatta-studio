@@ -35,6 +35,17 @@ function clamp(v: number, lo: number, hi: number) {
   return Math.max(lo, Math.min(hi, v));
 }
 
+/**
+ * Sprint 7 — render quality: the stage keeps STAGE_W×STAGE_H as the logical
+ * coordinate system but backs it with a HiDPI bitmap (×DPR, capped at 2) so
+ * vectors, text and the procedural background stay razor sharp on retina
+ * screens AND in exported video frames.
+ */
+const RENDER_SCALE = Math.min(
+  2,
+  Math.max(1, typeof window === 'undefined' ? 1 : window.devicePixelRatio || 1),
+);
+
 /** Sprint 6 — camera state of one frame (pure function of scene time) */
 interface CamState {
   zoom: number;
@@ -146,11 +157,15 @@ export class CartoonStage {
   private dragUid: string | null = null;
   private dragMoved = false;
   private flagDrag = false;
+  /** Sprint 7 — while exporting, deterministic shake + overlay switches */
+  private exportOpts: { shake: boolean; hideNameTags: boolean } | null = null;
+  /** cached cinematic vignette (depends only on stage size) */
+  private vignette: CanvasGradient | null = null;
 
   constructor(canvas: HTMLCanvasElement, callbacks: StageCallbacks = {}) {
     this.canvas = canvas;
-    canvas.width = STAGE_W;
-    canvas.height = STAGE_H;
+    canvas.width = Math.round(STAGE_W * RENDER_SCALE);
+    canvas.height = Math.round(STAGE_H * RENDER_SCALE);
     const ctx = canvas.getContext('2d');
     if (!ctx) throw new Error('Canvas 2D context unavailable');
     this.ctx = ctx;
@@ -167,6 +182,33 @@ export class CartoonStage {
 
   getCanvas(): HTMLCanvasElement {
     return this.canvas;
+  }
+
+  /** absolute beat windows [start,end) — export audio scheduling uses this */
+  beatWindows(): { id: string; start: number; end: number }[] {
+    return this.layout().map((w) => ({ id: w.beat.id, start: w.start, end: w.end }));
+  }
+
+  /**
+   * Sprint 7 — render ONE deterministic frame at absolute scene time `t`
+   * for the video exporter: no selection ring, no edit flag, shake on,
+   * idle/ambient animations derived from `t` (identical output every run).
+   */
+  renderExportFrame(t: number, opts?: { hideNameTags?: boolean }) {
+    if (!this.scene || this.scene.beats.length === 0) return;
+    const prevSelected = this.selectedUid;
+    const prevEdit = this.editBeatId;
+    const prevExport = this.exportOpts;
+    const prevTime = this.sceneTime;
+    this.selectedUid = null;
+    this.editBeatId = null;
+    this.exportOpts = { shake: true, hideNameTags: !!opts?.hideNameTags };
+    this.sceneTime = clamp(t, 0, Math.max(0.001, this.totalDuration() - 0.001));
+    this.render();
+    this.selectedUid = prevSelected;
+    this.editBeatId = prevEdit;
+    this.exportOpts = prevExport;
+    this.sceneTime = prevTime;
   }
 
   setCallbacks(cb: StageCallbacks) {
@@ -288,10 +330,10 @@ export class CartoonStage {
       cx = STAGE_W / 2 + (fx - STAGE_W / 2) * k;
       cy = STAGE_H / 2 + (fy - STAGE_H / 2) * k;
     }
-    // impact shake — only while actually playing (never jitter while scrubbing)
+    // impact shake — while playing or exporting (never jitter while scrubbing)
     let shakeX = 0;
     let shakeY = 0;
-    if (this.scene?.camera?.shake !== false && this.playing) {
+    if (this.scene?.camera?.shake !== false && (this.playing || this.exportOpts?.shake)) {
       let amp = 0;
       for (const w of this.activeAt(this.layout(), t)) {
         const lt = (t - w.start) * (w.beat.speed ?? 1);
@@ -629,6 +671,8 @@ export class CartoonStage {
 
   private render() {
     const ctx = this.ctx;
+    // Sprint 7 — logical coordinate system on a HiDPI bitmap
+    ctx.setTransform(RENDER_SCALE, 0, 0, RENDER_SCALE, 0, 0);
     ctx.clearRect(0, 0, STAGE_W, STAGE_H);
 
     if (!this.scene || this.scene.beats.length === 0) {
@@ -687,8 +731,9 @@ export class CartoonStage {
     }
 
     // living background layer (clouds, fireflies, shimmer…)
+    // during export use scene time so every render is identical
     try {
-      drawAmbient(ctx, this.scene.background, this.animT);
+      drawAmbient(ctx, this.scene.background, this.exportOpts ? t : this.animT);
     } catch {
       /* ambient is decorative — never break the stage */
     }
@@ -707,7 +752,7 @@ export class CartoonStage {
         placed.flip !==
         (this.turnCountAt(placed.uid, inScene ? t : 0) % 2 === 1);
       let pose = basePose();
-      let localT = this.animT;
+      let localT = this.exportOpts ? t : this.animT;
       let extraScaleX = 1;
 
       if (w) {
@@ -806,9 +851,9 @@ export class CartoonStage {
       }
     }
 
-    // speaker pills
+    // speaker pills (export can hide them for a clean picture)
     for (const r of rendered) {
-      if (r.speaking) {
+      if (r.speaking && !this.exportOpts?.hideNameTags) {
         this.drawSpeakerPill(
           r.name,
           this.worldToScreenX(r.wx),
@@ -847,6 +892,24 @@ export class CartoonStage {
     if (sub) {
       this.drawSubtitle(sub.beat.text);
     }
+
+    // Sprint 7 — cinematic vignette: soft warm edge that pulls focus inward
+    if (!this.vignette) {
+      const g = ctx.createRadialGradient(
+        STAGE_W / 2,
+        STAGE_H * 0.44,
+        STAGE_H * 0.42,
+        STAGE_W / 2,
+        STAGE_H * 0.5,
+        STAGE_W * 0.74,
+      );
+      g.addColorStop(0, 'rgba(20, 8, 0, 0)');
+      g.addColorStop(0.72, 'rgba(20, 8, 0, 0.05)');
+      g.addColorStop(1, 'rgba(30, 10, 0, 0.18)');
+      this.vignette = g;
+    }
+    ctx.fillStyle = this.vignette;
+    ctx.fillRect(0, 0, STAGE_W, STAGE_H);
 
     // watermark
     this.drawWatermark();

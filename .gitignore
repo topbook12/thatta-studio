@@ -50,5 +50,13 @@ test
 prompt
 
 server.log
+# sqlite database files — never commit
+/db/*.db
+/db/*.db-journal
+/db/*.db-wal
+/db/*.db-shm
 # Skills directory
 /skills/
+# internal tooling artifacts
+tool-results/
+agent-ctx/

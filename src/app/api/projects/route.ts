@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
-import { db } from '@/lib/db'
+import { ensureSchema, getDb } from '@/lib/db'
 
 export const runtime = 'nodejs'
 export const maxDuration = 60
@@ -19,8 +19,21 @@ const createProjectSchema = z.object({
     .max(MAX_DATA_BYTES, 'data must be at most 2MB'),
 })
 
+const cloudUnavailable = () =>
+  NextResponse.json(
+    {
+      error: 'Cloud save is unavailable on this deployment',
+      hint: 'The app keeps working offline — projects save on the device.',
+    },
+    { status: 503 },
+  )
+
 export async function GET() {
+  const db = getDb()
+  if (!db) return cloudUnavailable()
+
   try {
+    await ensureSchema()
     const projects = await db.project.findMany({
       select: {
         id: true,
@@ -33,10 +46,7 @@ export async function GET() {
     return NextResponse.json({ projects })
   } catch (error) {
     console.error('[api/projects] GET failed:', error)
-    return NextResponse.json(
-      { error: 'Failed to list projects' },
-      { status: 500 }
-    )
+    return cloudUnavailable()
   }
 }
 
@@ -65,9 +75,13 @@ export async function POST(request: NextRequest) {
     )
   }
 
+  const db = getDb()
+  if (!db) return cloudUnavailable()
+
   const { name, data } = parsed.data
 
   try {
+    await ensureSchema()
     const project = await db.project.create({
       data: { name, data },
       select: {
@@ -80,9 +94,6 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ project }, { status: 201 })
   } catch (error) {
     console.error('[api/projects] POST failed:', error)
-    return NextResponse.json(
-      { error: 'Failed to create project' },
-      { status: 500 }
-    )
+    return cloudUnavailable()
   }
 }

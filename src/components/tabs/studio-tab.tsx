@@ -23,7 +23,22 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { toast } from "@/hooks/use-toast";
+import { Progress } from "@/components/ui/progress";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useStudio } from "@/lib/store";
+import {
+  exportVideoWebCodecs,
+  ExportCancelled,
+  webCodecsAvailable,
+  type ExportBeatAudio,
+} from "@/lib/cartoon/exporter";
+import {
+  deleteLocalProject,
+  getLocalProject,
+  listLocalProjects,
+  saveLocalProject,
+  type LocalProjectMeta,
+} from "@/lib/local-projects";
 import {
   ACTION_OPTIONS,
   BG_OPTIONS,
@@ -33,7 +48,12 @@ import {
   VOICE_SPEED_OPTIONS,
 } from "@/lib/cartoon/presets";
 import { CartoonStage } from "@/lib/cartoon/engine";
-import { getCachedAudio, generateVoice, setCachedAudio } from "@/lib/tts-cache";
+import {
+  getCachedAudio,
+  generateVoice,
+  restoreVoiceAudio,
+  setCachedAudio,
+} from "@/lib/tts-cache";
 import type {
   ActionName,
   CharacterDesign,
@@ -49,8 +69,11 @@ import TimelineEditor, {
 import {
   ArrowDown,
   ArrowUp,
+  Cloud,
   Download,
+  Film,
   FolderOpen,
+  HardDrive,
   Mic,
   Pause,
   Pencil,
@@ -175,6 +198,24 @@ export default function StudioTab({
   const [projects, setProjects] = useState<ProjectMeta[]>([]);
   const [loadingProjects, setLoadingProjects] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [cloudError, setCloudError] = useState(false);
+  const [loadTab, setLoadTab] = useState("device");
+  const [localProjects, setLocalProjects] = useState<LocalProjectMeta[]>([]);
+
+  // Sprint 7 — premium export
+  const [exportOpen, setExportOpen] = useState(false);
+  const [exportQuality, setExportQuality] = useState<"720" | "1080">("720");
+  const [exportFps, setExportFps] = useState(30);
+  const [exportTags, setExportTags] = useState(true);
+  const [exportFade, setExportFade] = useState(true);
+  const [exportTitle, setExportTitle] = useState("");
+  const [exportProgress, setExportProgress] = useState<{
+    done: number;
+    total: number;
+    phase: string;
+  } | null>(null);
+  const cancelExportRef = useRef(false);
+  const fastExport = webCodecsAvailable();
 
   // ---------- stage lifecycle ----------
   useEffect(() => {
@@ -248,6 +289,36 @@ export default function StudioTab({
     rateRef.current = playbackRate;
     stageRef.current?.setPlaybackRate(playbackRate);
   }, [playbackRate]);
+
+  // Sprint 7 — cold cache: rebuild voices from the offline IndexedDB store
+  // (previously generated dialogue works again even with zero network)
+  useEffect(() => {
+    let alive = true;
+    const run = async () => {
+      let changed = false;
+      for (const b of scene.beats) {
+        if (!b.text.trim() || getCachedAudio(b.id)) continue;
+        const design = designs.find(
+          (d) => d.id === scene.characters.find((c) => c.uid === b.actorUid)?.designId,
+        );
+        const restored = await restoreVoiceAudio(
+          b.text.trim(),
+          design?.voice ?? "tongtong",
+          b.voiceSpeed ?? 1,
+        );
+        if (!alive) return;
+        if (restored) {
+          setCachedAudio(b.id, restored);
+          changed = true;
+        }
+      }
+      if (changed && alive) setAudioVersion((v) => v + 1);
+    };
+    run();
+    return () => {
+      alive = false;
+    };
+  }, [scene.beats, scene.characters, designs]);
 
   // keep a ref of the selected beat for pointer callbacks
   useEffect(() => {
@@ -511,8 +582,97 @@ export default function StudioTab({
     toast({ title: "সব ভয়েস রেডি 🔊", description: "এখন ▶ প্লে চাপুন!" });
   };
 
-  // ---------- export ----------
-  const handleExport = () => {
+  // ---------- export (Sprint 7 — premium MP4) ----------
+  const downloadBlob = (blob: Blob, name: string) => {
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = name;
+    a.click();
+    setTimeout(() => URL.revokeObjectURL(url), 8000);
+  };
+
+  const openExportDialog = () => {
+    if (playing) {
+      toast({ title: "আগে প্লে বন্ধ করুন", variant: "destructive" });
+      return;
+    }
+    if (scene.beats.length === 0) {
+      toast({
+        title: "কোনো দৃশ্য নেই",
+        description: "আগে বিট যোগ করুন, তারপর এক্সপোর্ট করুন।",
+        variant: "destructive",
+      });
+      return;
+    }
+    setExportOpen(true);
+  };
+
+  /** deterministic frame-by-frame MP4 (WebCodecs) — fast & flawless */
+  const runFastExport = async () => {
+    const stage = stageRef.current;
+    const canvas = canvasRef.current;
+    if (!stage || !canvas) return;
+    cancelExportRef.current = false;
+    setExporting(true);
+    setExportProgress({ done: 0, total: 1, phase: "শুরু হচ্ছে" });
+    stage.stop();
+    try {
+      const dur = stage.getTotalDuration();
+      const windows = stage.beatWindows();
+      const buses: ExportBeatAudio[] = [];
+      for (const b of scene.beats) {
+        const a = getCachedAudio(b.id);
+        const w = windows.find((x) => x.id === b.id);
+        if (a && w) buses.push({ start: w.start, audio: a });
+      }
+      const hi = exportQuality === "1080";
+      const result = await exportVideoWebCodecs(
+        canvas,
+        (t) => stage.renderExportFrame(t, { hideNameTags: !exportTags }),
+        dur,
+        buses,
+        {
+          fps: exportFps,
+          width: hi ? 1920 : 1280,
+          height: hi ? 1080 : 720,
+          bitrate: hi ? 9_000_000 : 5_000_000,
+          hideNameTags: !exportTags,
+          fadeInOut: exportFade,
+          titleText: exportTitle,
+          onProgress: (done, total, phase) =>
+            setExportProgress({ done, total, phase }),
+          cancelled: () => cancelExportRef.current,
+        },
+      );
+      downloadBlob(result.blob, `thatta-cartoon-${Date.now()}.mp4`);
+      toast({
+        title: "MP4 ভিডিও তৈরি! 🎬",
+        description: `${hi ? "1080p" : "720p"} • ${bnNum(exportFps)}fps — এবার YouTube/Facebook এ আপলোড করুন!`,
+      });
+      setExportOpen(false);
+    } catch (e: unknown) {
+      if (e instanceof ExportCancelled) {
+        toast({ title: "এক্সপোর্ট বাতিল হয়েছে" });
+        setExportOpen(false);
+      } else {
+        toast({
+          title: "দ্রুত এক্সপোর্ট করা যায়নি",
+          description:
+            e instanceof Error
+              ? e.message
+              : "রিয়েল-টাইম রেকর্ডিং চেষ্টা করুন।",
+          variant: "destructive",
+        });
+      }
+    } finally {
+      setExporting(false);
+      setExportProgress(null);
+    }
+  };
+
+  /** fallback: realtime MediaRecorder capture (every browser) */
+  const exportRealtime = () => {
     const stage = stageRef.current;
     const canvas = canvasRef.current;
     if (!stage || !canvas) return;
@@ -542,7 +702,10 @@ export default function StudioTab({
         audioCtxRef.current = null;
         destRef.current = null;
       }
-      const rec = new MediaRecorder(stream, mime ? { mimeType: mime } : undefined);
+      const rec = new MediaRecorder(stream, {
+        mimeType: mime || undefined,
+        videoBitsPerSecond: 6_000_000,
+      });
       const chunks: Blob[] = [];
       rec.ondataavailable = (e) => {
         if (e.data.size > 0) chunks.push(e.data);
@@ -551,12 +714,7 @@ export default function StudioTab({
         const blob = new Blob(chunks, {
           type: mime ? mime.split(";")[0] : "video/webm",
         });
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement("a");
-        a.href = url;
-        a.download = `thatta-cartoon-${Date.now()}.${ext}`;
-        a.click();
-        setTimeout(() => URL.revokeObjectURL(url), 5000);
+        downloadBlob(blob, `thatta-cartoon-${Date.now()}.${ext}`);
         setExporting(false);
         exportingRef.current = false;
         audioCtx?.close().catch(() => {});
@@ -588,7 +746,10 @@ export default function StudioTab({
       exportingRef.current = false;
       toast({
         title: "এক্সপোর্ট করা যায়নি",
-        description: e instanceof Error ? e.message : "আপনার ব্রাউজার ভিডিও রেকর্ডিং সাপোর্ট করে না।",
+        description:
+          e instanceof Error
+            ? e.message
+            : "আপনার ব্রাউজার ভিডিও রেকর্ডিং সাপোর্ট করে না।",
         variant: "destructive",
       });
     }
@@ -672,6 +833,24 @@ export default function StudioTab({
   };
 
   // ---------- projects ----------
+  const handleSaveLocal = () => {
+    if (!projectName.trim()) {
+      toast({ title: "প্রজেক্টের নাম দিন", variant: "destructive" });
+      return;
+    }
+    const meta = saveLocalProject(
+      projectName.trim(),
+      JSON.stringify({ scene, designs }),
+    );
+    setLocalProjects(listLocalProjects());
+    toast({
+      title: "ডিভাইসে সেভ হয়েছে 💾",
+      description: `"${meta.name}" — অফলাইনেও লোড করা যাবে।`,
+    });
+    setSaveOpen(false);
+    setProjectName("");
+  };
+
   const handleSaveProject = async () => {
     if (!projectName.trim()) {
       toast({ title: "প্রজেক্টের নাম দিন", variant: "destructive" });
@@ -688,28 +867,64 @@ export default function StudioTab({
         }),
       });
       if (!res.ok) throw new Error("সেভ করা যায়নি");
-      toast({ title: "সেভ হয়েছে 💾", description: `"${projectName}" সার্ভারে সেভ হয়েছে।` });
+      toast({ title: "সেভ হয়েছে 💾", description: `"${projectName}" ক্লাউডে সেভ হয়েছে।` });
       setSaveOpen(false);
       setProjectName("");
     } catch {
-      toast({ title: "সেভ করা যায়নি", description: "আবার চেষ্টা করুন।", variant: "destructive" });
+      toast({
+        title: "ক্লাউডে সেভ হয়নি",
+        description:
+          "সার্ভার পাওয়া যায়নি — 'ডিভাইসে সেভ' ব্যবহার করুন, অফলাইনেও থাকবে।",
+        variant: "destructive",
+      });
     } finally {
       setSaving(false);
     }
   };
 
-  const openLoad = async () => {
+  const openLoad = () => {
     setLoadOpen(true);
+    setLocalProjects(listLocalProjects());
     setLoadingProjects(true);
+    setCloudError(false);
+    fetch("/api/projects")
+      .then((r) => {
+        if (!r.ok) throw new Error("cloud unavailable");
+        return r.json();
+      })
+      .then((j) => setProjects(j.projects ?? []))
+      .catch(() => {
+        setProjects([]);
+        setCloudError(true);
+      })
+      .finally(() => setLoadingProjects(false));
+  };
+
+  const loadLocalProject = (id: string) => {
+    const p = getLocalProject(id);
+    if (!p) return;
     try {
-      const res = await fetch("/api/projects");
-      const j = await res.json();
-      setProjects(j.projects ?? []);
+      const parsed = JSON.parse(p.data) as {
+        scene?: Scene;
+        designs?: CharacterDesign[];
+      };
+      if (parsed.scene && parsed.designs) {
+        setScene(parsed.scene);
+        setDesigns(parsed.designs);
+        setLoadOpen(false);
+        toast({ title: "প্রজেক্ট লোড হয়েছে 📂", description: p.name });
+      } else {
+        toast({ title: "ফাইল ভাঙা আছে", variant: "destructive" });
+      }
     } catch {
-      toast({ title: "লিস্ট আনা যায়নি", variant: "destructive" });
-    } finally {
-      setLoadingProjects(false);
+      toast({ title: "লোড করা যায়নি", variant: "destructive" });
     }
+  };
+
+  const deleteLocalProjectById = (id: string) => {
+    deleteLocalProject(id);
+    setLocalProjects(listLocalProjects());
+    toast({ title: "ডিলিট হয়েছে" });
   };
 
   const loadProject = async (id: string) => {
@@ -811,7 +1026,7 @@ export default function StudioTab({
               </Select>
             </div>
             <Button
-              onClick={handleExport}
+              onClick={openExportDialog}
               disabled={playing || exporting}
               className="bg-orange-600 text-white hover:bg-orange-700"
             >
@@ -843,7 +1058,7 @@ export default function StudioTab({
           {(playing || exporting) && (
             <p className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900">
               {exporting
-                ? "🎥 রেকর্ড হচ্ছে — কার্টুন শেষ না হওয়া পর্যন্ত ট্যাব বদলাবেন না।"
+                ? "🎥 ভিডিও তৈরি হচ্ছে — শেষ না হওয়া পর্যন্ত অপেক্ষা করুন।"
                 : `▶ চলছে — ${bnNum(currentTime.toFixed(1))} সে. • এখন অভিনয়ে: ${bnNum(activeBeatIds.size)}টি দৃশ্য`}
             </p>
           )}
@@ -1575,7 +1790,7 @@ export default function StudioTab({
           <DialogHeader>
             <DialogTitle className="text-orange-800">প্রজেক্ট সেভ করুন</DialogTitle>
             <DialogDescription>
-              সিন, ক্যারেক্টার ও দৃশ্যগুলো সার্ভারে সেভ হবে — যেকোনো সময় লোড করা যাবে।
+              সিন, ক্যারেক্টার ও দৃশ্যগুলো সেভ হবে — ডিভাইসে সেভ অফলাইনেও কাজ করে।
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4">
@@ -1585,14 +1800,26 @@ export default function StudioTab({
               placeholder="প্রজেক্টের নাম: যেমন — গোপাল ও পুলিশ"
               className="border-amber-300"
             />
-            <Button
-              onClick={handleSaveProject}
-              disabled={saving}
-              className="w-full bg-orange-600 text-white hover:bg-orange-700"
-            >
-              <Save className="mr-2 h-4 w-4" />
-              {saving ? "সেভ হচ্ছে..." : "সেভ করুন"}
-            </Button>
+            <div className="grid grid-cols-2 gap-2.5">
+              <Button
+                onClick={handleSaveLocal}
+                variant="outline"
+                className="border-emerald-300 text-emerald-800 hover:bg-emerald-50"
+              >
+                <HardDrive className="mr-2 h-4 w-4" /> ডিভাইসে সেভ
+              </Button>
+              <Button
+                onClick={handleSaveProject}
+                disabled={saving}
+                className="bg-orange-600 text-white hover:bg-orange-700"
+              >
+                <Cloud className="mr-2 h-4 w-4" />
+                {saving ? "সেভ হচ্ছে..." : "ক্লাউডে সেভ"}
+              </Button>
+            </div>
+            <p className="text-center text-xs text-amber-600">
+              ডিভাইসে সেভ = ইন্টারনেট ছাড়াই (PWA অফলাইন মোড) • ক্লাউডে সেভ = সার্ভারে নিরাপদ
+            </p>
           </div>
         </DialogContent>
       </Dialog>
@@ -1602,49 +1829,269 @@ export default function StudioTab({
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
             <DialogTitle className="text-orange-800">প্রজেক্ট লোড করুন</DialogTitle>
-            <DialogDescription>সেভ করা প্রজেক্ট লিস্ট থেকে বাছুন।</DialogDescription>
+            <DialogDescription>
+              ডিভাইসে সেভ করা বা ক্লাউডে সেভ করা প্রজেক্ট থেকে বাছুন।
+            </DialogDescription>
           </DialogHeader>
-          <div className="thatta-scroll max-h-72 space-y-2 overflow-y-auto pr-1">
-            {loadingProjects && (
-              <p className="py-6 text-center text-sm text-amber-700">লোড হচ্ছে...</p>
-            )}
-            {!loadingProjects && projects.length === 0 && (
-              <p className="py-6 text-center text-sm text-amber-700">
-                কোনো সেভ করা প্রজেক্ট নেই।
-              </p>
-            )}
-            {projects.map((p) => (
-              <div
-                key={p.id}
-                className="flex items-center justify-between gap-2 rounded-lg border border-amber-200 p-2.5"
-              >
-                <div className="min-w-0">
-                  <p className="truncate text-sm font-semibold text-amber-950">{p.name}</p>
-                  <p className="text-xs text-amber-600">
-                    {new Date(p.updatedAt).toLocaleDateString("bn-BD")}
+          <Tabs value={loadTab} onValueChange={setLoadTab}>
+            <TabsList className="grid h-auto w-full grid-cols-2">
+              <TabsTrigger value="device" className="gap-1.5 py-2 text-sm">
+                <HardDrive className="h-4 w-4" /> ডিভাইসে ({bnNum(localProjects.length)})
+              </TabsTrigger>
+              <TabsTrigger value="cloud" className="gap-1.5 py-2 text-sm">
+                <Cloud className="h-4 w-4" /> ক্লাউড ({bnNum(projects.length)})
+              </TabsTrigger>
+            </TabsList>
+
+            <TabsContent value="device" className="mt-3">
+              <div className="thatta-scroll max-h-72 space-y-2 overflow-y-auto pr-1">
+                {localProjects.length === 0 && (
+                  <p className="py-6 text-center text-sm text-amber-700">
+                    ডিভাইসে কোনো প্রজেক্ট নেই — সেভ ডায়ালগ থেকে &quot;ডিভাইসে সেভ&quot; করুন।
                   </p>
+                )}
+                {localProjects.map((p) => (
+                  <div
+                    key={p.id}
+                    className="flex items-center justify-between gap-2 rounded-lg border border-emerald-200 bg-emerald-50/40 p-2.5"
+                  >
+                    <div className="min-w-0">
+                      <p className="truncate text-sm font-semibold text-amber-950">{p.name}</p>
+                      <p className="text-xs text-amber-600">
+                        💾 অফলাইন • {new Date(p.updatedAt).toLocaleDateString("bn-BD")}
+                      </p>
+                    </div>
+                    <div className="flex gap-1.5">
+                      <Button
+                        size="sm"
+                        className="h-8 bg-emerald-600 text-white hover:bg-emerald-700"
+                        onClick={() => loadLocalProject(p.id)}
+                      >
+                        লোড
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        className="h-8 border-rose-200 text-rose-700 hover:bg-rose-50"
+                        onClick={() => deleteLocalProjectById(p.id)}
+                        aria-label="ডিলিট"
+                      >
+                        <Trash2 className="h-3.5 w-3.5" />
+                      </Button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </TabsContent>
+
+            <TabsContent value="cloud" className="mt-3">
+              <div className="thatta-scroll max-h-72 space-y-2 overflow-y-auto pr-1">
+                {loadingProjects && (
+                  <p className="py-6 text-center text-sm text-amber-700">লোড হচ্ছে...</p>
+                )}
+                {cloudError && (
+                  <p className="rounded-lg border border-amber-300 bg-amber-50 p-3 text-center text-xs text-amber-800">
+                    ☁️ ক্লাউড সার্ভার পাওয়া যায়নি — &quot;ডিভাইসে&quot; ট্যাব ব্যবহার করুন,
+                    ইন্টারনেট ছাড়াই কাজ করে।
+                  </p>
+                )}
+                {!loadingProjects && !cloudError && projects.length === 0 && (
+                  <p className="py-6 text-center text-sm text-amber-700">
+                    ক্লাউডে কোনো সেভ করা প্রজেক্ট নেই।
+                  </p>
+                )}
+                {projects.map((p) => (
+                  <div
+                    key={p.id}
+                    className="flex items-center justify-between gap-2 rounded-lg border border-amber-200 p-2.5"
+                  >
+                    <div className="min-w-0">
+                      <p className="truncate text-sm font-semibold text-amber-950">{p.name}</p>
+                      <p className="text-xs text-amber-600">
+                        ☁️ {new Date(p.updatedAt).toLocaleDateString("bn-BD")}
+                      </p>
+                    </div>
+                    <div className="flex gap-1.5">
+                      <Button
+                        size="sm"
+                        className="h-8 bg-emerald-600 text-white hover:bg-emerald-700"
+                        onClick={() => loadProject(p.id)}
+                      >
+                        লোড
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        className="h-8 border-rose-200 text-rose-700 hover:bg-rose-50"
+                        onClick={() => deleteProject(p.id)}
+                        aria-label="ডিলিট"
+                      >
+                        <Trash2 className="h-3.5 w-3.5" />
+                      </Button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </TabsContent>
+          </Tabs>
+        </DialogContent>
+      </Dialog>
+
+      {/* ---------- Export dialog (Sprint 7 — premium MP4) ---------- */}
+      <Dialog
+        open={exportOpen}
+        onOpenChange={(o) => {
+          if (!exportProgress) setExportOpen(o);
+        }}
+      >
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="text-orange-800">ভিডিও এক্সপোর্ট — প্রিমিয়াম MP4</DialogTitle>
+            <DialogDescription>
+              প্রতিটি ফ্রেম নিখুঁতভাবে রেন্ডার হয় — ভিডিও ঝকঝকে, ভয়েস পারফেক্ট সিঙ্কে।
+            </DialogDescription>
+          </DialogHeader>
+          {exportProgress ? (
+            <div className="space-y-3">
+              <div className="flex items-center justify-between text-sm font-semibold text-amber-900">
+                <span>⚙️ {exportProgress.phase}</span>
+                <span>
+                  {bnNum(
+                    exportProgress.total > 0
+                      ? Math.round((exportProgress.done / exportProgress.total) * 100)
+                      : 0,
+                  )}
+                  %
+                </span>
+              </div>
+              <Progress
+                value={
+                  exportProgress.total > 0
+                    ? (exportProgress.done / exportProgress.total) * 100
+                    : 0
+                }
+                className="h-3"
+              />
+              <p className="text-xs text-amber-700">
+                ফ্রেম {bnNum(exportProgress.done)} / {bnNum(exportProgress.total)}
+              </p>
+              <Button
+                variant="outline"
+                className="w-full border-rose-200 text-rose-700 hover:bg-rose-50"
+                onClick={() => {
+                  cancelExportRef.current = true;
+                }}
+                disabled={cancelExportRef.current}
+              >
+                বাতিল করুন
+              </Button>
+            </div>
+          ) : (
+            <div className="space-y-4">
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-1.5">
+                  <Label className="text-xs font-semibold text-amber-900">রেজোলিউশন</Label>
+                  <Select
+                    value={exportQuality}
+                    onValueChange={(v) => setExportQuality(v as "720" | "1080")}
+                  >
+                    <SelectTrigger className="border-amber-300">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="720">720p HD</SelectItem>
+                      <SelectItem value="1080">1080p Full HD</SelectItem>
+                    </SelectContent>
+                  </Select>
                 </div>
-                <div className="flex gap-1.5">
-                  <Button
-                    size="sm"
-                    className="h-8 bg-emerald-600 text-white hover:bg-emerald-700"
-                    onClick={() => loadProject(p.id)}
+                <div className="space-y-1.5">
+                  <Label className="text-xs font-semibold text-amber-900">ফ্রেমরেট</Label>
+                  <Select
+                    value={String(exportFps)}
+                    onValueChange={(v) => setExportFps(Number(v))}
                   >
-                    লোড
-                  </Button>
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    className="h-8 border-rose-200 text-rose-700 hover:bg-rose-50"
-                    onClick={() => deleteProject(p.id)}
-                    aria-label="ডিলিট"
-                  >
-                    <Trash2 className="h-3.5 w-3.5" />
-                  </Button>
+                    <SelectTrigger className="border-amber-300">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="24">২৪fps (সিনেমা)</SelectItem>
+                      <SelectItem value="30">৩০fps (স্মুথ)</SelectItem>
+                    </SelectContent>
+                  </Select>
                 </div>
               </div>
-            ))}
-          </div>
+
+              <div className="flex items-center justify-between rounded-xl border border-amber-200 bg-amber-50/60 p-3">
+                <div className="space-y-0.5">
+                  <p className="text-sm font-semibold text-amber-900">কথার নাম-ট্যাগ</p>
+                  <p className="text-xs text-amber-700">কে বলছে সেটা ভিডিওতে দেখাবে</p>
+                </div>
+                <Switch
+                  checked={exportTags}
+                  onCheckedChange={setExportTags}
+                  aria-label="নাম-ট্যাগ চালু/বন্ধ"
+                />
+              </div>
+
+              <div className="flex items-center justify-between rounded-xl border border-amber-200 bg-amber-50/60 p-3">
+                <div className="space-y-0.5">
+                  <p className="text-sm font-semibold text-amber-900">ফেড-ইন / ফেড-আউট</p>
+                  <p className="text-xs text-amber-700">শুরু ও শেষে সিনেমার মতো পলিশড ফেড</p>
+                </div>
+                <Switch
+                  checked={exportFade}
+                  onCheckedChange={setExportFade}
+                  aria-label="ফেড চালু/বন্ধ"
+                />
+              </div>
+
+              <div className="space-y-1.5">
+                <Label className="text-xs font-semibold text-amber-900">
+                  টাইটেল কার্ড (ঐচ্ছিক)
+                </Label>
+                <Input
+                  value={exportTitle}
+                  onChange={(e) => setExportTitle(e.target.value)}
+                  placeholder="যেমন: গোপাল ভাঁড় ও মিথ্যে সাক্ষী"
+                  className="border-amber-300"
+                />
+                <p className="text-xs text-amber-600">
+                  লিখলে ভিডিওর শুরুতে ২ সেকেন্ডের সুন্দর টাইটেল কার্ড আসবে।
+                </p>
+              </div>
+
+              <div
+                className={`rounded-lg border px-3 py-2 text-xs ${
+                  fastExport
+                    ? "border-emerald-200 bg-emerald-50 text-emerald-800"
+                    : "border-amber-300 bg-amber-50 text-amber-800"
+                }`}
+              >
+                {fastExport
+                  ? "⚡ দ্রুত এক্সপোর্ট ইঞ্জিন রেডি — রিয়েল-টাইমের চেয়ে অনেক কম সময়ে MP4 (H.264) তৈরি হবে।"
+                  : "ℹ️ এই ব্রাউজারে দ্রুত ইঞ্জিন নেই — রিয়েল-টাইম রেকর্ডিং হবে (কার্টুনের সমান সময় লাগবে)। Chrome ব্যবহার করলে দ্রুত MP4 পাবেন।"}
+              </div>
+
+              {fastExport ? (
+                <Button
+                  onClick={runFastExport}
+                  className="w-full bg-orange-600 text-white hover:bg-orange-700"
+                >
+                  <Film className="mr-2 h-4 w-4" /> MP4 এক্সপোর্ট শুরু করুন
+                </Button>
+              ) : (
+                <Button
+                  onClick={() => {
+                    setExportOpen(false);
+                    exportRealtime();
+                  }}
+                  className="w-full bg-orange-600 text-white hover:bg-orange-700"
+                >
+                  <Film className="mr-2 h-4 w-4" /> রিয়েল-টাইম রেকর্ডিং শুরু করুন
+                </Button>
+              )}
+            </div>
+          )}
         </DialogContent>
       </Dialog>
     </div>

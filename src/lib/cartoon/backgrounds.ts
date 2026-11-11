@@ -7,10 +7,17 @@ import { GROUND_Y, STAGE_H, STAGE_W, type BgName } from './types';
 
 const cache = new Map<BgName, HTMLCanvasElement>();
 
+/**
+ * Sprint 7 — backgrounds are painted once at 2× resolution (supersampled).
+ * The stage then draws them downscaled, so they stay razor sharp on HiDPI
+ * screens and in 1080p video exports.
+ */
+const BG_SS = 2;
+
 function baseCanvas(): HTMLCanvasElement {
   const c = document.createElement('canvas');
-  c.width = STAGE_W;
-  c.height = STAGE_H;
+  c.width = STAGE_W * BG_SS;
+  c.height = STAGE_H * BG_SS;
   return c;
 }
 
@@ -1601,6 +1608,7 @@ export function getBackgroundCanvas(name: BgName): HTMLCanvasElement {
   if (!c) {
     c = baseCanvas();
     const ctx = c.getContext('2d')!;
+    ctx.setTransform(BG_SS, 0, 0, BG_SS, 0, 0);
     RENDERERS[name](ctx);
     cache.set(name, c);
   }

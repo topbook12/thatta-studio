@@ -5,12 +5,28 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import StudioTab from "@/components/tabs/studio-tab";
 import CreatorTab from "@/components/tabs/creator-tab";
 import CoursesTab from "@/components/tabs/courses-tab";
-import { Clapperboard, GraduationCap, Sparkles, UserRound } from "lucide-react";
+import { Clapperboard, GraduationCap, Sparkles, UserRound, WifiOff } from "lucide-react";
 
 const emptySubscribe = () => () => {};
 
+/** live online/offline status as an external store (Sprint 7) */
+function subscribeOnline(onChange: () => void) {
+  window.addEventListener("online", onChange);
+  window.addEventListener("offline", onChange);
+  return () => {
+    window.removeEventListener("online", onChange);
+    window.removeEventListener("offline", onChange);
+  };
+}
+
 export default function Home() {
   const [tab, setTab] = useState("studio");
+  // Sprint 7 — live offline indicator (PWA keeps working without network)
+  const online = useSyncExternalStore(
+    subscribeOnline,
+    () => navigator.onLine,
+    () => true,
+  );
   // The studio store seeds itself with random UUIDs (module level) and
   // rehydrates from localStorage — render tab content only after mount so
   // server HTML never conflicts with client state (no hydration mismatch).
@@ -44,6 +60,12 @@ export default function Home() {
             <Sparkles className="h-3.5 w-3.5 text-amber-500" />
             ফ্রি • ইনস্টলযোগ্য অ্যাপ • অফলাইনেও চলে
           </div>
+          {!online && (
+            <div className="flex items-center gap-1.5 rounded-full border border-orange-300 bg-orange-100 px-3 py-1.5 text-xs font-semibold text-orange-800">
+              <WifiOff className="h-3.5 w-3.5" />
+              অফলাইন মোড — সব কাজ ডিভাইসেই হচ্ছে
+            </div>
+          )}
         </div>
       </header>
 

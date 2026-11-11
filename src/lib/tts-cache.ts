@@ -8,7 +8,11 @@
 //      - wideEnv : high-band (1.5–5 kHz) energy → mouth WIDE (e/i/ai)
 //    This is a lightweight spectral viseme model — vowels that differ
 //    in tongue height produce visibly different cartoon mouth shapes.
+// Sprint 7: every generated voice is ALSO persisted in IndexedDB, so
+// dialogue plays + exports with zero network (full offline PWA).
 // ============================================================
+
+import { loadStoredVoice, storeVoice, voiceKey } from './audio-store';
 
 export interface CachedAudio {
   url: string;
@@ -206,12 +210,38 @@ function syntheticEnvelopes(duration: number): BandEnvelopes {
   return { peaks, open, wide };
 }
 
-/** Generate Bangla voice for a dialogue line via /api/tts (with viseme analysis). */
+/**
+ * Generate Bangla voice for a dialogue line.
+ * Order: memory cache → IndexedDB (offline) → /api/tts network call.
+ * The result is persisted so it works even when offline later.
+ */
 export async function generateVoice(
   text: string,
   voice: string,
   speed = 1,
 ): Promise<CachedAudio> {
+  // 1) already in memory?
+  // (caller decides — we are keyed by beatId; here we are keyed by content)
+
+  // 2) offline IndexedDB store (same text+voice+speed → instant reuse)
+  try {
+    const stored = await loadStoredVoice(text, voice, speed);
+    if (stored?.blob) {
+      const url = URL.createObjectURL(stored.blob);
+      return {
+        url,
+        duration: stored.duration,
+        peaks: stored.peaks,
+        envelope: stored.openEnv,
+        openEnv: stored.openEnv,
+        wideEnv: stored.wideEnv,
+      };
+    }
+  } catch {
+    /* store miss is fine */
+  }
+
+  // 3) network TTS
   const res = await fetch('/api/tts', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -250,5 +280,47 @@ export async function generateVoice(
     wide = syn.wide;
   }
 
+  // persist for offline reuse (best effort — never blocks the UI)
+  try {
+    await storeVoice({
+      key: voiceKey(text, voice, speed),
+      blob,
+      duration,
+      peaks,
+      openEnv: open,
+      wideEnv: wide,
+      size: blob.size,
+      savedAt: Date.now(),
+    });
+  } catch {
+    /* storage full or unavailable — session cache still works */
+  }
+
   return { url, duration, peaks, envelope: open, openEnv: open, wideEnv: wide };
+}
+
+/**
+ * Sprint 7 — rebuild a CachedAudio for a beat from the offline store.
+ * Used when a saved project is reopened and the in-memory cache is cold.
+ */
+export async function restoreVoiceAudio(
+  text: string,
+  voice: string,
+  speed = 1,
+): Promise<CachedAudio | null> {
+  try {
+    const stored = await loadStoredVoice(text, voice, speed);
+    if (!stored?.blob) return null;
+    const url = URL.createObjectURL(stored.blob);
+    return {
+      url,
+      duration: stored.duration,
+      peaks: stored.peaks,
+      envelope: stored.openEnv,
+      openEnv: stored.openEnv,
+      wideEnv: stored.wideEnv,
+    };
+  } catch {
+    return null;
+  }
 }

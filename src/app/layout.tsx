@@ -9,6 +9,13 @@ export const metadata: Metadata = {
     "গোপাল ভাঁড় স্টাইলের মজার বাংলা কার্টুন সহজে বানান: ক্যারেক্টর তৈরি করুন, দৃশ্য সাজান, বাংলা ভয়েস যোগ করুন আর ভিডিও এক্সপোর্ট করুন — সব এক জায়গায়।",
   keywords: ["বাংলা কার্টুন", "কার্টুন বানানো", "animation", "gopal bhar", "thatta studio"],
   manifest: "/manifest.webmanifest",
+  applicationName: "ঠাট্টা স্টুডিও",
+  appleWebApp: {
+    capable: true,
+    title: "ঠাট্টা স্টুডিও",
+    statusBarStyle: "default",
+  },
+  formatDetection: { telephone: false },
   icons: {
     icon: "/icons/icon-192.png",
     apple: "/icons/icon-192.png",

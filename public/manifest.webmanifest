@@ -1,14 +1,35 @@
 {
-  "name": "ঠাট্টা স্টুডিও",
+  "id": "/",
+  "name": "ঠাট্টা স্টুডিও — বাংলা কার্টুন বানানোর প্ল্যাটফর্ম",
   "short_name": "ঠাট্টা",
-  "description": "বাংলা কার্টুন বানানোর সহজ প্ল্যাটফর্ম",
+  "description": "বাংলা কার্টুন বানানোর সহজ প্ল্যাটফর্ম — ক্যারেক্টর, অ্যানিমেশন, ভয়েস আর MP4 এক্সপোর্ট এক অ্যাপে।",
+  "lang": "bn",
+  "dir": "ltr",
   "start_url": "/",
+  "scope": "/",
   "display": "standalone",
+  "orientation": "any",
   "background_color": "#fff7ed",
   "theme_color": "#ea580c",
+  "categories": ["video", "entertainment", "productivity", "education"],
   "icons": [
     { "src": "/icons/icon-192.png", "sizes": "192x192", "type": "image/png" },
     { "src": "/icons/icon-512.png", "sizes": "512x512", "type": "image/png" },
-    { "src": "/icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+    { "src": "/icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" },
+    { "src": "/icons/icon-1024.png", "sizes": "1024x1024", "type": "image/png" }
+  ],
+  "shortcuts": [
+    {
+      "name": "স্টুডিও — কার্টুন বানান",
+      "short_name": "স্টুডিও",
+      "url": "/?tab=studio",
+      "icons": [{ "src": "/icons/icon-192.png", "sizes": "192x192" }]
+    },
+    {
+      "name": "ক্যারেক্টার তৈরি করুন",
+      "short_name": "ক্যারেক্টার",
+      "url": "/?tab=creator",
+      "icons": [{ "src": "/icons/icon-192.png", "sizes": "192x192" }]
+    }
   ]
 }

@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
-import { db } from '@/lib/db'
+import { ensureSchema, getDb } from '@/lib/db'
 
 export const runtime = 'nodejs'
 export const maxDuration = 60
@@ -27,13 +27,25 @@ const updateProjectSchema = z
 
 type RouteContext = { params: Promise<{ id: string }> }
 
+const cloudUnavailable = () =>
+  NextResponse.json(
+    {
+      error: 'Cloud save is unavailable on this deployment',
+      hint: 'The app keeps working offline — projects save on the device.',
+    },
+    { status: 503 },
+  )
+
 export async function GET(
   _request: NextRequest,
   context: RouteContext
 ) {
   const { id } = await context.params
+  const db = getDb()
+  if (!db) return cloudUnavailable()
 
   try {
+    await ensureSchema()
     const project = await db.project.findUnique({
       where: { id },
       select: {
@@ -53,10 +65,7 @@ export async function GET(
     return NextResponse.json({ project })
   } catch (error) {
     console.error('[api/projects/[id]] GET failed:', error)
-    return NextResponse.json(
-      { error: 'Failed to fetch project' },
-      { status: 500 }
-    )
+    return cloudUnavailable()
   }
 }
 
@@ -90,7 +99,11 @@ export async function PUT(
     )
   }
 
+  const db = getDb()
+  if (!db) return cloudUnavailable()
+
   try {
+    await ensureSchema()
     const existing = await db.project.findUnique({ where: { id } })
     if (!existing) {
       return NextResponse.json(
@@ -112,10 +125,7 @@ export async function PUT(
     return NextResponse.json({ project })
   } catch (error) {
     console.error('[api/projects/[id]] PUT failed:', error)
-    return NextResponse.json(
-      { error: 'Failed to update project' },
-      { status: 500 }
-    )
+    return cloudUnavailable()
   }
 }
 
@@ -124,8 +134,11 @@ export async function DELETE(
   context: RouteContext
 ) {
   const { id } = await context.params
+  const db = getDb()
+  if (!db) return cloudUnavailable()
 
   try {
+    await ensureSchema()
     const existing = await db.project.findUnique({ where: { id } })
     if (!existing) {
       return NextResponse.json(
@@ -138,9 +151,6 @@ export async function DELETE(
     return NextResponse.json({ ok: true })
   } catch (error) {
     console.error('[api/projects/[id]] DELETE failed:', error)
-    return NextResponse.json(
-      { error: 'Failed to delete project' },
-      { status: 500 }
-    )
+    return cloudUnavailable()
   }
 }
