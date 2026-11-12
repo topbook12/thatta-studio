@@ -29,6 +29,8 @@ bun run dev        # http://localhost:3000
 
 > ডাটাবেস ছাড়াও অ্যাপ পুরোপুরি চলে — ক্যারেক্টর/সিন/প্রজেক্ট ডিভাইসেই সেভ হয়।
 
+**অন্য হোস্ট/সার্ভারে (Docker/VPS):** `bun run build:standalone` → `.next/standalone/server.js` চালান। Vercel-এ সাধারণ `next build` যথেষ্ট।
+
 ## ☁️ GitHub → Vercel ডিপ্লয় (৫ মিনিট)
 
 1. **GitHub রিপো বানান ও পুশ করুন**
