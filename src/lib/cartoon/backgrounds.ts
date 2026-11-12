@@ -5,7 +5,13 @@
 
 import { GROUND_Y, STAGE_H, STAGE_W, type BgName } from './types';
 
-const cache = new Map<BgName, HTMLCanvasElement>();
+const cache = new Map<string, HTMLCanvasElement>();
+
+/**
+ * Sprint 8 — bump when background painting changes so stale cached canvases
+ * (e.g. from a hot-reload session) are never reused.
+ */
+const CACHE_VERSION = 'v8';
 
 /**
  * Sprint 7 — backgrounds are painted once at 2× resolution (supersampled).
@@ -60,11 +66,21 @@ function skyGradient(
 }
 
 function sun(ctx: CanvasRenderingContext2D, x: number, y: number) {
-  ctx.fillStyle = 'rgba(251, 191, 36, 0.35)';
+  // Sprint 8 — real radial glow: a wide warm halo + inner bloom + crisp disc
+  // (replaces the flat halo circle — all 7 outdoor scenes inherit this)
+  const glow = ctx.createRadialGradient(x, y, 10, x, y, 110);
+  glow.addColorStop(0, 'rgba(253, 224, 71, 0.55)');
+  glow.addColorStop(0.45, 'rgba(251, 191, 36, 0.22)');
+  glow.addColorStop(1, 'rgba(251, 191, 36, 0)');
+  ctx.fillStyle = glow;
   ctx.beginPath();
-  ctx.arc(x, y, 70, 0, Math.PI * 2);
+  ctx.arc(x, y, 110, 0, Math.PI * 2);
   ctx.fill();
-  ctx.fillStyle = '#fbbf24';
+  const bloom = ctx.createRadialGradient(x - 8, y - 8, 4, x, y, 46);
+  bloom.addColorStop(0, '#fef3c7');
+  bloom.addColorStop(0.7, '#fbbf24');
+  bloom.addColorStop(1, '#f59e0b');
+  ctx.fillStyle = bloom;
   ctx.beginPath();
   ctx.arc(x, y, 44, 0, Math.PI * 2);
   ctx.fill();
@@ -114,6 +130,90 @@ function bush(ctx: CanvasRenderingContext2D, x: number, y: number, s: number, co
   ctx.fill();
 }
 
+// ---------------- Sprint 8 realism toolkit ----------------
+
+/**
+ * Baked atmospheric haze — distant layers wash into the sky colour so the
+ * scene gains real depth (aerial perspective, like classic matte painting).
+ */
+function haze(
+  ctx: CanvasRenderingContext2D,
+  x: number,
+  y: number,
+  w: number,
+  h: number,
+  tint = '255,244,214',
+  strength = 0.3,
+) {
+  const g = ctx.createLinearGradient(x, y, x, y + h);
+  g.addColorStop(0, `rgba(${tint},${strength})`);
+  g.addColorStop(1, `rgba(${tint},0)`);
+  ctx.fillStyle = g;
+  ctx.fillRect(x, y, w, h);
+}
+
+/** soft contact / ambient shadow — everything grounded casts one */
+function softShadow(
+  ctx: CanvasRenderingContext2D,
+  x: number,
+  y: number,
+  rx: number,
+  ry: number,
+  alpha = 0.16,
+) {
+  const g = ctx.createRadialGradient(x, y, rx * 0.15, x, y, rx);
+  g.addColorStop(0, `rgba(30,20,10,${alpha})`);
+  g.addColorStop(1, 'rgba(30,20,10,0)');
+  ctx.fillStyle = g;
+  ctx.beginPath();
+  ctx.ellipse(x, y, rx, ry, 0, 0, Math.PI * 2);
+  ctx.fill();
+}
+
+/** organic grass tufts — deterministic (no Math.random → identical exports) */
+function grassTufts(
+  ctx: CanvasRenderingContext2D,
+  x: number,
+  y: number,
+  n: number,
+  s = 1,
+  color = '#3f9142',
+  seed = 1,
+) {
+  ctx.strokeStyle = color;
+  ctx.lineWidth = 1.6 * s;
+  ctx.lineCap = 'round';
+  for (let i = 0; i < n; i++) {
+    const px = x + Math.sin(i * 12.9898 * seed) * s * 46;
+    const py = y + Math.cos(i * 78.233 * seed) * s * 6;
+    const hgt = (6 + Math.abs(Math.sin(i * 3.7 * seed)) * 9) * s;
+    const lean = (Math.sin(i * 1.3 * seed) > 0 ? 4 : -4) * s;
+    ctx.beginPath();
+    ctx.moveTo(px, py);
+    ctx.quadraticCurveTo(px + lean * 0.4, py - hgt * 0.7, px + lean, py - hgt);
+    ctx.stroke();
+  }
+}
+
+/** warm light pool cast from above (lamps, chandeliers, windows) */
+function lightPool(
+  ctx: CanvasRenderingContext2D,
+  x: number,
+  y: number,
+  rx: number,
+  ry: number,
+  strength = 0.2,
+) {
+  const g = ctx.createRadialGradient(x, y, rx * 0.1, x, y, rx);
+  g.addColorStop(0, `rgba(255,236,170,${strength})`);
+  g.addColorStop(0.6, `rgba(255,236,170,${strength * 0.4})`);
+  g.addColorStop(1, 'rgba(255,236,170,0)');
+  ctx.fillStyle = g;
+  ctx.beginPath();
+  ctx.ellipse(x, y, rx, ry, 0, 0, Math.PI * 2);
+  ctx.fill();
+}
+
 // ---------------- village ----------------
 
 function drawVillage(ctx: CanvasRenderingContext2D) {
@@ -127,11 +227,19 @@ function drawVillage(ctx: CanvasRenderingContext2D) {
 
   // distant field
   ctx.fillStyle = '#d9f99d';
-  ctx.fillRect(0, horizon - 24, STAGE_W, 24 + (STAGE_H - horizon) * 0 + 0);
+  ctx.fillRect(0, horizon - 24, STAGE_W, 24);
   ctx.fillStyle = '#bef264';
   ctx.fillRect(0, horizon, STAGE_W, STAGE_H - horizon);
   ctx.fillStyle = '#a3e635';
   ctx.fillRect(0, GROUND_Y - 14, STAGE_W, STAGE_H - GROUND_Y + 14);
+
+  // Sprint 8 — aerial perspective: the far field melts into the warm sky
+  haze(ctx, 0, horizon - 30, STAGE_W, 150, '255,247,214', 0.42);
+  // grazing light across the meadow + scattered tufts and bush shadows
+  grassTufts(ctx, 40, horizon + 58, 16, 0.85, '#65a30d', 3.1);
+  grassTufts(ctx, 980, horizon + 44, 12, 0.8, '#65a30d', 7.2);
+  grassTufts(ctx, 360, GROUND_Y - 6, 18, 1.05, '#4d7c0f', 5.4);
+  grassTufts(ctx, 640, GROUND_Y - 4, 14, 1.0, '#4d7c0f', 9.7);
 
   // mud house
   const hx = 150;
@@ -184,11 +292,29 @@ function drawVillage(ctx: CanvasRenderingContext2D) {
 
   bush(ctx, 480, GROUND_Y - 8, 0.8, '#4ade80');
   bush(ctx, 880, GROUND_Y - 4, 0.6, '#4ade80');
+  softShadow(ctx, 500, GROUND_Y - 2, 60, 10, 0.18);
+  softShadow(ctx, 900, GROUND_Y + 2, 46, 8, 0.16);
 
   // hay stack
+  softShadow(ctx, 760, GROUND_Y - 8, 52, 10, 0.2);
   ctx.fillStyle = '#eab308';
   ctx.beginPath();
   ctx.arc(760, GROUND_Y - 16, 34, Math.PI, Math.PI * 2);
+  ctx.fill();
+  // thatch strokes + warm side shading (reads as a real haystack)
+  ctx.strokeStyle = 'rgba(146,64,14,0.4)';
+  ctx.lineWidth = 2;
+  ctx.lineCap = 'round';
+  for (let i = 0; i < 7; i++) {
+    const a = Math.PI + (i + 0.5) * (Math.PI / 7);
+    ctx.beginPath();
+    ctx.moveTo(760 + Math.cos(a) * 8, GROUND_Y - 18 + Math.sin(a) * 8);
+    ctx.lineTo(760 + Math.cos(a) * 33, GROUND_Y - 16 + Math.sin(a) * 22);
+    ctx.stroke();
+  }
+  ctx.fillStyle = 'rgba(255,236,170,0.25)';
+  ctx.beginPath();
+  ctx.ellipse(748, GROUND_Y - 34, 12, 7, -0.5, 0, Math.PI * 2);
   ctx.fill();
 }
 
@@ -202,9 +328,22 @@ function drawBazaar(ctx: CanvasRenderingContext2D) {
   ctx.fillStyle = '#eec49a';
   ctx.fillRect(0, GROUND_Y - 10, STAGE_W, STAGE_H - GROUND_Y + 10);
 
+  // Sprint 8 — dusty market air: warm haze at the horizon + worn dirt patches
+  haze(ctx, 0, horizon - 20, STAGE_W, 140, '255,238,214', 0.38);
+  for (let i = 0; i < 9; i++) {
+    const px = 90 + i * 137;
+    const py = horizon + 120 + Math.abs(Math.sin(i * 5.1)) * 130;
+    ctx.fillStyle = `rgba(146,94,52,${0.07 + (i % 3) * 0.03})`;
+    ctx.beginPath();
+    ctx.ellipse(px % STAGE_W, Math.min(GROUND_Y + 40, py), 60, 14, 0, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
   // shop stalls
   const stall = (x: number, awn1: string, awn2: string, w: number) => {
     const y = horizon + 30;
+    // Sprint 8 — grounded stall shadow before the stall itself
+    softShadow(ctx, x + w * 0.45, y + 168, w * 0.62, 14, 0.2);
     ctx.fillStyle = '#e7c6a2';
     rr(ctx, x, y, w, 150, 4);
     ctx.fillStyle = '#a16207';
@@ -255,12 +394,26 @@ function drawBazaar(ctx: CanvasRenderingContext2D) {
   ctx.fillText('বাজার', 645, 162);
 
   // clay pots on ground
+  softShadow(ctx, 268, GROUND_Y - 2, 52, 9, 0.18);
   ctx.fillStyle = '#b45309';
   ctx.beginPath();
   ctx.ellipse(250, GROUND_Y - 12, 20, 14, 0, Math.PI, Math.PI * 2);
   ctx.fill();
   ctx.beginPath();
   ctx.ellipse(285, GROUND_Y - 8, 14, 10, 0, Math.PI, Math.PI * 2);
+  ctx.fill();
+  // pot rims + sheen (hand-thrown clay look)
+  ctx.strokeStyle = 'rgba(80,40,10,0.5)';
+  ctx.lineWidth = 2.5;
+  ctx.beginPath();
+  ctx.ellipse(250, GROUND_Y - 12, 20, 5, 0, 0, Math.PI * 2);
+  ctx.stroke();
+  ctx.beginPath();
+  ctx.ellipse(285, GROUND_Y - 8, 14, 3.5, 0, 0, Math.PI * 2);
+  ctx.stroke();
+  ctx.fillStyle = 'rgba(255,236,170,0.3)';
+  ctx.beginPath();
+  ctx.ellipse(243, GROUND_Y - 16, 6, 3, -0.4, 0, Math.PI * 2);
   ctx.fill();
 }
 
@@ -401,6 +554,16 @@ function drawRoom(ctx: CanvasRenderingContext2D) {
   ctx.closePath();
   ctx.fill();
   circle(ctx, 760, 130, 9, '#fde047');
+  // Sprint 8 — the lamp actually lights the room: warm pool on the floor
+  // plus a soft halo around the flame
+  const halo = ctx.createRadialGradient(760, 130, 4, 760, 130, 90);
+  halo.addColorStop(0, 'rgba(253,224,71,0.4)');
+  halo.addColorStop(1, 'rgba(253,224,71,0)');
+  ctx.fillStyle = halo;
+  ctx.beginPath();
+  ctx.arc(760, 130, 90, 0, Math.PI * 2);
+  ctx.fill();
+  lightPool(ctx, 760, 600, 190, 44, 0.26);
 
   // mat
   ctx.fillStyle = '#dc2626';
@@ -427,6 +590,8 @@ function drawPond(ctx: CanvasRenderingContext2D) {
   // far bank
   ctx.fillStyle = '#86efac';
   ctx.fillRect(0, horizon, STAGE_W, 60);
+  // Sprint 8 — far bank recedes into the warm sky (aerial perspective)
+  haze(ctx, 0, horizon - 14, STAGE_W, 110, '255,241,214', 0.4);
 
   // water
   const g = ctx.createLinearGradient(0, horizon, 0, 620);
@@ -464,6 +629,7 @@ function drawPond(ctx: CanvasRenderingContext2D) {
   lotus(870, horizon + 165);
 
   // boat
+  softShadow(ctx, 665, 578, 90, 10, 0.22);
   ctx.fillStyle = '#b45309';
   ctx.beginPath();
   ctx.moveTo(560, 560);
@@ -471,6 +637,24 @@ function drawPond(ctx: CanvasRenderingContext2D) {
   ctx.quadraticCurveTo(660, 585, 560, 560);
   ctx.closePath();
   ctx.fill();
+  // Sprint 8 — wobbly boat reflection + hull planks (water reads real)
+  ctx.save();
+  ctx.globalAlpha = 0.28;
+  ctx.fillStyle = '#7c2d12';
+  ctx.beginPath();
+  ctx.ellipse(665, 596, 96, 9, 0, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.globalAlpha = 0.16;
+  ctx.beginPath();
+  ctx.ellipse(665, 610, 110, 6, 0, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.restore();
+  ctx.strokeStyle = 'rgba(60,26,10,0.45)';
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.moveTo(600, 566);
+  ctx.quadraticCurveTo(665, 584, 730, 566);
+  ctx.stroke();
 
   // near bank (walking strip)
   ctx.fillStyle = '#d9f99d';
@@ -605,6 +789,15 @@ function drawRajcourt(ctx: CanvasRenderingContext2D) {
   ctx.ellipse(640, 76, 60, 14, 0, 0, Math.PI * 2);
   ctx.fill();
   circle(ctx, 640, 60, 8, '#fde047');
+  // Sprint 8 — candle glow + a grand light pool across the marble floor
+  const cg = ctx.createRadialGradient(640, 78, 10, 640, 78, 160);
+  cg.addColorStop(0, 'rgba(253,224,71,0.45)');
+  cg.addColorStop(1, 'rgba(253,224,71,0)');
+  ctx.fillStyle = cg;
+  ctx.beginPath();
+  ctx.arc(640, 78, 160, 0, Math.PI * 2);
+  ctx.fill();
+  lightPool(ctx, 640, 620, 300, 60, 0.18);
 }
 
 // ---------------- school (স্কুল) ----------------
@@ -690,6 +883,10 @@ function drawSchool(ctx: CanvasRenderingContext2D) {
   win(60);
   win(1020);
 
+  // Sprint 8 — sunshine through the windows paints warm pools on the floor
+  lightPool(ctx, 160, 620, 170, 42, 0.22);
+  lightPool(ctx, 1120, 620, 170, 42, 0.22);
+
   // door
   ctx.fillStyle = '#92400e';
   rr(ctx, 580, 440, 130, 190, 8);
@@ -707,10 +904,6 @@ function drawSchool(ctx: CanvasRenderingContext2D) {
   };
   bench(150);
   bench(990);
-
-  // alphabet chart on wall
-  ctx.fillStyle = '#fca5a5';
-  rr(ctx, 60, 360, 0, 0, 4);
 }
 
 // ---------------- ghat (ঘাট) ----------------
@@ -1604,13 +1797,15 @@ const RENDERERS: Record<BgName, (ctx: CanvasRenderingContext2D) => void> = {
 /** Get (or build) the cached background canvas. Client-side only. */
 export function getBackgroundCanvas(name: BgName): HTMLCanvasElement {
   if (typeof document === 'undefined') throw new Error('backgrounds require a browser');
-  let c = cache.get(name);
+  // Sprint 8 — versioned cache key: painting changes never reuse stale canvases
+  const key = `${name}:${CACHE_VERSION}`;
+  let c = cache.get(key);
   if (!c) {
     c = baseCanvas();
     const ctx = c.getContext('2d')!;
     ctx.setTransform(BG_SS, 0, 0, BG_SS, 0, 0);
     RENDERERS[name](ctx);
-    cache.set(name, c);
+    cache.set(key, c);
   }
   return c;
 }

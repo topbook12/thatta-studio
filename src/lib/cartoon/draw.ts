@@ -85,6 +85,37 @@ function capsule(
   ctx.moveTo(x0, y0);
   ctx.lineTo(x1, y1);
   ctx.stroke();
+
+  // Sprint 8 — limb volume: light comes from the top-left, so a slim white
+  // band on the upper side + a faint core-shadow band below turn flat tubes
+  // into rounded arms/legs/neck. Pure geometry → deterministic for export.
+  if (w >= 7) {
+    const dx = x1 - x0;
+    const dy = y1 - y0;
+    const len = Math.hypot(dx, dy) || 1;
+    let nx = -dy / len;
+    let ny = dx / len;
+    // pick the normal that faces up (and left when horizontal)
+    if (ny > 0 || (ny === 0 && nx > 0)) {
+      nx = -nx;
+      ny = -ny;
+    }
+    ctx.globalAlpha = 0.22;
+    ctx.strokeStyle = '#ffffff';
+    ctx.lineWidth = Math.max(1.6, w * 0.24);
+    ctx.beginPath();
+    ctx.moveTo(x0 + nx * w * 0.26, y0 + ny * w * 0.26);
+    ctx.lineTo(x1 + nx * w * 0.26, y1 + ny * w * 0.26);
+    ctx.stroke();
+    ctx.globalAlpha = 0.1;
+    ctx.strokeStyle = '#000000';
+    ctx.lineWidth = Math.max(1.8, w * 0.3);
+    ctx.beginPath();
+    ctx.moveTo(x0 - nx * w * 0.3, y0 - ny * w * 0.3);
+    ctx.lineTo(x1 - nx * w * 0.3, y1 - ny * w * 0.3);
+    ctx.stroke();
+    ctx.globalAlpha = 1;
+  }
 }
 
 function outlinedCircle(
@@ -101,6 +132,13 @@ function outlinedCircle(
   ctx.strokeStyle = OUTLINE;
   ctx.lineWidth = 2;
   ctx.stroke();
+  // soft top-left sheen — hands/knuckles keep their roundness
+  if (r >= 5) {
+    ctx.fillStyle = 'rgba(255,255,255,0.17)';
+    ctx.beginPath();
+    ctx.ellipse(x - r * 0.32, y - r * 0.38, r * 0.42, r * 0.28, -0.6, 0, Math.PI * 2);
+    ctx.fill();
+  }
 }
 
 function circle(ctx: CanvasRenderingContext2D, x: number, y: number, r: number, color: string) {
@@ -198,6 +236,16 @@ function drawBottom(
       ctx.lineTo(-19 + sway, HIP_Y + 46);
       ctx.closePath();
       ctx.fill();
+      // Sprint 8 — cloth shading: light falls on the left fold, shadow right
+      ctx.save();
+      ctx.clip();
+      const gL = ctx.createLinearGradient(-14, 0, 19, 0);
+      gL.addColorStop(0, 'rgba(255,255,255,0.14)');
+      gL.addColorStop(0.5, 'rgba(255,255,255,0)');
+      gL.addColorStop(1, 'rgba(0,0,0,0.15)');
+      ctx.fillStyle = gL;
+      ctx.fillRect(-24, HIP_Y - 8, 48, 60);
+      ctx.restore();
       ctx.strokeStyle = shade(d.bottomColor, -0.22);
       ctx.lineWidth = 2;
       for (let i = -1; i <= 1; i++) {
@@ -238,6 +286,16 @@ function drawBottom(
       ctx.quadraticCurveTo(-24, HIP_Y + 22, -13, HIP_Y - 6);
       ctx.closePath();
       ctx.fill();
+      // Sprint 8 — A-line shading + pleat depth
+      ctx.save();
+      ctx.clip();
+      const gK = ctx.createLinearGradient(-13, 0, 24, 0);
+      gK.addColorStop(0, 'rgba(255,255,255,0.15)');
+      gK.addColorStop(0.55, 'rgba(255,255,255,0)');
+      gK.addColorStop(1, 'rgba(0,0,0,0.15)');
+      ctx.fillStyle = gK;
+      ctx.fillRect(-30, HIP_Y - 8, 60, 64);
+      ctx.restore();
       ctx.strokeStyle = shade(d.bottomColor, -0.22);
       ctx.lineWidth = 2;
       ctx.beginPath();
@@ -322,6 +380,24 @@ function drawTorso(ctx: CanvasRenderingContext2D, d: CharacterDesign) {
       ctx.lineTo(6, -114);
       ctx.closePath();
       ctx.stroke();
+      // Sprint 8 — woven-cloth shading + placket with buttons
+      ctx.save();
+      rr(ctx, -23, -148, 46, 62, 10);
+      ctx.clip();
+      const gSh = ctx.createLinearGradient(-23, 0, 23, 0);
+      gSh.addColorStop(0, 'rgba(255,255,255,0.16)');
+      gSh.addColorStop(0.55, 'rgba(255,255,255,0)');
+      gSh.addColorStop(1, 'rgba(0,0,0,0.13)');
+      ctx.fillStyle = gSh;
+      ctx.fillRect(-26, -152, 52, 70);
+      ctx.restore();
+      ctx.strokeStyle = shade(d.topColor, -0.18);
+      ctx.lineWidth = 1.6;
+      ctx.beginPath();
+      ctx.moveTo(0, -136);
+      ctx.lineTo(0, -92);
+      ctx.stroke();
+      for (let i = 0; i < 3; i++) circle(ctx, 0, -130 + i * 14, 1.5, shade(d.topColor, -0.32));
       break;
     case 3: {
       // কুর্তি
@@ -386,6 +462,16 @@ function drawTorso(ctx: CanvasRenderingContext2D, d: CharacterDesign) {
       ctx.moveTo(-3, -146);
       ctx.lineTo(3, -146);
       ctx.stroke();
+      // Sprint 8 — chest volume + vest edge shading
+      ctx.save();
+      rr(ctx, -22, -148, 44, 60, 12);
+      ctx.clip();
+      const gV = ctx.createLinearGradient(0, -150, 0, -88);
+      gV.addColorStop(0, 'rgba(255,255,255,0.14)');
+      gV.addColorStop(1, 'rgba(0,0,0,0.1)');
+      ctx.fillStyle = gV;
+      ctx.fillRect(-24, -152, 48, 68);
+      ctx.restore();
       break;
     default: // টি-শার্ট
       ctx.fillStyle = d.topColor;
@@ -501,6 +587,23 @@ function drawHair(ctx: CanvasRenderingContext2D, d: CharacterDesign) {
       circle(ctx, HEAD_CX, topY - 7, 5, shade(hc, -0.25));
       break;
   }
+
+  // Sprint 8 — hair sheen: a groomed crown highlight for the smooth caps
+  if (d.hairStyle === 1 || d.hairStyle === 3 || d.hairStyle === 4) {
+    ctx.strokeStyle = 'rgba(255,255,255,0.28)';
+    ctx.lineWidth = 2.8;
+    ctx.lineCap = 'round';
+    ctx.beginPath();
+    ctx.arc(HEAD_CX - 3, HEAD_CY - 3, HEAD_R + 0.2, Math.PI * 1.24, Math.PI * 1.5);
+    ctx.stroke();
+    ctx.strokeStyle = shade(hc, 0.32);
+    ctx.globalAlpha = 0.55;
+    ctx.lineWidth = 1.6;
+    ctx.beginPath();
+    ctx.arc(HEAD_CX - 3, HEAD_CY - 3, HEAD_R - 1.4, Math.PI * 1.28, Math.PI * 1.47);
+    ctx.stroke();
+    ctx.globalAlpha = 1;
+  }
 }
 
 function drawBeard(ctx: CanvasRenderingContext2D, d: CharacterDesign) {
@@ -557,9 +660,39 @@ function drawEyes(ctx: CanvasRenderingContext2D, d: CharacterDesign, pose: Pose)
     ctx.strokeStyle = 'rgba(0,0,0,0.35)';
     ctx.lineWidth = 1.6;
     ctx.stroke();
+    // Sprint 8 — layered iris: dark rim → warm brown body → bright core,
+    // with a main glint + a faint secondary glint (glassy, alive eyes)
     const pr = d.eyeStyle === 2 ? 2.2 : big ? 4.4 : 3.2;
-    circle(ctx, x + 1.5, EYE_Y + 0.5, pr, '#2b2118');
-    circle(ctx, x + 2.8, EYE_Y - 1.8, pr * 0.35, '#ffffff');
+    const ix = x + 1.5;
+    const iy = EYE_Y + 0.5;
+    if (pr >= 3) {
+      const ig = ctx.createRadialGradient(
+        ix - pr * 0.35,
+        iy - pr * 0.35,
+        pr * 0.12,
+        ix,
+        iy,
+        pr * 1.05,
+      );
+      ig.addColorStop(0, '#6b5238');
+      ig.addColorStop(0.55, '#3a2c20');
+      ig.addColorStop(1, '#191210');
+      ctx.fillStyle = ig;
+      ctx.beginPath();
+      ctx.arc(ix, iy, pr, 0, Math.PI * 2);
+      ctx.fill();
+    } else {
+      circle(ctx, ix, iy, pr, '#2b2118');
+    }
+    circle(ctx, ix + pr * 0.45, iy - pr * 0.5, pr * 0.36, '#ffffff');
+    circle(ctx, ix - pr * 0.42, iy + pr * 0.38, pr * 0.2, 'rgba(255,255,255,0.78)');
+    // upper eyelid line — depth, and it reads well at small scales
+    ctx.strokeStyle = 'rgba(59,47,42,0.5)';
+    ctx.lineWidth = 1.5;
+    ctx.lineCap = 'round';
+    ctx.beginPath();
+    ctx.arc(x, EYE_Y + 1, r - 0.8, Math.PI * 1.18, Math.PI * 1.82);
+    ctx.stroke();
   };
   drawEye(EYE_LX);
   drawEye(EYE_RX);
@@ -920,19 +1053,36 @@ function drawHead(ctx: CanvasRenderingContext2D, d: CharacterDesign, pose: Pose,
 
   drawHairBack(ctx, d);
 
-  // head
-  circle(ctx, HEAD_CX, HEAD_CY, HEAD_R, d.skin);
+  // head — radial form shading (light top-left → core shadow bottom-right)
+  // replaces the old flat fill: the face now reads as a real 3D volume
+  const hg = ctx.createRadialGradient(
+    HEAD_CX - 10,
+    HEAD_CY - 12,
+    HEAD_R * 0.2,
+    HEAD_CX + 2,
+    HEAD_CY + 6,
+    HEAD_R * 1.3,
+  );
+  hg.addColorStop(0, shade(d.skin, 0.16));
+  hg.addColorStop(0.55, d.skin);
+  hg.addColorStop(1, shade(d.skin, -0.14));
+  ctx.fillStyle = hg;
+  ctx.beginPath();
+  ctx.arc(HEAD_CX, HEAD_CY, HEAD_R, 0, Math.PI * 2);
+  ctx.fill();
   ctx.strokeStyle = OUTLINE;
   ctx.lineWidth = 2.2;
   ctx.beginPath();
   ctx.arc(HEAD_CX, HEAD_CY, HEAD_R, 0, Math.PI * 2);
   ctx.stroke();
 
-  // soft top-left highlight for volume
-  ctx.fillStyle = 'rgba(255,255,255,0.16)';
+  // crisp rim light along the top-right edge — premium finishing touch
+  ctx.strokeStyle = 'rgba(255,255,255,0.38)';
+  ctx.lineWidth = 2;
+  ctx.lineCap = 'round';
   ctx.beginPath();
-  ctx.ellipse(HEAD_CX - 10, HEAD_CY - 14, 12, 8, -0.5, 0, Math.PI * 2);
-  ctx.fill();
+  ctx.arc(HEAD_CX, HEAD_CY, HEAD_R - 1.8, -1.25, -0.05);
+  ctx.stroke();
 
   drawHair(ctx, d);
   drawBeard(ctx, d);
@@ -940,6 +1090,19 @@ function drawHead(ctx: CanvasRenderingContext2D, d: CharacterDesign, pose: Pose,
   drawEyes(ctx, d, pose);
   drawNose(ctx, d);
   drawMouth(ctx, d, pose);
+
+  // Sprint 8 — warm cheeks when happy: a tiny dose of charm that reads
+  // even in wide shots (auto, no FX toggle needed)
+  if (pose.expression === 'laugh' || pose.expression === 'smile') {
+    ctx.fillStyle = 'rgba(240,110,110,0.16)';
+    ctx.beginPath();
+    ctx.ellipse(-HEAD_R * 0.62, HEAD_CY + 13, 5.5, 3.2, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.beginPath();
+    ctx.ellipse(HEAD_R * 0.62, HEAD_CY + 13, 5.5, 3.2, 0, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
   if (d.glasses) drawGlasses(ctx);
   if (pose.tears) drawTears(ctx, t);
   drawHeadwear(ctx, d);

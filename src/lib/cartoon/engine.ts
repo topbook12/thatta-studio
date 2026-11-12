@@ -760,11 +760,10 @@ export class CartoonStage {
         const beatElapsed = Math.max(0, t - w.start);
         const speed = clamp(beat.speed ?? 1, 0.25, 2.5);
         localT = beatElapsed * speed;
-        pose = computePose(
-          beat.action === 'turn' ? 'idle' : beat.action,
-          localT,
-          beat.text.trim().length > 0,
-        );
+        // Sprint 8: 'turn' now has a real pose (anticipation → pivot →
+        // settle) instead of an idle fallback — the engine's scaleX squash
+        // + facing swap below completes the pseudo-3D spin.
+        pose = computePose(beat.action, localT, beat.text.trim().length > 0);
 
         // ---- real viseme lip-sync: audio envelopes drive the mouth ----
         const env = this.envelopes[beat.id];

@@ -122,7 +122,10 @@ export function computePose(action: ActionName, t: number, speaking: boolean): P
       p.yOff = Math.abs(Math.sin(ph)) * 3.5; // heel-lift bounce
       p.xOff = Math.sin(ph - 0.5) * 1.8; // hip sway trails the feet
       p.bodyLean = 3 + Math.sin(ph) * 1.6; // torso roll
+      // Sprint 8 — the head counters the torso roll a beat later and tilts
+      // with it (the gaze stays level — real walking balance)
       p.headNod = Math.sin(ph * 2 - 0.55) * 1.8; // counter-bob, delayed
+      p.headTilt = Math.sin(ph + 0.85) * -1.6;
       p.squash = Math.max(0, Math.sin(ph * 2)) * 0.05; // footstrike squash
       p.mouthOpen = speaking ? 0.15 + 0.7 * Math.abs(Math.sin(t * 12)) : 0;
       if (blinking(t)) p.eyeState = 'blink';
@@ -644,10 +647,48 @@ export function computePose(action: ActionName, t: number, speaking: boolean): P
       if (blinking(t)) p.eyeState = 'blink';
       break;
     }
+    case 'turn': {
+      // ঘুরে দাঁড়াচ্ছে — anticipation → pivot → settle. The engine squashes
+      // the sprite through zero width and swaps facing at the midpoint; this
+      // pose adds the body language: weight shift back, head leading the
+      // spin, heel lifting through the pivot, arms opening for balance.
+      const c = Math.min(1, t / 1.4);
+      const wind = Math.min(1, c / 0.3); // anticipation phase 0..1
+      const post = Math.max(0, (c - 0.5) / 0.5); // settle phase 0..1
+      p.xOff = -Math.sin(wind * Math.PI) * 5 + Math.sin(post * Math.PI) * 4;
+      p.bodyLean = -Math.sin(wind * Math.PI) * 6 + Math.sin(post * Math.PI) * 5;
+      // head turns AGAINST the spin first, then snaps with it (lead & follow)
+      p.headTilt = -Math.sin(wind * Math.PI) * 10 + Math.sin(Math.max(0, post - 0.15) * Math.PI) * 8;
+      p.yOff = Math.sin(Math.min(1, c / 0.5) * Math.PI) * 4; // heel lift at pivot
+      p.shoulderL = 6 + wind * 16 - post * 10;
+      p.shoulderR = 6 + wind * 14 - post * 8;
+      p.elbowL = -10 - wind * 22 + post * 16;
+      p.elbowR = -10 - wind * 18 + post * 12;
+      p.squash = (1 - Math.abs(1 - 2 * c)) * 0.12; // compress through the pivot
+      p.headNod = Math.sin(c * Math.PI) * 4;
+      if (blinking(t)) p.eyeState = 'blink';
+      break;
+    }
     default: {
       if (blinking(t)) p.eyeState = 'blink';
       break;
     }
+  }
+
+  // ------------------------------------------------------------
+  // Sprint 8 — universal finishing pass: nothing alive is perfectly
+  // still. Every grounded action breathes: a slow body sway, a slower
+  // counter-swaying head, shoulders riding the breath. Subtle enough
+  // to never fight the choreography, present enough to remove the
+  // “frozen puppet” feel on long holds. (sleep/fall/turn excluded —
+  // they have their own full-body rhythms.)
+  // ------------------------------------------------------------
+  if (action !== 'sleep' && action !== 'fall' && action !== 'turn') {
+    const sway = Math.sin(t * 0.7 + 0.4);
+    p.bodyLean += sway * 0.7;
+    p.headTilt += Math.sin(t * 0.7 - 0.35) * 0.9;
+    p.shoulderL += sway * 1.1;
+    p.shoulderR += sway * 1.1;
   }
 
   return p;
