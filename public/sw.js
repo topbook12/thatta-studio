@@ -1,5 +1,5 @@
 /* ঠাট্টা স্টুডিও — service worker v2 (Sprint 7: full offline) */
-const CACHE = 'thatta-v7'
+const CACHE = 'thatta-v8'
 
 const PRECACHE_URLS = [
   '/',

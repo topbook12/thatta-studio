@@ -10,8 +10,9 @@ const cache = new Map<string, HTMLCanvasElement>();
 /**
  * Sprint 8 — bump when background painting changes so stale cached canvases
  * (e.g. from a hot-reload session) are never reused.
+ * Sprint 10 — foreground depth layer + scene-tinted shadow palette.
  */
-const CACHE_VERSION = 'v9';
+const CACHE_VERSION = 'v10';
 
 /**
  * Sprint 7 — backgrounds are painted once at 2× resolution (supersampled).
@@ -2141,6 +2142,388 @@ export function drawAmbient(
       ctx.globalAlpha = 1;
       break;
     }
+  }
+}
+
+// ---------------- Sprint 10: foreground depth layer ----------------
+
+/**
+ * A cached overlay painted AFTER the characters: dark, rich silhouettes that
+ * frame the stage edges — grass, leaves, sacks, pillars. The engine drifts
+ * this layer AGAINST the camera more strongly than the world parallax, so it
+ * reads as standing IN FRONT of the actors (matte-painting depth, zero cost).
+ * Deterministic painting → identical output in exports.
+ */
+
+function fgTuft(ctx: CanvasRenderingContext2D, x: number, y: number, s: number, color: string) {
+  ctx.fillStyle = color;
+  for (let i = 0; i < 7; i++) {
+    const bx = x + i * 9 * s;
+    const h = (34 + (i % 3) * 14) * s;
+    const lean = (i - 3) * 5 * s;
+    ctx.beginPath();
+    ctx.moveTo(bx - 4 * s, y);
+    ctx.quadraticCurveTo(bx + lean * 0.5, y - h * 0.6, bx + lean, y - h);
+    ctx.quadraticCurveTo(bx + lean * 0.5, y - h * 0.55, bx + 4 * s, y);
+    ctx.closePath();
+    ctx.fill();
+  }
+}
+
+function fgLeaf(
+  ctx: CanvasRenderingContext2D,
+  x: number,
+  y: number,
+  s: number,
+  color: string,
+  angle: number,
+) {
+  ctx.save();
+  ctx.translate(x, y);
+  ctx.rotate(angle);
+  ctx.fillStyle = color;
+  ctx.beginPath();
+  ctx.moveTo(0, 0);
+  ctx.quadraticCurveTo(-17 * s, -42 * s, 0, -80 * s);
+  ctx.quadraticCurveTo(19 * s, -42 * s, 0, 0);
+  ctx.closePath();
+  ctx.fill();
+  ctx.strokeStyle = 'rgba(0,0,0,0.22)';
+  ctx.lineWidth = 1.8;
+  ctx.beginPath();
+  ctx.moveTo(0, -4);
+  ctx.lineTo(0, -74 * s);
+  ctx.stroke();
+  for (let i = 1; i <= 4; i++) {
+    const yy = -12 * i * s;
+    const w = 12 * s * (1 - i * 0.16);
+    ctx.beginPath();
+    ctx.moveTo(0, yy);
+    ctx.lineTo(-w, yy - 7 * s);
+    ctx.moveTo(0, yy);
+    ctx.lineTo(w, yy - 7 * s);
+    ctx.stroke();
+  }
+  ctx.restore();
+}
+
+function fgReed(ctx: CanvasRenderingContext2D, x: number, y: number, s: number, color: string) {
+  ctx.strokeStyle = color;
+  ctx.lineWidth = 3.2 * s;
+  ctx.lineCap = 'round';
+  ctx.beginPath();
+  ctx.moveTo(x, y);
+  ctx.quadraticCurveTo(x + 7 * s, y - 40 * s, x + 3 * s, y - 74 * s);
+  ctx.stroke();
+  ctx.fillStyle = color;
+  ctx.beginPath();
+  ctx.ellipse(x + 3 * s, y - 83 * s, 4.6 * s, 13 * s, 0.06, 0, Math.PI * 2);
+  ctx.fill();
+}
+
+function fgLotus(ctx: CanvasRenderingContext2D, x: number, y: number, r: number, color: string) {
+  ctx.fillStyle = color;
+  ctx.beginPath();
+  ctx.ellipse(x, y, r, r * 0.4, 0, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.fillStyle = 'rgba(255,255,255,0.10)';
+  ctx.beginPath();
+  ctx.ellipse(x - r * 0.3, y - r * 0.12, r * 0.5, r * 0.16, -0.2, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.fillStyle = 'rgba(0,0,0,0.16)';
+  ctx.beginPath();
+  ctx.moveTo(x, y);
+  ctx.lineTo(x + r * 0.9, y - r * 0.34);
+  ctx.lineTo(x + r * 0.9, y + r * 0.1);
+  ctx.closePath();
+  ctx.fill();
+}
+
+function fgSack(ctx: CanvasRenderingContext2D, x: number, y: number, s: number, color: string) {
+  ctx.fillStyle = color;
+  ctx.beginPath();
+  ctx.moveTo(x - 17 * s, y);
+  ctx.quadraticCurveTo(x - 24 * s, y - 30 * s, x - 10 * s, y - 46 * s);
+  ctx.quadraticCurveTo(x, y - 55 * s, x + 10 * s, y - 46 * s);
+  ctx.quadraticCurveTo(x + 25 * s, y - 28 * s, x + 17 * s, y);
+  ctx.closePath();
+  ctx.fill();
+  ctx.strokeStyle = 'rgba(0,0,0,0.3)';
+  ctx.lineWidth = 2.6;
+  ctx.beginPath();
+  ctx.moveTo(x - 9 * s, y - 44 * s);
+  ctx.quadraticCurveTo(x, y - 48 * s, x + 9 * s, y - 44 * s);
+  ctx.stroke();
+}
+
+function fgStone(
+  ctx: CanvasRenderingContext2D,
+  x: number,
+  y: number,
+  rx: number,
+  ry: number,
+  color: string,
+) {
+  ctx.fillStyle = color;
+  ctx.beginPath();
+  ctx.ellipse(x, y, rx, ry, 0, Math.PI, Math.PI * 2);
+  ctx.fill();
+  ctx.fillStyle = 'rgba(255,255,255,0.09)';
+  ctx.beginPath();
+  ctx.ellipse(x - rx * 0.3, y - ry * 0.45, rx * 0.4, ry * 0.3, -0.2, 0, Math.PI * 2);
+  ctx.fill();
+}
+
+function fgPillar(ctx: CanvasRenderingContext2D, x: number, color: string) {
+  // tall stone pillar hugging the left edge (rajcourt framing)
+  ctx.fillStyle = color;
+  ctx.beginPath();
+  ctx.roundRect(x - 14, -24, 62, 768, 10);
+  ctx.fill();
+  ctx.fillStyle = 'rgba(0,0,0,0.22)';
+  ctx.beginPath();
+  ctx.roundRect(x + 34, -24, 14, 768, 6);
+  ctx.fill();
+  ctx.fillStyle = 'rgba(255,255,255,0.07)';
+  for (let i = 0; i < 6; i++) {
+    ctx.beginPath();
+    ctx.roundRect(x - 4 + i * 7, -20, 3, 760, 2);
+    ctx.fill();
+  }
+  ctx.fillStyle = color;
+  ctx.beginPath();
+  ctx.roundRect(x - 22, 118, 78, 20, 6);
+  ctx.fill();
+}
+
+function fgDrape(ctx: CanvasRenderingContext2D, color: string) {
+  // rich cloth hanging into the top-right corner (rajcourt framing)
+  ctx.fillStyle = color;
+  ctx.beginPath();
+  ctx.moveTo(STAGE_W - 6, -12);
+  ctx.lineTo(STAGE_W + 40, -12);
+  ctx.lineTo(STAGE_W + 40, 300);
+  ctx.quadraticCurveTo(STAGE_W - 16, 312, STAGE_W - 44, 262);
+  ctx.quadraticCurveTo(STAGE_W - 26, 150, STAGE_W - 6, -12);
+  ctx.closePath();
+  ctx.fill();
+  ctx.strokeStyle = 'rgba(0,0,0,0.2)';
+  ctx.lineWidth = 3;
+  for (let i = 0; i < 3; i++) {
+    const fx = STAGE_W - 6 + i * 16;
+    ctx.beginPath();
+    ctx.moveTo(fx, 4 + i * 10);
+    ctx.quadraticCurveTo(fx - 8, 130 + i * 30, fx - 2, 250 - i * 24);
+    ctx.stroke();
+  }
+}
+
+function fgPlant(ctx: CanvasRenderingContext2D, x: number, y: number, potColor: string) {
+  // potted plant silhouette (indoor framing)
+  ctx.fillStyle = potColor;
+  ctx.beginPath();
+  ctx.moveTo(x - 22, y - 30);
+  ctx.lineTo(x + 22, y - 30);
+  ctx.lineTo(x + 15, y);
+  ctx.lineTo(x - 15, y);
+  ctx.closePath();
+  ctx.fill();
+  ctx.strokeStyle = 'rgba(0,0,0,0.22)';
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.moveTo(x - 22, y - 30);
+  ctx.lineTo(x + 22, y - 30);
+  ctx.stroke();
+  fgLeaf(ctx, x - 4, y - 30, 0.62, '#275e2e', 0.55);
+  fgLeaf(ctx, x + 6, y - 30, 0.56, '#2f6b36', -0.5);
+  fgLeaf(ctx, x, y - 30, 0.68, '#1e5227', 0.05);
+}
+
+function fgVine(ctx: CanvasRenderingContext2D, color: string) {
+  // hanging vine from the top-left (jungle framing)
+  ctx.strokeStyle = color;
+  ctx.lineWidth = 5;
+  ctx.lineCap = 'round';
+  ctx.beginPath();
+  ctx.moveTo(28, -8);
+  ctx.quadraticCurveTo(58, 120, 34, 236);
+  ctx.stroke();
+  for (let i = 0; i < 5; i++) {
+    const vy = 30 + i * 42;
+    const vx = 28 + Math.sin(i * 1.1) * 26 + (i * 120) / 236;
+    ctx.fillStyle = color;
+    ctx.beginPath();
+    ctx.ellipse(vx, vy, 13, 6.5, Math.sin(i * 2) * 1.2, 0, Math.PI * 2);
+    ctx.fill();
+  }
+}
+
+const FG_RENDERERS: Record<BgName, (ctx: CanvasRenderingContext2D) => void> = {
+  village(ctx) {
+    fgTuft(ctx, 26, 726, 1.5, '#2f5d24');
+    fgTuft(ctx, 94, 736, 1.1, '#35682a');
+    fgLeaf(ctx, 1246, 730, 1.15, '#1e4d1c', -0.38);
+    fgLeaf(ctx, 1186, 742, 0.85, '#256020', 0.3);
+    fgTuft(ctx, 1216, 740, 1.0, '#2f5d24');
+  },
+  field(ctx) {
+    fgTuft(ctx, 44, 730, 1.6, '#3a6b1f');
+    fgTuft(ctx, 118, 744, 1.2, '#417424');
+    fgTuft(ctx, 1156, 738, 1.5, '#3a6b1f');
+    fgLeaf(ctx, 1240, 750, 0.9, '#2d5a1a', -0.24);
+  },
+  bazaar(ctx) {
+    fgSack(ctx, 64, 744, 1.5, '#6b4423');
+    fgSack(ctx, 126, 754, 1.0, '#7a5230');
+    fgTuft(ctx, 1204, 746, 1.2, '#3f5a26');
+  },
+  pond(ctx) {
+    fgLotus(ctx, 56, 738, 52, '#1e6b3a');
+    fgLotus(ctx, 148, 758, 40, '#256f40');
+    fgLotus(ctx, 118, 744, 30, '#1a5c33');
+    fgReed(ctx, 1228, 752, 1.3, '#2e5e2a');
+    fgReed(ctx, 1194, 764, 1.0, '#356831');
+    fgReed(ctx, 1254, 762, 1.1, '#2e5e2a');
+  },
+  ghat(ctx) {
+    fgReed(ctx, 66, 746, 1.2, '#2d5c33');
+    fgReed(ctx, 98, 760, 0.95, '#35653b');
+    fgStone(ctx, 1170, 750, 34, 15, '#4a4038');
+    fgLotus(ctx, 1244, 748, 34, '#1e6b3a');
+  },
+  river(ctx) {
+    fgReed(ctx, 60, 742, 1.25, '#2d5c33');
+    fgReed(ctx, 1206, 756, 1.05, '#2d5c33');
+    fgStone(ctx, 148, 754, 34, 14, '#3e4a3a');
+    fgStone(ctx, 1168, 750, 26, 11, '#46523f');
+  },
+  night(ctx) {
+    bush(ctx, 44, 732, 1.6, '#142a1e');
+    bush(ctx, 142, 750, 1.2, '#12241a');
+    bush(ctx, 1184, 744, 1.5, '#142a1e');
+    fgTuft(ctx, 1122, 750, 1.1, '#173324');
+  },
+  room(ctx) {
+    fgPlant(ctx, 66, 742, '#8a4b2a');
+    fgPlant(ctx, 1216, 748, '#7c4224');
+  },
+  school(ctx) {
+    fgPlant(ctx, 1214, 746, '#8a4b2a');
+    // book stack bottom-left
+    const books = ['#b3541e', '#3f6212', '#7c2d12'];
+    for (let i = 0; i < 3; i++) {
+      ctx.fillStyle = books[i];
+      ctx.beginPath();
+      ctx.roundRect(18 + i * 6, 712 - i * 17, 74 - i * 10, 17, 4);
+      ctx.fill();
+      ctx.strokeStyle = 'rgba(0,0,0,0.25)';
+      ctx.lineWidth = 2;
+      ctx.stroke();
+    }
+  },
+  rajcourt(ctx) {
+    fgPillar(ctx, 4, '#3d2c20');
+    fgDrape(ctx, '#6b1f2a');
+  },
+  temple(ctx) {
+    fgLeaf(ctx, 20, 738, 1.3, '#1d4d22', 0.5);
+    fgLeaf(ctx, 1260, 746, 1.2, '#1d4d22', -0.5);
+    fgTuft(ctx, 96, 746, 1.0, '#2c5a26');
+  },
+  kitchen(ctx) {
+    // hanging pot rail top-right
+    ctx.strokeStyle = '#4a3222';
+    ctx.lineWidth = 6;
+    ctx.beginPath();
+    ctx.moveTo(1010, -6);
+    ctx.lineTo(1290, -6);
+    ctx.stroke();
+    ctx.fillStyle = '#3d2a1c';
+    ctx.beginPath();
+    ctx.ellipse(1078, 26, 30, 24, 0, Math.PI, Math.PI * 2);
+    ctx.fill();
+    ctx.beginPath();
+    ctx.ellipse(1150, 34, 22, 17, 0, Math.PI, Math.PI * 2);
+    ctx.fill();
+    ctx.strokeStyle = '#4a3222';
+    ctx.lineWidth = 3;
+    ctx.beginPath();
+    ctx.moveTo(1078, -6);
+    ctx.lineTo(1078, 4);
+    ctx.moveTo(1150, -6);
+    ctx.lineTo(1150, 18);
+    ctx.stroke();
+    fgSack(ctx, 60, 746, 1.4, '#7a4a22');
+  },
+  jungle(ctx) {
+    fgLeaf(ctx, -6, 764, 2.1, '#143a1c', -0.55);
+    fgLeaf(ctx, 30, 700, 1.7, '#1b4a22', 0.7);
+    fgLeaf(ctx, -16, 380, 1.6, '#123318', 0.9);
+    fgLeaf(ctx, 1288, 730, 2.1, '#143a1c', -2.6);
+    fgLeaf(ctx, 1252, 660, 1.7, '#1b4a22', 2.4);
+    fgLeaf(ctx, 1296, 340, 1.6, '#123318', 2.2);
+    fgVine(ctx, '#1d451f');
+  },
+};
+
+const fgCache = new Map<string, HTMLCanvasElement>();
+
+/**
+ * Overscan margin (logical px) baked around the foreground content: the
+ * engine drifts this layer ±~112px against the camera, so the canvas must
+ * extend past the stage edges or empty bands would show while panning.
+ */
+const FG_MARGIN = 130;
+
+/** Get (or build) the cached foreground silhouette overlay for a scene. */
+export function getForegroundLayer(name: BgName): HTMLCanvasElement {
+  if (typeof document === 'undefined') throw new Error('backgrounds require a browser');
+  const key = `fg:${name}:${CACHE_VERSION}`;
+  let c = fgCache.get(key);
+  if (!c) {
+    c = document.createElement('canvas');
+    c.width = (STAGE_W + FG_MARGIN * 2) * BG_SS;
+    c.height = (STAGE_H + FG_MARGIN * 2) * BG_SS;
+    const ctx = c.getContext('2d')!;
+    ctx.setTransform(BG_SS, 0, 0, BG_SS, 0, 0);
+    ctx.translate(FG_MARGIN, FG_MARGIN);
+    FG_RENDERERS[name](ctx);
+    fgCache.set(key, c);
+  }
+  return c;
+}
+
+/** logical overscan size of the foreground canvas (engine draw helper) */
+export const FG_OVERSCAN = FG_MARGIN;
+
+/**
+ * Sprint 10 — per-scene shadow tint: contact shadows pick up the ground
+ * colour (green on grass, warm brown on dirt, cool on stone) instead of
+ * generic black, which is a huge realism win for almost no cost.
+ */
+export function shadowTintFor(name: BgName): string {
+  switch (name) {
+    case 'village':
+    case 'field':
+    case 'night':
+      return '30,40,18';
+    case 'jungle':
+    case 'temple':
+      return '22,42,22';
+    case 'bazaar':
+    case 'kitchen':
+      return '62,40,18';
+    case 'pond':
+    case 'ghat':
+    case 'river':
+      return '36,44,30';
+    case 'room':
+    case 'school':
+      return '58,42,28';
+    case 'rajcourt':
+      return '52,38,22';
+    default:
+      return '0,0,0';
   }
 }
 

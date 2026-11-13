@@ -673,7 +673,14 @@ function drawEyes(ctx: CanvasRenderingContext2D, d: CharacterDesign, pose: Pose)
     const big = d.eyeStyle === 3;
     const r = d.eyeStyle === 2 ? 4.5 : big ? 9.5 : d.eyeStyle === 1 ? 6.5 : 7.5;
     const ry = d.eyeStyle === 2 ? 3.5 : big ? 9.5 : d.eyeStyle === 1 ? 8 : 7.5;
-    ctx.fillStyle = '#ffffff';
+    // Sprint 10 — sclera shading: pure white reads flat; a gentle warm falloff
+    // from the top (lit) to the lower lid (ambient occlusion) makes eyes
+    // look moist and alive — the single biggest face-realism win
+    const sgE = ctx.createLinearGradient(x, EYE_Y - ry, x, EYE_Y + ry);
+    sgE.addColorStop(0, '#ffffff');
+    sgE.addColorStop(0.72, '#fdf9f2');
+    sgE.addColorStop(1, '#e7dbcb');
+    ctx.fillStyle = sgE;
     ctx.beginPath();
     ctx.ellipse(x, EYE_Y, r, ry, 0, 0, Math.PI * 2);
     ctx.fill();
@@ -1084,6 +1091,16 @@ function drawHead(ctx: CanvasRenderingContext2D, d: CharacterDesign, pose: Pose,
   // ears
   circle(ctx, -HEAD_R + 1, HEAD_CY + 4, 6, shade(d.skin, -0.08));
   circle(ctx, HEAD_R - 1, HEAD_CY + 4, 6, shade(d.skin, -0.08));
+  // Sprint 10 — inner-ear crease: one dark arc per ear gives the ear real form
+  ctx.strokeStyle = 'rgba(0,0,0,0.17)';
+  ctx.lineWidth = 1.5;
+  ctx.lineCap = 'round';
+  ctx.beginPath();
+  ctx.arc(-HEAD_R + 1, HEAD_CY + 4, 3.4, 0.5, 2.7);
+  ctx.stroke();
+  ctx.beginPath();
+  ctx.arc(HEAD_R - 1, HEAD_CY + 4, 3.4, 0.5, 2.7);
+  ctx.stroke();
 
   drawHairBack(ctx, d, pose.hairSway ?? 0);
 
@@ -1109,6 +1126,13 @@ function drawHead(ctx: CanvasRenderingContext2D, d: CharacterDesign, pose: Pose,
   ctx.beginPath();
   ctx.arc(HEAD_CX, HEAD_CY, HEAD_R, 0, Math.PI * 2);
   ctx.stroke();
+
+  // Sprint 10 — chin shadow on the neck: the head casts a soft dark band
+  // where it meets the neck (anchor for the whole head volume)
+  ctx.fillStyle = 'rgba(60,35,20,0.18)';
+  ctx.beginPath();
+  ctx.ellipse(0, HEAD_CY + HEAD_R + 2, 9.5, 3.4, 0, 0, Math.PI * 2);
+  ctx.fill();
 
   // crisp rim light along the top-right edge — premium finishing touch
   ctx.strokeStyle = 'rgba(255,255,255,0.38)';
@@ -1150,6 +1174,8 @@ function drawHead(ctx: CanvasRenderingContext2D, d: CharacterDesign, pose: Pose,
 /**
  * Draw a character. The ctx must already be translated to the character's
  * ground point, and pre-scaled (and flipped via scale(-1,1) if needed).
+ * `shadowTint` — "r,g,b" triplet of the scene's ground-shadow colour
+ * (Sprint 10: green on grass, warm on dirt … see shadowTintFor).
  */
 export function drawCharacter(
   ctx: CanvasRenderingContext2D,
@@ -1157,17 +1183,19 @@ export function drawCharacter(
   pose: Pose,
   t: number = 0,
   prop: PropName = 'none',
+  shadowTint = '0,0,0',
 ) {
   ctx.save();
   ctx.rotate(pose.bodyLean * D);
 
   // soft ground shadow (radial fade) — stays ON THE GROUND while the body
-  // jumps (drawn before the y translate), shrinking & fading with height
+  // jumps (drawn before the y translate), shrinking & fading with height.
+  // Sprint 10: tinted by the scene's ground colour, not generic black.
   const airH = Math.max(0, pose.yOff); // height above ground (units)
   const airK = 1 / (1 + airH / 46);
   const sg = ctx.createRadialGradient(0, 2, 2, 0, 2, 38 * airK);
-  sg.addColorStop(0, `rgba(0,0,0,${(0.24 * airK).toFixed(3)})`);
-  sg.addColorStop(1, 'rgba(0,0,0,0)');
+  sg.addColorStop(0, `rgba(${shadowTint},${(0.27 * airK).toFixed(3)})`);
+  sg.addColorStop(1, `rgba(${shadowTint},0)`);
   ctx.fillStyle = sg;
   ctx.beginPath();
   ctx.ellipse(0, 2, 38 * airK, 9 * airK, 0, 0, Math.PI * 2);

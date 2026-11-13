@@ -10,7 +10,13 @@
 //  • same premium motion core: speed, easing, lip-sync, living backgrounds
 // ============================================================
 
-import { drawAmbient, getBackgroundCanvas } from './backgrounds';
+import {
+  drawAmbient,
+  FG_OVERSCAN,
+  getBackgroundCanvas,
+  getForegroundLayer,
+  shadowTintFor,
+} from './backgrounds';
 import { depthAlpha, depthScale, groundYAt, worldXAt } from './depth';
 import { drawCharacter } from './draw';
 import { basePose, computePose, easingByName } from './pose';
@@ -94,6 +100,85 @@ function seqStart(beats: SceneBeat[], i: number): number {
   return acc;
 }
 
+// ---------------- Sprint 10: finishing pass ----------------
+
+/**
+ * Deterministic ground-dust timing: returns the age (seconds, 0..0.55) of an
+ * active impact puff at local beat time `lt`, or null when no dust now.
+ * Aligned with the POSE cycles (jump lands at cyc 0.78 → lt%1.15≈0.897,
+ * fall sits at cyc 0.55 → lt%2.2≈1.21, kick whip ends lt%1.3≈0.728) so the
+ * puffs appear exactly on the foot/body impact — real weight, on screen.
+ */
+function dustAge(action: SceneBeat['action'], lt: number): number | null {
+  const SPAN = 0.55;
+  switch (action) {
+    case 'jump': {
+      let age = (lt % 1.15) - 0.897;
+      if (age < 0) age += 1.15; // window wraps the cycle modulus
+      return age <= SPAN ? age : null;
+    }
+    case 'fall': {
+      let age = (lt % 2.2) - 1.21;
+      if (age < 0) age += 2.2;
+      return age <= SPAN ? age : null;
+    }
+    case 'kick': {
+      let age = (lt % 1.3) - 0.728;
+      if (age < 0) age += 1.3;
+      return age <= SPAN ? age : null;
+    }
+    case 'run': {
+      // every 2nd footfall lifts a light puff (stride ≈0.32s)
+      const s = (lt * 3.1 * 0.5) % 1;
+      return s <= SPAN ? s : null;
+    }
+    default:
+      return null;
+  }
+}
+
+/** expanding, fading dust puffs around a ground impact point */
+function drawDust(ctx: CanvasRenderingContext2D, x: number, y: number, age: number, s: number) {
+  const k = Math.min(1, age / 0.55);
+  const fade = (1 - k) * 0.85;
+  for (let i = 0; i < 6; i++) {
+    const a = (i / 6) * Math.PI * 2 + i * 0.7;
+    const jitter = 0.6 + ((i * 29) % 10) / 16;
+    const dist = (10 + k * 46) * jitter * s;
+    const px = x + Math.cos(a) * dist;
+    const py = y - 3 - Math.abs(Math.sin(a)) * dist * 0.34 - k * 10 * s;
+    const r = (5 + k * 13) * s * (0.7 + ((i * 17) % 7) / 12);
+    const g = ctx.createRadialGradient(px, py, r * 0.2, px, py, r);
+    g.addColorStop(0, `rgba(199,181,150,${(0.32 * fade).toFixed(3)})`);
+    g.addColorStop(1, 'rgba(199,181,150,0)');
+    ctx.fillStyle = g;
+    ctx.beginPath();
+    ctx.arc(px, py, r, 0, Math.PI * 2);
+    ctx.fill();
+  }
+}
+
+/**
+ * Sprint 10 — scene colour grade: one gentle soft-light wash unifies every
+ * painted element under the scene's light (warm golden outdoors, cool blue
+ * night, candle-warm interiors). Cached gradients; pure screen-space fill.
+ */
+const GRADE: Partial<Record<Scene['background'], [string, string, string]>> = {
+  village: ['rgba(255,196,110,0.16)', 'rgba(255,222,150,0.05)', 'rgba(96,44,84,0.12)'],
+  field: ['rgba(255,202,120,0.14)', 'rgba(255,228,160,0.04)', 'rgba(70,90,40,0.10)'],
+  bazaar: ['rgba(255,178,96,0.14)', 'rgba(255,214,140,0.05)', 'rgba(120,52,30,0.10)'],
+  river: ['rgba(255,200,120,0.10)', 'rgba(206,232,255,0.05)', 'rgba(30,62,96,0.10)'],
+  pond: ['rgba(255,204,130,0.10)', 'rgba(210,235,255,0.05)', 'rgba(28,64,92,0.10)'],
+  ghat: ['rgba(255,198,116,0.11)', 'rgba(208,232,255,0.05)', 'rgba(30,60,90,0.10)'],
+  night: ['rgba(96,116,208,0.14)', 'rgba(60,80,160,0.06)', 'rgba(4,10,28,0.16)'],
+  jungle: ['rgba(196,232,124,0.11)', 'rgba(130,205,95,0.05)', 'rgba(14,60,26,0.12)'],
+  temple: ['rgba(255,168,80,0.14)', 'rgba(255,212,140,0.06)', 'rgba(92,30,20,0.12)'],
+  room: ['rgba(255,190,110,0.11)', 'rgba(255,222,172,0.04)', 'rgba(72,42,26,0.11)'],
+  school: ['rgba(255,192,112,0.10)', 'rgba(255,224,176,0.04)', 'rgba(66,44,28,0.10)'],
+  kitchen: ['rgba(255,184,104,0.12)', 'rgba(255,218,160,0.05)', 'rgba(74,40,22,0.12)'],
+  rajcourt: ['rgba(255,198,108,0.13)', 'rgba(255,224,158,0.05)', 'rgba(102,40,22,0.10)'],
+};
+
 function wrapText(
   ctx: CanvasRenderingContext2D,
   text: string,
@@ -161,6 +246,8 @@ export class CartoonStage {
   private exportOpts: { shake: boolean; hideNameTags: boolean } | null = null;
   /** cached cinematic vignette (depends only on stage size) */
   private vignette: CanvasGradient | null = null;
+  /** cached scene colour-grade gradients (per background name) */
+  private gradeCache = new Map<string, CanvasGradient>();
 
   constructor(canvas: HTMLCanvasElement, callbacks: StageCallbacks = {}) {
     this.canvas = canvas;
@@ -739,6 +826,8 @@ export class CartoonStage {
     }
 
     const rendered: RenderedChar[] = [];
+    /** Sprint 10 — queued ground-dust puffs this frame */
+    const dusts: { x: number; y: number; age: number; s: number }[] = [];
 
     for (const placed of this.scene.characters) {
       const design = this.designs.get(placed.designId);
@@ -825,13 +914,64 @@ export class CartoonStage {
       ctx.globalAlpha = depthAlpha(z);
       ctx.translate(wx, gy);
       ctx.scale((flip ? -1 : 1) * s * extraScaleX, s);
-      drawCharacter(ctx, design, pose, localT, placed.prop ?? 'none');
+      drawCharacter(
+        ctx,
+        design,
+        pose,
+        localT,
+        placed.prop ?? 'none',
+        shadowTintFor(this.scene.background),
+      );
       ctx.restore();
+
+      // Sprint 10 — ground dust on impacts (jump land, fall sit, kick, run)
+      const da = w ? dustAge(w.beat.action, localT) : null;
+      if (da != null) dusts.push({ x: wx, y: gy, age: da, s });
 
       rendered.push({ uid: placed.uid, name: design.name, wx, gy, s, speaking: !!w });
     }
 
+    // impact dust — under the foreground frame, right on the ground plane
+    for (const d of dusts) drawDust(ctx, d.x, d.y, d.age, d.s);
+
+    // Sprint 10 — foreground silhouette frame: drawn 1:1 with a baked-in
+    // overscan margin and a 0.3× counter-parallax drift, so it reads as
+    // standing in FRONT of the actors and never shows empty edges
+    try {
+      const fg = getForegroundLayer(this.scene.background);
+      const fx = -(cam.cx - STAGE_W / 2) * 0.3;
+      const fy = -(cam.cy - STAGE_H / 2) * 0.3;
+      ctx.drawImage(
+        fg,
+        -FG_OVERSCAN + fx,
+        -FG_OVERSCAN + fy,
+        STAGE_W + FG_OVERSCAN * 2,
+        STAGE_H + FG_OVERSCAN * 2,
+      );
+    } catch {
+      /* decorative — never break the stage */
+    }
+
     ctx.restore(); // ---- end camera transform ----
+
+    // Sprint 10 — scene colour grade: a gentle soft-light wash that unifies
+    // background, characters and foreground under one light
+    const grade = GRADE[this.scene.background];
+    if (grade) {
+      let g = this.gradeCache.get(this.scene.background);
+      if (!g) {
+        g = ctx.createLinearGradient(0, 0, 0, STAGE_H);
+        g.addColorStop(0, grade[0]);
+        g.addColorStop(0.52, grade[1]);
+        g.addColorStop(1, grade[2]);
+        this.gradeCache.set(this.scene.background, g);
+      }
+      ctx.save();
+      ctx.globalCompositeOperation = 'soft-light';
+      ctx.fillStyle = g;
+      ctx.fillRect(0, 0, STAGE_W, STAGE_H);
+      ctx.restore();
+    }
 
     // selection ring (screen space — stays crisp under any camera)
     for (const r of rendered) {
