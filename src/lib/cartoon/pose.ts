@@ -32,6 +32,8 @@ export function basePose(): Pose {
     expression: 'neutral',
     tears: false,
     squash: 0,
+    clothSway: 0,
+    hairSway: 0,
   };
 }
 
@@ -127,6 +129,8 @@ export function computePose(action: ActionName, t: number, speaking: boolean): P
       p.headNod = Math.sin(ph * 2 - 0.55) * 1.8; // counter-bob, delayed
       p.headTilt = Math.sin(ph + 0.85) * -1.6;
       p.squash = Math.max(0, Math.sin(ph * 2)) * 0.05; // footstrike squash
+      // Sprint 9 — the lungi hem trails the stride a beat late (cloth inertia)
+      p.clothSway = Math.sin(ph - 0.95) * 4.5;
       p.mouthOpen = speaking ? 0.15 + 0.7 * Math.abs(Math.sin(t * 12)) : 0;
       if (blinking(t)) p.eyeState = 'blink';
       break;
@@ -275,6 +279,7 @@ export function computePose(action: ActionName, t: number, speaking: boolean): P
       p.xOff = Math.sin(ph - 0.5) * 2.4; // sway trails the feet
       p.bodyLean = 10 + Math.sin(ph) * 2.5; // forward lean pulses with stride
       p.headNod = Math.sin(ph * 2 - 0.55) * 2.8; // delayed counter-bob
+      p.clothSway = Math.sin(ph - 0.95) * 7.5; // hem whips behind the sprint
       p.fist = true; // sprinting fists
       p.expression = 'neutral';
       p.mouthOpen = speaking ? 0.2 + 0.7 * Math.abs(Math.sin(t * 12)) : 0.18;
@@ -391,6 +396,7 @@ export function computePose(action: ActionName, t: number, speaking: boolean): P
       p.bodyLean = Math.sin(ph) * 7;
       p.headTilt = Math.sin(ph - 0.8) * 9; // head lags even more
       p.headNod = Math.sin(ph * 2 - 0.5) * 3;
+      p.clothSway = Math.sin(ph - 0.55) * 6; // skirt/lungi swirl trails the hips
       p.shoulderL = 60 + Math.sin(armPh) * 95;
       p.shoulderR = 60 - Math.sin(armPh) * 95;
       p.elbowL = -34 + Math.cos(armPh - 0.35) * 22;
@@ -640,10 +646,90 @@ export function computePose(action: ActionName, t: number, speaking: boolean): P
       p.shoulderR = 38 + Math.sin(ph) * 9;
       p.elbowL = -92 + lagSin(ph + Math.PI, 0.5) * 7;
       p.elbowR = -92 + lagSin(ph, 0.5) * 7;
+      p.clothSway = Math.sin(ph - 0.9) * 2.6; // careful cloth drifts too
       p.eyeState = 'wide';
       p.browState = 'raised';
       p.expression = 'frown';
       p.mouthOpen = speaking ? 0.1 + 0.4 * Math.abs(Math.sin(t * 9)) : 0.05;
+      if (blinking(t)) p.eyeState = 'blink';
+      break;
+    }
+    case 'carry': {
+      // মাথায় বোঝা — heavy load balanced overhead: slow deliberate stride,
+      // knees always loaded, torso counter-leans back under the weight,
+      // arms locked up (trembling slightly with each footstep).
+      const ph = t * TAU * 0.95; // heavy steps are slow
+      const step = Math.sin(ph);
+      p.hipL = step * 20;
+      p.hipR = Math.sin(ph + Math.PI) * 20;
+      p.kneeL = 10 + Math.max(0, Math.sin(ph + 1.3)) * 22;
+      p.kneeR = 10 + Math.max(0, Math.sin(ph + Math.PI + 1.3)) * 22;
+      // the torso pitches back to counterbalance, rolling with each step
+      p.bodyLean = -4 + Math.sin(ph) * 1.8;
+      p.yOff = -3 + Math.abs(Math.sin(ph)) * 2.2; // loaded crouch
+      p.squash = Math.max(0, Math.sin(ph * 2)) * 0.06; // footstrike thud
+      p.xOff = Math.sin(ph - 0.5) * 1.6;
+      // arms lock overhead, elbows micro-lag (weight settling on the palms)
+      p.shoulderL = 158 + Math.sin(ph - 0.4) * 5;
+      p.shoulderR = 158 + Math.sin(ph + 0.3) * 5;
+      p.elbowL = -22 + Math.sin(ph - 0.75) * 4;
+      p.elbowR = -22 + Math.sin(ph + 0.65) * 4;
+      // head tucks slightly forward, gaze steady under the load
+      p.headNod = 8 + Math.sin(ph * 2 - 0.5) * 1.6;
+      p.headTilt = Math.sin(ph + 0.9) * -1.4;
+      p.clothSway = Math.sin(ph - 1.0) * 4; // heavy cloth swings slow & late
+      p.fist = true; // gripping the load
+      p.mouthOpen = speaking ? 0.15 + 0.5 * Math.abs(Math.sin(t * 11)) : 0.1;
+      p.expression = 'neutral';
+      p.browState = 'normal';
+      if (t > 1.2) p.fx = ['sweat']; // ঘাম — ভারী বোঝা
+      if (blinking(t)) p.eyeState = 'blink';
+      break;
+    }
+    case 'clap': {
+      // হাত তালি — enthusiastic applause: hands meet at the chest on a fast
+      // cycle, impact squash on contact, elbows trail, body bounces lightly.
+      const cyc = (t % 0.55) / 0.55;
+      // 0..1..0 approach curve — arms converge then spring apart a touch
+      const meet = Math.abs(Math.sin(cyc * Math.PI));
+      const imp = Math.exp(-cyc * 6); // impact ring-out after contact
+      p.shoulderL = 46 + meet * 44 - imp * 3;
+      p.shoulderR = 46 + meet * 44 - imp * 3;
+      p.elbowL = -92 + meet * 34 + Math.sin(cyc * Math.PI - 0.4) * 5;
+      p.elbowR = -92 + meet * 34 - Math.sin(cyc * Math.PI - 0.4) * 5;
+      // torso absorbs each clap with a tiny delayed bounce (overlapping)
+      p.yOff = imp * 2.2 + Math.sin(t * 2.1) * 1.2;
+      p.squash = imp * 0.05;
+      p.bodyLean = Math.sin(t * 2.1) * 1.5;
+      p.headTilt = Math.sin(t * 2.1 - 0.4) * 3;
+      p.headNod = imp * 1.5;
+      p.eyeState = 'happy';
+      p.browState = 'raised';
+      p.expression = 'laugh';
+      p.mouthOpen = speaking ? 0.3 + 0.55 * Math.abs(Math.sin(t * 12)) : 0.4;
+      p.mouthWide = 0.45;
+      break;
+    }
+    case 'salute': {
+      // স্যালুট — crisp military salute: snap up with overshoot, hold with
+      // a proud micro-tremble, chest out, far arm snapped straight down.
+      const cyc = t % 2.2;
+      let raise: number;
+      if (cyc < 0.35) raise = reach(cyc, 0.35, 0.7); // snap up + overshoot
+      else if (cyc < 1.8) raise = 1; // proud hold
+      else raise = 1 - (cyc - 1.8) / 0.4; // lower with a soft settle
+      const hold = Math.sin(t * 13) * 0.8; // proud tremble during the hold
+      p.shoulderR = 10 + raise * 118 + hold * raise;
+      p.elbowR = -10 + raise * -122 + hold * raise * 0.6; // hand to the brow
+      p.shoulderL = -2; // far arm snaps straight down at attention
+      p.elbowL = -2;
+      p.bodyLean = raise * 2.5; // chest out
+      p.headNod = raise * -3; // chin up
+      p.headTilt = raise * 1.5;
+      p.yOff = raise * 1.5;
+      p.expression = 'neutral';
+      p.mouthOpen = speaking ? 0.15 + 0.6 * Math.abs(Math.sin(t * 12)) : 0.05;
+      p.browState = 'normal';
       if (blinking(t)) p.eyeState = 'blink';
       break;
     }
@@ -689,7 +775,14 @@ export function computePose(action: ActionName, t: number, speaking: boolean): P
     p.headTilt += Math.sin(t * 0.7 - 0.35) * 0.9;
     p.shoulderL += sway * 1.1;
     p.shoulderR += sway * 1.1;
+    // Sprint 9 — cloth never freezes either: a faint breeze ripple rides
+    // every grounded action (walk/run/dance/carry set stronger strides above)
+    p.clothSway += Math.sin(t * 1.1 + 0.8) * 0.9;
   }
+
+  // Sprint 9 — hair follow-through (ALL actions): the tips of long hair
+  // answer every head move a beat later and keep their own slow swing.
+  p.hairSway = -p.headTilt * 0.45 + Math.sin(t * 1.3 - 0.5) * 1.4;
 
   return p;
 }

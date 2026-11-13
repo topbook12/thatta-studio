@@ -29,7 +29,11 @@ export type ActionName =
   | 'celebrate' // জয়ধোঁয়া উদযাপন
   | 'sneak' // চুরির প্ল্যানে টিপটো
   // Sprint 6 — pseudo-3D movement
-  | 'turn'; // ঘুরে দাঁড়াচ্ছে (3D perspective flip)
+  | 'turn' // ঘুরে দাঁড়াচ্ছে (3D perspective flip)
+  // Sprint 9 — movement expansion
+  | 'carry' // মাথায় বোঝা বইছে (heavy load overhead)
+  | 'clap' // হাত তালি দিচ্ছে (applause)
+  | 'salute'; // স্যালুট করছে (crisp salute)
 
 export type BgName =
   | 'village'
@@ -228,6 +232,17 @@ export interface Pose {
   tears: boolean;
   /** squash & stretch: -1 = stretched tall, +1 = squashed wide, 0 = normal */
   squash: number;
+  /**
+   * Sprint 9 — cloth inertia: horizontal skew (px) of the lungi/skirt hem.
+   * The fabric trails the body a beat late, so hem sway is derived from the
+   * stride rhythm with a phase lag, not locked to the hips.
+   */
+  clothSway: number;
+  /**
+   * Sprint 9 — hair inertia: horizontal drift (px) of the long-hair tips.
+   * Trails the head tilt + carries its own slow bounce (follow-through).
+   */
+  hairSway: number;
   /** comic face FX overlays active this frame (expression engine v2) */
   fx?: FaceFx[];
   /** true when the near hand should render a gripping fist (slap, push…) */

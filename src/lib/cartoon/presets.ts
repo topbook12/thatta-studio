@@ -95,6 +95,9 @@ export const ACTION_OPTIONS: { id: ActionName; label: string; emoji: string }[] 
   { id: 'nod', label: 'মাথা নাড়ছে', emoji: '🙂' },
   { id: 'cry', label: 'কাঁদছে', emoji: '😭' },
   { id: 'turn', label: 'ঘুরে দাঁড়াচ্ছে (3D)', emoji: '🔄' },
+  { id: 'carry', label: 'মাথায় বোঝা বইছে', emoji: '📦' },
+  { id: 'clap', label: 'হাত তালি দিচ্ছে', emoji: '👏' },
+  { id: 'salute', label: 'স্যালুট করছে', emoji: '🫡' },
 ];
 
 /** walk/run এর গতিপথের easing অপশন */

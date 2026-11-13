@@ -11,7 +11,7 @@ const cache = new Map<string, HTMLCanvasElement>();
  * Sprint 8 — bump when background painting changes so stale cached canvases
  * (e.g. from a hot-reload session) are never reused.
  */
-const CACHE_VERSION = 'v8';
+const CACHE_VERSION = 'v9';
 
 /**
  * Sprint 7 — backgrounds are painted once at 2× resolution (supersampled).
@@ -425,36 +425,55 @@ function drawField(ctx: CanvasRenderingContext2D) {
   sun(ctx, 180, 120);
   cloud(ctx, 800, 110, 0.9);
 
-  palm(ctx, 120, horizon + 60, 180);
-  palm(ctx, 1180, horizon + 50, 200);
-  palm(ctx, 1080, horizon + 70, 140);
+  // Sprint 9 — muted treeline hugging the horizon
+  for (let i = 0; i < 14; i++) {
+    bush(ctx, i * 96 + 20, horizon - 4 - (i % 3) * 5, 0.72 + (i % 3) * 0.16, i % 2 ? '#7d9b6a' : '#74916b');
+  }
+  ctx.fillStyle = 'rgba(125, 155, 106, 0.65)';
+  ctx.fillRect(0, horizon - 8, STAGE_W, 10);
 
-  // paddy field bands
+  // paddy field bands — rows grow taller and darker toward the foreground
   ctx.fillStyle = '#a3e635';
   ctx.fillRect(0, horizon, STAGE_W, STAGE_H - horizon);
   const rows = ['#bef264', '#a3e635', '#84cc16', '#a3e635', '#84cc16'];
   for (let i = 0; i < 6; i++) {
     const y = horizon + i * ((GROUND_Y + 40 - horizon) / 6);
     ctx.fillStyle = rows[i % rows.length];
-    ctx.fillRect(0, y, STAGE_W, 14);
+    ctx.fillRect(0, y, STAGE_W, 12 + i * 3);
   }
-  // rice tufts
-  ctx.strokeStyle = '#4d7c0f';
-  ctx.lineWidth = 3;
+  // aerial perspective across the horizon band
+  haze(ctx, 0, horizon - 10, STAGE_W, 90, '255, 244, 214', 0.35);
+
+  // palms rise from the field edge (shadows drawn first)
+  softShadow(ctx, 128, horizon + 62, 46, 11, 0.18);
+  softShadow(ctx, 1188, horizon + 52, 50, 12, 0.18);
+  softShadow(ctx, 1088, horizon + 72, 40, 10, 0.16);
+  palm(ctx, 120, horizon + 60, 180);
+  palm(ctx, 1180, horizon + 50, 200);
+  palm(ctx, 1080, horizon + 70, 140);
+
+  // rice tufts — far rows small and pale, grain tips gild some near stems
   ctx.lineCap = 'round';
   for (let i = 0; i < 40; i++) {
     const x = 30 + (i * 1230) / 40 + ((i * 7) % 30);
     const y = GROUND_Y - 40 - ((i * 13) % 120);
+    const depth = (GROUND_Y - y) / 160;
+    const s = 1.25 - depth * 0.6;
+    ctx.strokeStyle = depth > 0.55 ? '#65a30d' : '#3f6212';
+    ctx.lineWidth = depth > 0.55 ? 2.2 : 3;
     ctx.beginPath();
     ctx.moveTo(x, y);
-    ctx.lineTo(x - 5, y - 14);
+    ctx.lineTo(x - 5 * s, y - 14 * s);
     ctx.moveTo(x, y);
-    ctx.lineTo(x + 4, y - 12);
+    ctx.lineTo(x + 4 * s, y - 12 * s);
     ctx.moveTo(x, y);
-    ctx.lineTo(x, y - 16);
+    ctx.lineTo(x, y - 16 * s);
     ctx.stroke();
+    if (i % 3 === 0) circle(ctx, x + 0.5, y - 17 * s, 2.2 * s, '#eab308');
   }
+
   // scarecrow far left
+  softShadow(ctx, 64, horizon + 92, 44, 9, 0.18);
   ctx.strokeStyle = '#92400e';
   ctx.lineWidth = 6;
   ctx.beginPath();
@@ -467,6 +486,46 @@ function drawField(ctx: CanvasRenderingContext2D) {
   ctx.beginPath();
   ctx.arc(60, horizon + 12, 14, 0, Math.PI * 2);
   ctx.fill();
+
+  // egrets wading in the paddy
+  const egret = (x: number, y: number, s: number, dir: number) => {
+    softShadow(ctx, x, y, 18 * s, 4.5 * s, 0.15);
+    ctx.strokeStyle = '#3f3f46';
+    ctx.lineWidth = 1.8 * s;
+    ctx.lineCap = 'round';
+    ctx.beginPath();
+    ctx.moveTo(x - 3 * s, y);
+    ctx.lineTo(x - 2 * s, y - 13 * s);
+    ctx.moveTo(x + 3 * s, y);
+    ctx.lineTo(x + 2 * s, y - 13 * s);
+    ctx.stroke();
+    ctx.strokeStyle = '#f8fafc';
+    ctx.lineWidth = 3.4 * s;
+    ctx.beginPath();
+    ctx.moveTo(x + 6 * s * dir, y - 16 * s);
+    ctx.quadraticCurveTo(x + 12 * s * dir, y - 27 * s, x + 8 * s * dir, y - 33 * s);
+    ctx.stroke();
+    ctx.fillStyle = '#f8fafc';
+    ctx.beginPath();
+    ctx.ellipse(x, y - 18 * s, 10 * s, 6 * s, -0.12 * dir, 0, Math.PI * 2);
+    ctx.fill();
+    circle(ctx, x + 8 * s * dir, y - 34 * s, 3.4 * s, '#f8fafc');
+    ctx.fillStyle = '#f59e0b';
+    ctx.beginPath();
+    ctx.moveTo(x + 8 * s * dir, y - 35.5 * s);
+    ctx.lineTo(x + 13.5 * s * dir, y - 34 * s);
+    ctx.lineTo(x + 8 * s * dir, y - 33 * s);
+    ctx.closePath();
+    ctx.fill();
+  };
+  egret(540, GROUND_Y - 30, 1, 1);
+  egret(770, GROUND_Y - 62, 0.78, -1);
+  egret(960, GROUND_Y - 24, 0.9, 1);
+
+  // foreground tuft clusters along the bottom edge
+  grassTufts(ctx, 210, GROUND_Y + 46, 16, 1.1, '#3f6212', 4.3);
+  grassTufts(ctx, 700, GROUND_Y + 52, 14, 1.05, '#3f6212', 6.9);
+  grassTufts(ctx, 1060, GROUND_Y + 44, 15, 1.15, '#4d7c0f', 8.2);
 }
 
 // ---------------- room ----------------
@@ -949,10 +1008,20 @@ function drawGhat(ctx: CanvasRenderingContext2D) {
     ctx.fillRect(0, horizon + 20 + i * 22, STAGE_W, 20);
     ctx.fillStyle = `rgba(120, 80, 40, ${0.08 + i * 0.05})`;
     ctx.fillRect(0, horizon + 20 + i * 22, STAGE_W, 4);
+    // Sprint 9 — ambient occlusion pooling under each step lip
+    const ao = ctx.createLinearGradient(0, horizon + 26 + i * 22, 0, horizon + 40 + i * 22);
+    ao.addColorStop(0, 'rgba(90, 60, 30, 0.1)');
+    ao.addColorStop(1, 'rgba(90, 60, 30, 0)');
+    ctx.fillStyle = ao;
+    ctx.fillRect(0, horizon + 26 + i * 22, STAGE_W, 14);
     ctx.fillStyle = '#e7d3b1';
   }
 
+  // Sprint 9 — golden haze over the far water line
+  haze(ctx, 0, horizon - 12, STAGE_W, 110, '255, 238, 214', 0.3);
+
   // umbrella by the steps
+  softShadow(ctx, 302, horizon + 112, 46, 9, 0.18);
   ctx.fillStyle = '#dc2626';
   ctx.beginPath();
   ctx.arc(300, horizon + 62, 34, Math.PI, Math.PI * 2);
@@ -968,8 +1037,21 @@ function drawGhat(ctx: CanvasRenderingContext2D) {
   ctx.moveTo(300, horizon + 62);
   ctx.lineTo(300, horizon + 110);
   ctx.stroke();
+  // red canopy reflection wobbling in the water below
+  ctx.save();
+  ctx.globalAlpha = 0.12;
+  ctx.fillStyle = '#dc2626';
+  ctx.beginPath();
+  ctx.moveTo(286, 512);
+  ctx.quadraticCurveTo(300, 530, 292, 548);
+  ctx.quadraticCurveTo(306, 556, 312, 542);
+  ctx.quadraticCurveTo(320, 524, 310, 512);
+  ctx.closePath();
+  ctx.fill();
+  ctx.restore();
 
   // boat
+  softShadow(ctx, 830, 500, 128, 11, 0.16);
   ctx.fillStyle = '#7c2d12';
   ctx.beginPath();
   ctx.moveTo(700, 470);
@@ -980,6 +1062,18 @@ function drawGhat(ctx: CanvasRenderingContext2D) {
   ctx.strokeStyle = '#431407';
   ctx.lineWidth = 3;
   ctx.stroke();
+  // Sprint 9 — dark hull reflection blurring into the current
+  ctx.save();
+  ctx.globalAlpha = 0.14;
+  ctx.fillStyle = '#431407';
+  ctx.beginPath();
+  ctx.ellipse(830, 520, 110, 9, 0, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.globalAlpha = 0.1;
+  ctx.beginPath();
+  ctx.ellipse(830, 534, 88, 6, 0, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.restore();
 
   // near bank strip (walkable)
   ctx.fillStyle = '#e7d3b1';
@@ -989,6 +1083,18 @@ function drawGhat(ctx: CanvasRenderingContext2D) {
   // steps edge
   ctx.fillStyle = '#c9a86e';
   ctx.fillRect(0, 552, STAGE_W, 10);
+  // Sprint 9 — dark wet band where the steps meet the water
+  const wet = ctx.createLinearGradient(0, 540, 0, 566);
+  wet.addColorStop(0, 'rgba(40, 26, 12, 0)');
+  wet.addColorStop(1, 'rgba(40, 26, 12, 0.3)');
+  ctx.fillStyle = wet;
+  ctx.fillRect(0, 540, STAGE_W, 26);
+  ctx.strokeStyle = 'rgba(255, 244, 214, 0.35)';
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.moveTo(0, 556);
+  ctx.lineTo(STAGE_W, 556);
+  ctx.stroke();
 }
 
 // ---------------- night (রাতের গ্রাম) ----------------
@@ -1010,17 +1116,26 @@ function drawNight(ctx: CanvasRenderingContext2D) {
     circle(ctx, x, y, (i % 3) * 0.6 + 0.8, '#fef9c3');
   }
 
-  // moon
-  circle(ctx, 1050, 120, 52, '#fef08a');
+  // Sprint 9 — moon with a real wide halo + bright bloom disc
+  const halo = ctx.createRadialGradient(1050, 120, 34, 1050, 120, 160);
+  halo.addColorStop(0, 'rgba(240, 240, 255, 0.35)');
+  halo.addColorStop(0.5, 'rgba(226, 232, 255, 0.15)');
+  halo.addColorStop(1, 'rgba(240, 240, 255, 0)');
+  ctx.fillStyle = halo;
+  ctx.beginPath();
+  ctx.arc(1050, 120, 160, 0, Math.PI * 2);
+  ctx.fill();
+  const bloom = ctx.createRadialGradient(1044, 114, 8, 1050, 120, 54);
+  bloom.addColorStop(0, '#fefce8');
+  bloom.addColorStop(0.72, '#fef08a');
+  bloom.addColorStop(1, '#fde047');
+  ctx.fillStyle = bloom;
+  ctx.beginPath();
+  ctx.arc(1050, 120, 52, 0, Math.PI * 2);
+  ctx.fill();
   circle(ctx, 1032, 108, 10, 'rgba(202, 138, 4, 0.35)');
   circle(ctx, 1064, 132, 7, 'rgba(202, 138, 4, 0.3)');
   circle(ctx, 1058, 96, 5, 'rgba(202, 138, 4, 0.3)');
-  // moon glow
-  const mg = ctx.createRadialGradient(1050, 120, 40, 1050, 120, 140);
-  mg.addColorStop(0, 'rgba(254, 240, 138, 0.25)');
-  mg.addColorStop(1, 'rgba(254, 240, 138, 0)');
-  ctx.fillStyle = mg;
-  ctx.fillRect(910, -20, 280, 280);
 
   // distant trees
   ctx.fillStyle = '#1e293b';
@@ -1033,9 +1148,13 @@ function drawNight(ctx: CanvasRenderingContext2D) {
   ctx.fillStyle = '#3730a3';
   ctx.fillRect(0, GROUND_Y - 12, STAGE_W, STAGE_H - GROUND_Y + 12);
 
-  // hut with lit window
+  // hut with lit window — long shadow stretched away from the moon
   const hx = 120;
   const hy = 470;
+  ctx.fillStyle = 'rgba(8, 8, 26, 0.35)';
+  ctx.beginPath();
+  ctx.ellipse(hx + 52, hy + 174, 210, 16, 0, 0, Math.PI * 2);
+  ctx.fill();
   ctx.fillStyle = '#44403c';
   rr(ctx, hx, hy + 20, 250, 140, 6);
   ctx.fillStyle = '#292524';
@@ -1044,6 +1163,15 @@ function drawNight(ctx: CanvasRenderingContext2D) {
   ctx.quadraticCurveTo(hx + 125, hy - 70, hx + 284, hy + 28);
   ctx.closePath();
   ctx.fill();
+  // Sprint 9 — moon rim-light on the moon-facing (right) edges
+  ctx.strokeStyle = 'rgba(226, 232, 255, 0.45)';
+  ctx.lineWidth = 3;
+  ctx.beginPath();
+  ctx.moveTo(hx + 250, hy + 24);
+  ctx.lineTo(hx + 250, hy + 158);
+  ctx.moveTo(hx + 125, hy - 21);
+  ctx.quadraticCurveTo(hx + 204, hy - 21, hx + 284, hy + 28);
+  ctx.stroke();
   // warm glowing window
   ctx.fillStyle = '#fde047';
   rr(ctx, hx + 50, hy + 60, 52, 46, 4);
@@ -1052,6 +1180,8 @@ function drawNight(ctx: CanvasRenderingContext2D) {
   wg.addColorStop(1, 'rgba(253, 224, 71, 0)');
   ctx.fillStyle = wg;
   ctx.fillRect(hx - 40, hy - 30, 240, 240);
+  // window light spilling onto the ground
+  lightPool(ctx, hx + 76, 642, 120, 26, 0.24);
   // door
   ctx.fillStyle = '#1c1917';
   rr(ctx, hx + 160, hy + 70, 60, 90, 4);
@@ -1059,7 +1189,11 @@ function drawNight(ctx: CanvasRenderingContext2D) {
   ctx.fillStyle = '#44403c';
   rr(ctx, hx + 200, hy - 30, 26, 46, 3);
 
-  // second hut far right
+  // second hut far right — shadow away from the moon, rim on the lit edge
+  ctx.fillStyle = 'rgba(8, 8, 26, 0.32)';
+  ctx.beginPath();
+  ctx.ellipse(972, 642, 180, 14, 0, 0, Math.PI * 2);
+  ctx.fill();
   ctx.fillStyle = '#3f3f46';
   rr(ctx, 950, 520, 190, 108, 6);
   ctx.fillStyle = '#27272a';
@@ -1068,14 +1202,43 @@ function drawNight(ctx: CanvasRenderingContext2D) {
   ctx.quadraticCurveTo(1045, 452, 1164, 526);
   ctx.closePath();
   ctx.fill();
+  ctx.strokeStyle = 'rgba(226, 232, 255, 0.4)';
+  ctx.lineWidth = 2.5;
+  ctx.beginPath();
+  ctx.moveTo(1140, 524);
+  ctx.lineTo(1140, 626);
+  ctx.moveTo(1045, 489);
+  ctx.quadraticCurveTo(1104, 489, 1164, 526);
+  ctx.stroke();
   ctx.fillStyle = '#fbbf24';
   rr(ctx, 1000, 550, 40, 36, 3);
+  lightPool(ctx, 1020, 646, 100, 22, 0.2);
+
+  // Sprint 9 — cool moonlight pooling on the ground under the moon
+  const mp = ctx.createRadialGradient(1030, 630, 30, 1030, 630, 260);
+  mp.addColorStop(0, 'rgba(235, 240, 255, 0.17)');
+  mp.addColorStop(1, 'rgba(235, 240, 255, 0)');
+  ctx.fillStyle = mp;
+  ctx.beginPath();
+  ctx.ellipse(1030, 630, 260, 72, 0, 0, Math.PI * 2);
+  ctx.fill();
 
   // pond reflection
   ctx.fillStyle = 'rgba(129, 140, 248, 0.18)';
   ctx.beginPath();
   ctx.ellipse(640, 660, 200, 18, 0, 0, Math.PI * 2);
   ctx.fill();
+  // moon glint wobbling in the pond
+  ctx.strokeStyle = 'rgba(235, 240, 255, 0.28)';
+  ctx.lineWidth = 4;
+  ctx.lineCap = 'round';
+  for (let i = 0; i < 4; i++) {
+    const py = 646 + i * 9;
+    ctx.beginPath();
+    ctx.moveTo(600 + i * 14, py);
+    ctx.quadraticCurveTo(640 + i * 10, py + 4, 690 - i * 12, py);
+    ctx.stroke();
+  }
 }
 
 // ---------------- temple (কালীবাড়ির উঠান) — Sprint 4 ----------------
@@ -1102,10 +1265,20 @@ function drawTemple(ctx: CanvasRenderingContext2D) {
     ctx.stroke();
   }
 
+  // Sprint 9 — red-ochre wash where offerings dust the earth near the altar
+  const rw = ctx.createRadialGradient(330, 530, 20, 330, 530, 200);
+  rw.addColorStop(0, 'rgba(185, 45, 25, 0.14)');
+  rw.addColorStop(1, 'rgba(185, 45, 25, 0)');
+  ctx.fillStyle = rw;
+  ctx.beginPath();
+  ctx.ellipse(330, 530, 200, 85, 0, 0, Math.PI * 2);
+  ctx.fill();
+
   // temple sanctum (far center-left): stepped plinth + curved bangla roof
   const tx = 210;
   const ty = horizon - 10;
   // plinth steps
+  softShadow(ctx, tx + 120, ty + 50, 190, 17, 0.2);
   ctx.fillStyle = '#c8b18c';
   rr(ctx, tx - 30, ty + 24, 300, 22, 3);
   ctx.fillStyle = '#bda67f';
@@ -1158,7 +1331,29 @@ function drawTemple(ctx: CanvasRenderingContext2D) {
     ctx.fill();
   }
 
+  // Sprint 9 — warm haze breathing out of the sanctum doorway
+  haze(ctx, tx + 56, ty - 84, 128, 96, '255, 200, 140', 0.2);
+  // hanging bell off the roof edge
+  ctx.strokeStyle = '#57534e';
+  ctx.lineWidth = 2.5;
+  ctx.beginPath();
+  ctx.moveTo(tx + 232, ty - 104);
+  ctx.lineTo(tx + 232, ty - 74);
+  ctx.stroke();
+  ctx.fillStyle = '#d4a017';
+  ctx.beginPath();
+  ctx.moveTo(tx + 222, ty - 74);
+  ctx.quadraticCurveTo(tx + 232, ty - 86, tx + 242, ty - 74);
+  ctx.lineTo(tx + 238, ty - 52);
+  ctx.quadraticCurveTo(tx + 232, ty - 46, tx + 226, ty - 52);
+  ctx.closePath();
+  ctx.fill();
+  circle(ctx, tx + 232, ty - 44, 2.8, '#78350f');
+  softShadow(ctx, tx + 238, ty - 32, 15, 7, 0.13);
+
   // prayer flags right side
+  softShadow(ctx, 996, horizon + 4, 30, 7, 0.14);
+  softShadow(ctx, 1156, horizon + 4, 30, 7, 0.14);
   ctx.fillStyle = '#7c3aed';
   rr(ctx, 990, horizon - 190, 8, 190, 2);
   ctx.fillStyle = '#dc2626';
@@ -1185,6 +1380,7 @@ function drawTemple(ctx: CanvasRenderingContext2D) {
   }
 
   // big banyan-ish tree left edge
+  softShadow(ctx, 66, horizon + 152, 88, 17, 0.18);
   ctx.strokeStyle = '#6d4c2f';
   ctx.lineWidth = 16;
   ctx.beginPath();
@@ -1210,6 +1406,9 @@ function drawTemple(ctx: CanvasRenderingContext2D) {
     ctx.arc(x, y - 10, 16, 0, Math.PI * 2);
     ctx.fill();
   };
+  lightPool(ctx, 160, GROUND_Y + 12, 40, 11, 0.28);
+  lightPool(ctx, 1120, GROUND_Y + 10, 40, 11, 0.28);
+  lightPool(ctx, 620, GROUND_Y + 16, 40, 11, 0.28);
   diya(160, GROUND_Y + 6);
   diya(1120, GROUND_Y + 4);
   diya(620, GROUND_Y + 10);
@@ -1235,6 +1434,11 @@ function drawRiver(ctx: CanvasRenderingContext2D) {
   }
   ctx.fillStyle = '#365314';
   ctx.fillRect(0, horizon - 10, STAGE_W, 14);
+  // Sprint 9 — muted palms rising from the far bank
+  softShadow(ctx, 478, horizon - 4, 34, 7, 0.14);
+  softShadow(ctx, 822, horizon - 6, 30, 6, 0.14);
+  palm(ctx, 470, horizon + 2, 150, '#75614a', '#5f7a52');
+  palm(ctx, 815, horizon, 128, '#75614a', '#5f7a52');
 
   // river water
   const wg = ctx.createLinearGradient(0, horizon, 0, STAGE_H);
@@ -1243,9 +1447,23 @@ function drawRiver(ctx: CanvasRenderingContext2D) {
   ctx.fillStyle = wg;
   ctx.fillRect(0, horizon, STAGE_W, STAGE_H - horizon);
 
+  // Sprint 9 — far-bank haze melting into the sky + current streaks
+  haze(ctx, 0, horizon - 30, STAGE_W, 80, '235, 246, 252', 0.3);
+  ctx.strokeStyle = 'rgba(255, 255, 255, 0.15)';
+  ctx.lineWidth = 2.5;
+  ctx.lineCap = 'round';
+  for (let i = 0; i < 3; i++) {
+    const sy = 486 + i * 44 + (i % 2) * 8;
+    ctx.beginPath();
+    ctx.moveTo(70 + i * 120, sy);
+    ctx.bezierCurveTo(330 + i * 80, sy - 16, 600 + i * 50, sy + 18, 960 + i * 40, sy - 6);
+    ctx.stroke();
+  }
+
   // boat near right (wooden kosha boat)
   const bxf = 940;
   const byf = 560;
+  softShadow(ctx, bxf, byf + 14, 122, 13, 0.18);
   ctx.save();
   ctx.translate(bxf, byf);
   ctx.rotate(-0.045);
@@ -1258,6 +1476,21 @@ function drawRiver(ctx: CanvasRenderingContext2D) {
   ctx.fill();
   ctx.strokeStyle = '#5b3010';
   ctx.lineWidth = 3;
+  ctx.stroke();
+  // hull plank lines + short mast
+  ctx.strokeStyle = 'rgba(60, 30, 8, 0.4)';
+  ctx.lineWidth = 1.6;
+  ctx.beginPath();
+  ctx.moveTo(-88, 5);
+  ctx.quadraticCurveTo(0, 26, 88, 5);
+  ctx.moveTo(-70, 9);
+  ctx.quadraticCurveTo(0, 30, 70, 9);
+  ctx.stroke();
+  ctx.strokeStyle = '#5b3010';
+  ctx.lineWidth = 4;
+  ctx.beginPath();
+  ctx.moveTo(6, -2);
+  ctx.lineTo(14, -62);
   ctx.stroke();
   // boat rim
   ctx.strokeStyle = '#b45309';
@@ -1279,6 +1512,34 @@ function drawRiver(ctx: CanvasRenderingContext2D) {
   ctx.beginPath();
   ctx.ellipse(bxf, byf + 22, 96, 10, 0, 0, Math.PI * 2);
   ctx.fill();
+  // Sprint 9 — wobbly mirrored hull streak + mast reflection
+  ctx.save();
+  ctx.globalAlpha = 0.18;
+  ctx.fillStyle = '#5b3010';
+  ctx.beginPath();
+  ctx.moveTo(bxf - 106, byf + 18);
+  ctx.quadraticCurveTo(bxf - 30, byf + 38, bxf + 46, byf + 30);
+  ctx.quadraticCurveTo(bxf + 84, byf + 24, bxf + 106, byf + 16);
+  ctx.quadraticCurveTo(bxf, byf + 52, bxf - 106, byf + 18);
+  ctx.closePath();
+  ctx.fill();
+  ctx.strokeStyle = 'rgba(210, 232, 248, 0.35)';
+  ctx.lineWidth = 1.6;
+  for (let i = 0; i < 3; i++) {
+    const wy = byf + 26 + i * 9;
+    const wx = bxf - 78 + ((i * 53) % 46);
+    ctx.beginPath();
+    ctx.moveTo(wx, wy);
+    ctx.quadraticCurveTo(wx + 32, wy + 3.5, wx + 66, wy - 1);
+    ctx.stroke();
+  }
+  ctx.strokeStyle = 'rgba(60, 30, 8, 0.2)';
+  ctx.lineWidth = 3;
+  ctx.beginPath();
+  ctx.moveTo(bxf + 10, byf + 20);
+  ctx.quadraticCurveTo(bxf + 4, byf + 44, bxf + 12, byf + 66);
+  ctx.stroke();
+  ctx.restore();
 
   // near bank (foreground bottom) — mud ghat edge with grass
   ctx.fillStyle = '#c9a25e';
@@ -1298,6 +1559,7 @@ function drawRiver(ctx: CanvasRenderingContext2D) {
   }
   // bamboo posts at the bank edge
   for (const px of [180, 1060]) {
+    softShadow(ctx, px + 4, GROUND_Y + 24, 26, 6, 0.16);
     ctx.strokeStyle = '#a16207';
     ctx.lineWidth = 9;
     ctx.beginPath();
@@ -1363,6 +1625,21 @@ function drawKitchen(ctx: CanvasRenderingContext2D) {
   // shelf with clay pots (left wall)
   ctx.fillStyle = '#5b2f16';
   rr(ctx, 90, 250, 300, 16, 3);
+  // Sprint 9 — lit top face + dark underside edge
+  ctx.fillStyle = 'rgba(255, 226, 180, 0.3)';
+  ctx.fillRect(92, 250, 296, 4);
+  ctx.fillStyle = 'rgba(40, 20, 8, 0.4)';
+  ctx.fillRect(92, 262, 296, 4);
+  // wall shadows behind the hanging utensils
+  for (const hx of [180, 240, 300, 360, 420]) {
+    const hang = 70 + ((hx * 13) % 40);
+    softShadow(ctx, hx + 12, hang + 20, 20, 26, 0.13);
+  }
+  // contact shadows under the shelf pots
+  softShadow(ctx, 140, 249, 24, 5, 0.18);
+  softShadow(ctx, 200, 249, 20, 4, 0.16);
+  softShadow(ctx, 258, 249, 26, 5, 0.18);
+  softShadow(ctx, 320, 249, 18, 4, 0.15);
   const pot = (x: number, y: number, s: number, c: string) => {
     ctx.fillStyle = c;
     ctx.beginPath();
@@ -1393,7 +1670,20 @@ function drawKitchen(ctx: CanvasRenderingContext2D) {
     ctx.fill();
   }
 
+  // Sprint 9 — firelight washing the wall behind the chula + soot stain above
+  const fg = ctx.createRadialGradient(1075, 470, 24, 1075, 470, 200);
+  fg.addColorStop(0, 'rgba(251, 146, 60, 0.26)');
+  fg.addColorStop(1, 'rgba(251, 146, 60, 0)');
+  ctx.fillStyle = fg;
+  ctx.fillRect(870, 290, 410, 350);
+  const soot = ctx.createLinearGradient(0, 190, 0, 470);
+  soot.addColorStop(0, 'rgba(18, 10, 6, 0)');
+  soot.addColorStop(1, 'rgba(18, 10, 6, 0.12)');
+  ctx.fillStyle = soot;
+  ctx.fillRect(930, 190, 290, 280);
   // chula (clay stove) with smoke — right side
+  softShadow(ctx, 1090, 624, 122, 20, 0.22);
+  lightPool(ctx, 1085, 626, 150, 30, 0.3);
   ctx.fillStyle = '#8b4513';
   ctx.beginPath();
   ctx.ellipse(1090, 560, 95, 70, 0, 0, Math.PI * 2);
@@ -1432,7 +1722,28 @@ function drawKitchen(ctx: CanvasRenderingContext2D) {
   ctx.ellipse(1075, 408, 12, 16, 0, 0, Math.PI * 2);
   ctx.fill();
 
+  // Sprint 9 — low wooden stool by the mat
+  softShadow(ctx, 520, 620, 42, 9, 0.18);
+  ctx.fillStyle = '#8b4513';
+  rr(ctx, 494, 590, 54, 12, 4);
+  ctx.fillStyle = '#6d3410';
+  ctx.fillRect(500, 602, 9, 16);
+  ctx.fillRect(533, 602, 9, 16);
+  // water pots cooling by the wall
+  softShadow(ctx, 352, 614, 30, 7, 0.18);
+  softShadow(ctx, 392, 618, 24, 6, 0.16);
+  ctx.fillStyle = '#b05615';
+  ctx.beginPath();
+  ctx.ellipse(350, 596, 16, 20, 0, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.fillRect(343, 570, 14, 12);
+  ctx.fillStyle = '#c2691a';
+  ctx.beginPath();
+  ctx.ellipse(388, 602, 12, 15, 0, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.fillRect(382, 582, 12, 10);
   // sack of rice (left foreground)
+  softShadow(ctx, 215, GROUND_Y + 10, 92, 14, 0.2);
   ctx.fillStyle = '#d6b25e';
   ctx.beginPath();
   ctx.moveTo(150, GROUND_Y + 8);
@@ -1476,6 +1787,8 @@ function drawJungle(ctx: CanvasRenderingContext2D) {
     ctx.ellipse(cx, 60 + (i % 3) * 26, 110, 52, 0, 0, Math.PI * 2);
     ctx.fill();
   }
+  // Sprint 9 — depth fog between the far canopy and the mid layer
+  haze(ctx, 0, 80, STAGE_W, 220, '190, 220, 160', 0.25);
   ctx.fillStyle = 'rgba(22, 101, 52, 0.75)';
   for (let i = 0; i < 8; i++) {
     const cx = i * 180 + 90;
@@ -1499,8 +1812,27 @@ function drawJungle(ctx: CanvasRenderingContext2D) {
     ctx.fill();
   }
 
+  // Sprint 9 — god-rays slanting through the canopy from the top-left
+  const ray = (x0: number, w0: number, a: number) => {
+    const rg = ctx.createLinearGradient(0, 0, 0, 440);
+    rg.addColorStop(0, `rgba(255, 246, 196, ${a})`);
+    rg.addColorStop(1, 'rgba(255, 246, 196, 0)');
+    ctx.fillStyle = rg;
+    ctx.beginPath();
+    ctx.moveTo(x0, -10);
+    ctx.lineTo(x0 + w0, -10);
+    ctx.lineTo(x0 + w0 + 118, 450);
+    ctx.lineTo(x0 + 118, 450);
+    ctx.closePath();
+    ctx.fill();
+  };
+  ray(140, 76, 0.13);
+  ray(295, 46, 0.09);
+  ray(455, 62, 0.11);
+
   // distant trunks
   for (const tx of [110, 420, 700, 1000, 1230]) {
+    softShadow(ctx, tx + 4, horizon + 32, 30, 7, 0.12);
     ctx.strokeStyle = '#6d4c2f';
     ctx.lineWidth = 14;
     ctx.beginPath();
@@ -1510,6 +1842,7 @@ function drawJungle(ctx: CanvasRenderingContext2D) {
   }
 
   // giant banyan left with aerial roots
+  softShadow(ctx, 98, GROUND_Y + 12, 96, 18, 0.2);
   ctx.strokeStyle = '#5d4037';
   ctx.lineWidth = 26;
   ctx.beginPath();
@@ -1518,6 +1851,7 @@ function drawJungle(ctx: CanvasRenderingContext2D) {
   ctx.stroke();
   ctx.lineWidth = 8;
   for (const rx of [40, 105, 130]) {
+    softShadow(ctx, rx + 6, GROUND_Y + 8, 20, 5, 0.13);
     ctx.beginPath();
     ctx.moveTo(80 + (rx - 85) * 0.4, horizon - 120);
     ctx.quadraticCurveTo(rx, horizon + 10, rx + 6, GROUND_Y + 6);
@@ -1537,6 +1871,11 @@ function drawJungle(ctx: CanvasRenderingContext2D) {
   ctx.quadraticCurveTo(1010, GROUND_Y + 80, 1120, STAGE_H);
   ctx.closePath();
   ctx.fill();
+  // Sprint 9 — soft darker edges so the path reads packed earth
+  ctx.strokeStyle = 'rgba(146, 106, 54, 0.45)';
+  ctx.lineWidth = 5;
+  ctx.lineJoin = 'round';
+  ctx.stroke();
   // path pebbles
   ctx.fillStyle = 'rgba(146, 106, 54, 0.5)';
   for (let i = 0; i < 10; i++) {
@@ -1581,6 +1920,13 @@ function drawJungle(ctx: CanvasRenderingContext2D) {
   };
   shroom(370, GROUND_Y + 14, 1.2);
   shroom(400, GROUND_Y + 20, 0.9);
+
+  // Sprint 9 — darker foreground canopy framing the top corners
+  ctx.fillStyle = 'rgba(12, 58, 32, 0.55)';
+  ctx.beginPath();
+  ctx.ellipse(-40, -30, 230, 140, 0.35, 0, Math.PI * 2);
+  ctx.ellipse(1320, -40, 250, 160, -0.3, 0, Math.PI * 2);
+  ctx.fill();
 }
 
 // ---------------- ambient life (dynamic overlay, drawn per frame) ----------------
@@ -1622,6 +1968,28 @@ export function drawAmbient(
     case 'field':
       drift(11, 100, 0.8, 0.85, 200);
       drift(16, 170, 0.55, 0.7, 900);
+      // Sprint 9 — two butterflies wandering above the paddy, wings on a sin flap
+      for (const [i, c] of [[0, '#f97316'], [1, '#e11d48']] as const) {
+        const bx = 260 + i * 430 + Math.sin(t * 0.7 + i * 2.4) * 150;
+        const by = 380 + i * 60 + Math.sin(t * 1.1 + i * 1.7) * 70;
+        const flap = Math.sin(t * 9 + i * 3);
+        ctx.save();
+        ctx.translate(bx, by);
+        ctx.rotate(Math.sin(t * 0.5 + i) * 0.2);
+        ctx.globalAlpha = 0.92;
+        ctx.fillStyle = c;
+        const wy = 7 * (0.35 + 0.65 * Math.abs(flap));
+        ctx.beginPath();
+        ctx.ellipse(-5, -1, 4.5, wy, -0.6 - flap * 0.25, 0, Math.PI * 2);
+        ctx.ellipse(5, -1, 4.5, wy, 0.6 + flap * 0.25, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.fillStyle = '#3f3f46';
+        ctx.beginPath();
+        ctx.ellipse(0, 0, 1.6, 5.5, 0, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.restore();
+        ctx.globalAlpha = 1;
+      }
       break;
     case 'bazaar':
       drift(7, 90, 0.7, 0.6, 300);

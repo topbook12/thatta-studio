@@ -227,7 +227,9 @@ function drawBottom(
       // লুঙ্গি
       drawLeg(ctx, HIP_LX, pose.hipL, pose.kneeL, d.skin, d.skin, null);
       drawLeg(ctx, HIP_RX, pose.hipR, pose.kneeR, d.skin, d.skin, null);
-      const sway = Math.sin(pose.hipL * D) * 3;
+      // Sprint 9 — cloth inertia: the hem trails the stride (pose.clothSway)
+      // a beat late, on top of the hip-locked sway
+      const sway = Math.sin(pose.hipL * D) * 3 + (pose.clothSway ?? 0);
       ctx.fillStyle = d.bottomColor;
       ctx.beginPath();
       ctx.moveTo(-14, HIP_Y - 6);
@@ -277,13 +279,16 @@ function drawBottom(
       // স্কার্ট
       drawLeg(ctx, HIP_LX, pose.hipL, pose.kneeL, d.skin, d.skin, '#3f3f46');
       drawLeg(ctx, HIP_RX, pose.hipR, pose.kneeR, d.skin, d.skin, '#3f3f46');
+      // Sprint 9 — the A-line hem swings with cloth inertia: the fabric
+      // trails the hips, so the hem drifts toward where the body came FROM
+      const hemSway = pose.clothSway ?? 0;
       ctx.fillStyle = d.bottomColor;
       ctx.beginPath();
       ctx.moveTo(-13, HIP_Y - 6);
       ctx.lineTo(13, HIP_Y - 6);
-      ctx.quadraticCurveTo(24, HIP_Y + 22, 27, HIP_Y + 50);
-      ctx.lineTo(-27, HIP_Y + 50);
-      ctx.quadraticCurveTo(-24, HIP_Y + 22, -13, HIP_Y - 6);
+      ctx.quadraticCurveTo(24 + hemSway * 0.5, HIP_Y + 22, 27 + hemSway, HIP_Y + 50);
+      ctx.lineTo(-27 + hemSway, HIP_Y + 50);
+      ctx.quadraticCurveTo(-24 + hemSway * 0.5, HIP_Y + 22, -13, HIP_Y - 6);
       ctx.closePath();
       ctx.fill();
       // Sprint 8 — A-line shading + pleat depth
@@ -300,9 +305,9 @@ function drawBottom(
       ctx.lineWidth = 2;
       ctx.beginPath();
       ctx.moveTo(-8, HIP_Y + 4);
-      ctx.quadraticCurveTo(-14, HIP_Y + 26, -17, HIP_Y + 48);
+      ctx.quadraticCurveTo(-14 + hemSway * 0.4, HIP_Y + 26, -17 + hemSway, HIP_Y + 48);
       ctx.moveTo(8, HIP_Y + 4);
-      ctx.quadraticCurveTo(14, HIP_Y + 26, 17, HIP_Y + 48);
+      ctx.quadraticCurveTo(14 + hemSway * 0.4, HIP_Y + 26, 17 + hemSway, HIP_Y + 48);
       ctx.stroke();
       break;
     }
@@ -507,15 +512,30 @@ function drawTorso(ctx: CanvasRenderingContext2D, d: CharacterDesign) {
 
 // ---------------- head & face ----------------
 
-function drawHairBack(ctx: CanvasRenderingContext2D, d: CharacterDesign) {
+function drawHairBack(
+  ctx: CanvasRenderingContext2D,
+  d: CharacterDesign,
+  sway = 0,
+) {
   if (d.hairStyle === 4) {
-    // লম্বা চুল (behind head)
+    // লম্বা চুল (behind head) — Sprint 9: the tips trail the head motion
+    // (sway grows toward the bottom, so the swing reads like real hair)
     ctx.fillStyle = d.hairColor;
     ctx.beginPath();
     ctx.moveTo(-HEAD_R - 2, HEAD_CY - 12);
-    ctx.quadraticCurveTo(-HEAD_R - 8, HEAD_CY + 30, -HEAD_R - 4, HEAD_CY + 46);
-    ctx.lineTo(HEAD_R + 4, HEAD_CY + 46);
-    ctx.quadraticCurveTo(HEAD_R + 8, HEAD_CY + 30, HEAD_R + 2, HEAD_CY - 12);
+    ctx.quadraticCurveTo(
+      -HEAD_R - 8 + sway * 0.4,
+      HEAD_CY + 30,
+      -HEAD_R - 4 + sway,
+      HEAD_CY + 46,
+    );
+    ctx.lineTo(HEAD_R + 4 + sway, HEAD_CY + 46);
+    ctx.quadraticCurveTo(
+      HEAD_R + 8 + sway * 0.4,
+      HEAD_CY + 30,
+      HEAD_R + 2,
+      HEAD_CY - 12,
+    );
     ctx.closePath();
     ctx.fill();
   }
@@ -836,6 +856,20 @@ function drawGlasses(ctx: CanvasRenderingContext2D) {
   ctx.moveTo(EYE_RX + 10.5, EYE_Y - 1);
   ctx.lineTo(HEAD_R - 2, EYE_Y - 4);
   ctx.stroke();
+  // Sprint 9 — glass glint: a slim diagonal light streak across each lens
+  // sells the glass material (light comes from the top-left, like everything)
+  ctx.save();
+  ctx.globalAlpha = 0.5;
+  ctx.strokeStyle = 'rgba(255,255,255,0.9)';
+  ctx.lineWidth = 2.6;
+  ctx.lineCap = 'round';
+  for (const cx of [EYE_LX - 1, EYE_RX + 1]) {
+    ctx.beginPath();
+    ctx.moveTo(cx - 4.5, EYE_Y + 3.5);
+    ctx.lineTo(cx + 1.5, EYE_Y - 5.5);
+    ctx.stroke();
+  }
+  ctx.restore();
 }
 
 function drawTears(ctx: CanvasRenderingContext2D, t: number) {
@@ -1051,7 +1085,7 @@ function drawHead(ctx: CanvasRenderingContext2D, d: CharacterDesign, pose: Pose,
   circle(ctx, -HEAD_R + 1, HEAD_CY + 4, 6, shade(d.skin, -0.08));
   circle(ctx, HEAD_R - 1, HEAD_CY + 4, 6, shade(d.skin, -0.08));
 
-  drawHairBack(ctx, d);
+  drawHairBack(ctx, d, pose.hairSway ?? 0);
 
   // head — radial form shading (light top-left → core shadow bottom-right)
   // replaces the old flat fill: the face now reads as a real 3D volume

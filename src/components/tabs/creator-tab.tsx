@@ -85,6 +85,9 @@ const PREVIEW_ACTIONS: ActionName[] = [
   "jump",
   "nod",
   "cry",
+  "clap",
+  "salute",
+  "carry",
 ];
 
 function CharacterPreview({
