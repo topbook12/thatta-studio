@@ -15,9 +15,6 @@ import type { CachedAudio } from '@/lib/tts-cache';
 
 // ---------- minimal WebCodecs typings (runtime-checked, no `any`) ----------
 
-interface EncodedChunk {
-  byteLength: number;
-}
 interface VideoEncoderLike {
   configure(config: Record<string, unknown>): void;
   encode(frame: unknown, opts?: { keyFrame?: boolean }): void;
@@ -225,7 +222,14 @@ export async function exportVideoWebCodecs(
     opts.onProgress?.(0, totalFrames, 'অডিও মিক্স হচ্ছে');
     const sampleRate = 48000;
     const audioBuf = await mixDialogue(audioBuses, totalVideoSeconds, sampleRate);
-    const audioEncoder = new AE({ output: (c, m) => muxer.addAudioChunk(c as EncodedChunk, m), error: onEncoderError });
+    const audioEncoder = new AE({
+      output: (c, m) =>
+        muxer.addAudioChunk(
+          c as unknown as EncodedAudioChunk,
+          m as EncodedAudioChunkMetadata | undefined,
+        ),
+      error: onEncoderError,
+    });
     audioEncoder.configure({
       codec: audioCodec === 'aac' ? 'mp4a.40.2' : 'opus',
       sampleRate,
@@ -268,7 +272,11 @@ export async function exportVideoWebCodecs(
   if (!octx) throw new Error('Canvas 2D unavailable');
 
   const videoEncoder = new VE({
-    output: (c, m) => muxer.addVideoChunk(c as EncodedChunk, m),
+    output: (c, m) =>
+      muxer.addVideoChunk(
+        c as unknown as EncodedVideoChunk,
+        m as EncodedVideoChunkMetadata | undefined,
+      ),
     error: onEncoderError,
   });
   videoEncoder.configure({
@@ -331,7 +339,7 @@ export async function exportVideoWebCodecs(
   if (encoderError) throw encoderError;
 
   muxer.finalize();
-  const { buffer } = muxer.target as { buffer: ArrayBuffer };
+  const { buffer } = muxer.target as unknown as { buffer: ArrayBuffer };
   return {
     blob: new Blob([buffer], { type: 'video/mp4' }),
     ext: 'mp4',

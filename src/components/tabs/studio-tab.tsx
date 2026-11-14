@@ -74,13 +74,16 @@ import {
   Film,
   FolderOpen,
   HardDrive,
+  Keyboard,
   Mic,
   Pause,
   Pencil,
   Play,
+  Redo2,
   Save,
   Square,
   Trash2,
+  Undo2,
   UserPlus,
   Video,
   Volume2,
@@ -111,6 +114,14 @@ function actorColorOf(uid: string, characters: { uid: string }[]): string {
   const idx = characters.findIndex((c) => c.uid === uid);
   return ACTOR_COLORS[(idx >= 0 ? idx : 0) % ACTOR_COLORS.length];
 }
+
+/** কীবোর্ড শর্টকাট চিট-শিট */
+const SHORTCUTS: { keys: string; label: string }[] = [
+  { keys: "Space", label: "প্লে / থামান" },
+  { keys: "Ctrl + Z", label: "আনডু — আগের ধাপে ফিরুন" },
+  { keys: "Ctrl + Shift + Z", label: "রিডু — আবার এগিয়ে যান" },
+  { keys: "Ctrl + Y", label: "রিডু (বিকল্প)" },
+];
 
 function pickMime(): { mime: string; ext: string } {
   const candidates = [
@@ -152,6 +163,10 @@ export default function StudioTab({
     updateCameraShot,
     removeCameraShot,
     setCameraShake,
+    undo,
+    redo,
+    canUndo,
+    canRedo,
   } = useStudio();
 
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -204,6 +219,7 @@ export default function StudioTab({
 
   // Sprint 7 — premium export
   const [exportOpen, setExportOpen] = useState(false);
+  const [shortcutsOpen, setShortcutsOpen] = useState(false);
   const [exportQuality, setExportQuality] = useState<"720" | "1080">("720");
   const [exportFps, setExportFps] = useState(30);
   const [exportTags, setExportTags] = useState(true);
@@ -351,25 +367,37 @@ export default function StudioTab({
     });
   }, [updatePlaced, updateBeat]);
 
-  // space = play/pause shortcut
+  // keyboard shortcuts: Space play/pause • Ctrl+Z undo • Ctrl+Shift+Z / Ctrl+Y redo
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (e.code !== "Space") return;
       const el = e.target as HTMLElement | null;
-      if (
-        el &&
+      const typing =
+        !!el &&
         (el.tagName === "INPUT" ||
           el.tagName === "TEXTAREA" ||
           el.tagName === "SELECT" ||
-          el.isContentEditable)
-      )
+          el.isContentEditable);
+      if (e.code === "Space" && !typing) {
+        e.preventDefault();
+        handlePlay();
         return;
-      e.preventDefault();
-      handlePlay();
+      }
+      if (typing) return;
+      const mod = e.ctrlKey || e.metaKey;
+      if (!mod) return;
+      const key = e.key.toLowerCase();
+      if (key === "z") {
+        e.preventDefault();
+        if (e.shiftKey) redo();
+        else undo();
+      } else if (key === "y") {
+        e.preventDefault();
+        redo();
+      }
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [playing, scene.beats]);
+  }, [playing, scene.beats, undo, redo]);
 
   const stopBeatAudio = (beatId: string) => {
     const el = playingAudioRef.current.get(beatId);
@@ -1007,6 +1035,26 @@ export default function StudioTab({
             >
               <Square className="mr-2 h-4 w-4" /> রিসেট
             </Button>
+            <Button
+              variant="outline"
+              onClick={undo}
+              disabled={!canUndo || exporting}
+              title="আগের ধাপে (Ctrl+Z)"
+              aria-label="আনডু"
+              className="border-amber-300 px-2.5"
+            >
+              <Undo2 className="h-4 w-4" />
+            </Button>
+            <Button
+              variant="outline"
+              onClick={redo}
+              disabled={!canRedo || exporting}
+              title="পরের ধাপে (Ctrl+Shift+Z)"
+              aria-label="রিডু"
+              className="border-amber-300 px-2.5"
+            >
+              <Redo2 className="h-4 w-4" />
+            </Button>
             <div className="flex items-center gap-1.5 rounded-xl border border-amber-300 bg-white px-2.5 py-1">
               <span className="text-xs font-semibold text-amber-800">গতি</span>
               <Select
@@ -1042,6 +1090,15 @@ export default function StudioTab({
               <Volume2 className="mr-2 h-4 w-4" /> সব ভয়েস জেনারেট
             </Button>
             <div className="ml-auto flex gap-2.5">
+              <Button
+                variant="outline"
+                onClick={() => setShortcutsOpen(true)}
+                title="কীবোর্ড শর্টকাট"
+                aria-label="কীবোর্ড শর্টকাট দেখুন"
+                className="border-amber-300 px-2.5"
+              >
+                <Keyboard className="h-4 w-4" />
+              </Button>
               <Button
                 variant="outline"
                 onClick={() => setSaveOpen(true)}
@@ -1086,7 +1143,7 @@ export default function StudioTab({
 
       <div className="grid gap-6 lg:grid-cols-[340px_1fr]">
         {/* ---------- Left: scene setup ---------- */}
-        <div className="space-y-6">
+        <div className="min-w-0 space-y-6">
           <Card className="border-amber-200">
             <CardHeader className="pb-3">
               <CardTitle className="text-orange-800">🏞️ ব্যাকগ্রাউন্ড</CardTitle>
@@ -1435,8 +1492,8 @@ export default function StudioTab({
         </div>
 
         {/* ---------- Right: beats ---------- */}
-        <div className="space-y-6">
-          <Card className="border-amber-200">
+        <div className="min-w-0 space-y-6">
+          <Card className="min-w-0 border-amber-200">
             <CardHeader className="pb-3">
               <CardTitle className="text-orange-800">
                 🎬 দৃশ্য তালিকা ({bnNum(scene.beats.length)}টি বিট)
@@ -2092,6 +2149,33 @@ export default function StudioTab({
               )}
             </div>
           )}
+        </DialogContent>
+      </Dialog>
+
+      {/* ---------- Keyboard shortcuts cheat-sheet ---------- */}
+      <Dialog open={shortcutsOpen} onOpenChange={setShortcutsOpen}>
+        <DialogContent className="max-w-md rounded-2xl border-amber-200">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-orange-900">
+              <Keyboard className="h-5 w-5 text-amber-600" /> কীবোর্ড শর্টকাট
+            </DialogTitle>
+            <DialogDescription>
+              দ্রুত কাজ করার জন্য এই চাবিগুলো মনে রাখুন — টাইপ করার সময় চলবে না।
+            </DialogDescription>
+          </DialogHeader>
+          <div className="grid gap-2">
+            {SHORTCUTS.map((s) => (
+              <div
+                key={s.keys}
+                className="flex items-center justify-between gap-3 rounded-xl border border-amber-200 bg-amber-50/60 px-3 py-2"
+              >
+                <span className="text-sm text-amber-900">{s.label}</span>
+                <kbd className="rounded-md border border-amber-300 bg-white px-2 py-0.5 font-mono text-xs font-semibold text-orange-800 shadow-sm">
+                  {s.keys}
+                </kbd>
+              </div>
+            ))}
+          </div>
         </DialogContent>
       </Dialog>
     </div>

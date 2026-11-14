@@ -5,6 +5,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import StudioTab from "@/components/tabs/studio-tab";
 import CreatorTab from "@/components/tabs/creator-tab";
 import CoursesTab from "@/components/tabs/courses-tab";
+import RoadmapDialog from "@/components/roadmap-dialog";
 import { Clapperboard, GraduationCap, Sparkles, UserRound, WifiOff } from "lucide-react";
 
 const emptySubscribe = () => () => {};
@@ -56,9 +57,12 @@ export default function Home() {
               </p>
             </div>
           </div>
-          <div className="hidden items-center gap-1.5 rounded-full border border-amber-300 bg-white/70 px-3 py-1.5 text-xs font-medium text-orange-700 md:flex">
-            <Sparkles className="h-3.5 w-3.5 text-amber-500" />
-            ফ্রি • ইনস্টলযোগ্য অ্যাপ • অফলাইনেও চলে
+          <div className="flex items-center gap-2">
+            <RoadmapDialog />
+            <div className="hidden items-center gap-1.5 rounded-full border border-amber-300 bg-white/70 px-3 py-1.5 text-xs font-medium text-orange-700 md:flex">
+              <Sparkles className="h-3.5 w-3.5 text-amber-500" />
+              ফ্রি • ইনস্টলযোগ্য অ্যাপ • অফলাইনেও চলে
+            </div>
           </div>
           {!online && (
             <div className="flex items-center gap-1.5 rounded-full border border-orange-300 bg-orange-100 px-3 py-1.5 text-xs font-semibold text-orange-800">

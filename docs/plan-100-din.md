@@ -1,83 +1,185 @@
-# 🎬 ঠাট্টা স্টুডিও — ১০০ দিনের "প্রিমিয়াম কোয়ালিটি" মিশন
+# Thatta Studio (ঠাট্টা স্টুডিও) — 100-Day Full Platform Development Plan
 
-> **লক্ষ্য:** পরবর্তী ১০০ দিন কেবল একটাই কাজ — প্ল্যাটফর্ম থেকে **প্রিমিয়াম কোয়ালিটির অ্যানিমেশন** তৈরি করা।
-> মনিটাইজেশন/বিজনেস মডেল নিয়ে এই সময়ে **কোনো কাজ হবে না**।
-> মূল মন্ত্র: **"যেকোনো অবজেক্টের মুভমেন্ট, গতি, স্পিড — খুব সহজে, নিখুঁতভাবে কন্ট্রোল করা যাবে।"**
-
----
-
-## 🏁 অসমাপ্ত গল্পের শুরুতে যা আছে (Day 0 অবস্থা)
-
-✅ Beat-ভিত্তিক স্টুডিও — ক্যারেক্টার বসানো, অ্যাকশন, সংলাপ, প্লেব্যাক
-✅ ১০টি অ্যাকশন, ৫টি ব্যাকগ্রাউন্ড, ৭টি ভয়েস, MP4/WebM এক্সপোর্ট
-✅ ক্যারেক্টার ক্রিয়েটর, কোর্স ট্যাব, PWA (ইনস্টলযোগ্য), প্রজেক্ট সেভ/লোড
+> **Mission:** turn the working cartoon studio into a polished, user-friendly, advanced
+> creation platform for Bengali comedy cartoons — in 100 days, 10 phases × 10 days.
+> **Non-goals:** no monetization, no business model work until Day 100. Product first.
+> **Source of truth for in-app display:** `src/lib/roadmap.ts` (kept in sync with this file).
 
 ---
 
-## Sprint 1 (দিন ১–১৪) — টাইমলাইন, লিপ-সিঙ্ক, গতি কন্ট্রোল ✅ **সম্পন্ন**
+## 0. Where we start (Day 0 baseline — all verified working)
 
-**উদ্দেশ্য: ইউজার যেকোনো মুহূর্ত ধরে রেখে ঠিক করতে পারবে "কে, কখন, কীভাবে নড়ছে।"**
-
-| ফিচার | বিস্তারিত |
+| Area | Shipped |
 |---|---|
-| 🎞️ **টাইমলাইন এডিটর** | অনুভূমিক টাইমলাইন — ক্যারেক্টারপ্রতি আলাদা ট্র্যাক, বিট-ব্লক ড্র্যাগ/রিসাইজ, প্লেহেড স্ক্রাব, সেকেন্ড রুলার |
-| 👄 **আসল লিপ-সিঙ্ক** | TTS অডিও বিশ্লেষণ করে মুখের অ্যামপ্লিটিউড → ঠিক যেই শব্দে যেই শব্দে মুখ খুলবে (আগে যেটা random flap ছিল) |
-| ⏩ **গতি কন্ট্রোল** | গ্লোবাল প্লেব্যাক স্পিড (০.৫×–২×), প্রতি-বিট অ্যানিমেশন স্পিড, পিচ ঠিক রেখে অডিও স্পিড |
-| 🌊 **ইজিং/মুভমেন্ট কোয়ালিটি** | হাঁটার গতিপথে easing বাছাই (মসৃণ/ধীরে-শুরু/স্ন্যাপ) — মুভমেন্টের "ভাব" |
-| 🖱️ **স্টেজে সরাসরি ড্র্যাগ** | ক্যানভাসে ক্যারেক্টার চেপে ধরে টেনে সরানো — স্লাইডার ছাড়াই |
-| 🎭 **৮টি নতুন অ্যাকশন** | দৌড়, চাপরাস, নমস্কার, ভাবছে, অবাক, নাচছে, পড়ে যাচ্ছে, ঠেলছে |
-| 🏞️ **৪টি নতুন ব্যাকগ্রাউন্ড** | রাজসভা, স্কুল, ঘাট, রাতের গ্রাম |
-| ✨ **প্রিমিয়াম রেন্ডার** | আউটলাইন স্ট্রোক, শেডিং, squash & stretch, জীবন্ত ব্যাকগ্রাউন্ড (মেঘ ভাসে, জোনাকি জ্বলে, পানি চিকচিক) |
+| Studio | Beat-based timeline (multi-track, drag/resize/reassign), 27 actions, 11 Bengali props, 6 easings, cinematic camera (pan/zoom/shots/shake), drag-on-stage, global + per-beat speed |
+| World | 13 hand-painted procedural backgrounds with living ambience, pseudo-3D depth (z −120..480), contact shadows, HiDPI rendering |
+| Characters | Part-based creator (skin/hair/eyes/brows/mouth/top/bottom/headwear/beard/glasses), 5-preset cast, 7 TTS voices, real lip-sync (FFT viseme envelopes) |
+| Export | WebCodecs MP4 (H.264 + AAC/Opus, exact-timestep frames) + MediaRecorder fallback, 720/1080p, title card, fades, cancel + progress |
+| Platform | Installable PWA, **fully offline** (SW precache + self-hosted Hind Siliguri fonts), device projects (localStorage, quota-evicting), cloud projects (Prisma/SQLite), IndexedDB voice cache |
+| Learning | 6-lesson Bengali course with saved progress |
+| Quality | `tsc --noEmit` clean, `eslint` clean, browser golden-path verified |
 
-## Sprint 2 (দিন ১৫–২৮) — অ্যানিমেশন প্রিন্সিপল পাস ✅ **সম্পন্ন**
+### Day-0 hardening already landed (this plan's kickoff commit)
 
-- ১২টি ক্লাসিক অ্যানিমেশন প্রিন্সিপল প্রয়োগ: anticipation, follow-through, secondary motion, overlapping action — ১৮টি অ্যাকশনেই (pose.ts v2 + expression.ts)
-- প্রতিটি অ্যাকশনের "ভাব" রিভিউ — হাঁটায় hip rotation + elbow lag, হাতের follow-through, মাথার delayed counter-bob, পায়ের স্ট্রাইকে squash
-- Expression engine v2 — চোখ/ভুরু/মুখ একসাথে আবেগ বোঝাবে + Face FX (রাগের শিরা, ধোঁয়া, ঘাম, শক-লাইন, মিউজিক নোট, লজ্জা)
-- Prop সিস্টেম: লাঠি, ছাতা, কলসি, মাছের টোকরি, হাতপাখা — ফরওয়ার্ড-কাইনেমেটিক্সে হাতে লাগানো (সব অ্যাকশনে হাতের সাথে চলে)
-- fist (মুষ্টি) রেন্ডার — slap/push/run/angry/jump-এ
-
-## Sprint 3 (দিন ২৯–৪২) — কনটেন্ট লাইব্রেরি বিস্তার ⬅️ **এখন এখানে আছি**
-
-- ১০+ নতুন অ্যাকশন (বসা, ঘুম, লাফ, ধাক্কা, ছোঁয়া, ভাবুক...)
-- বাংলা প্রপ লাইব্রেরি: মাদুর, হুক্কা, মাছের ঝুড়ি, রিকশা...
-- মহিলা ক্যারেক্টার রিগ v2 (শাড়ি-স্বচ্ছন্দ মুভমেন্ট)
-- ব্যাকগ্রাউন্ডে সময়কাল (ভোর/দুপুর/সন্ধ্যা) ভ্যারিয়েন্ট
-
-## Sprint 4 (দিন ৪৩–৫৬) — ক্যামেরা ও সিন ক্রাফট
-
-- ক্যামেরা প্যান/জুম কীফ্রেম (dramatic close-up!)
-- মাল্টি-সিন এপিসোড স্ট্রাকচার — এক প্রজেক্টে কয়েকটি দৃশ্য
-- ট্রানজিশন: ফেড, স্লাইড, কার্টুনি ওয়াইপ
-- ব্যাকগ্রাউন্ড মিউজিক + সাউন্ড এফেক্ট লাইব্রেরি (হাসি, থাপ্পড়, দৌড়)
-
-## Sprint 5 (দিন ৫৭–৭০) — এক্সপোর্ট ও পারফরম্যান্স
-
-- Full HD (1080p) এক্সপোর্ট, উন্নত MP4 কোয়ালিটি
-- লো-এন্ড ফোনে ৬০fps নিশ্চিত — রেন্ডার অপটিমাইজেশন
-- অফলাইন এডিটিং টেস্ট — PWA-তে ইন্টারনেট ছাড়া কাজ
-- অটো-সেভ + আনডু/রিডু সর্বত্র
-
-## Sprint 6 (দিন ৭১–৮৪) — ইউজার টেস্ট রাউন্ড ১
-
-- আসল ক্রিয়েটরদের দিয়ে টেস্ট — কোথায় আটকায়, কী বোঝা কঠিন
-- টপ ১০ সমস্যা ফিক্স
-- ওয়ান-হ্যান্ডেড মোবাইল UX পলিশ
-
-## Sprint 7 (দিন ৮৫–১০০) — কোয়ালিটি অডিট ও পাবলিক বিটা
-
-- অ্যানিমেশন কোয়ালিটি অডিট — প্রতিটি অ্যাকশন ফ্রেম-বাই-ফ্রেম রিভিউ
-- কোর্স কনটেন্ট আপডেট (নতুন টাইমলাইন/লিপ-সিঙ্ক টিউটোরিয়াল)
-- পাবলিক বিটা লঞ্চ রেডিনেস
+- **Fixed all TypeScript errors** in `src/lib/cartoon/exporter.ts` (WebCodecs chunk/metadata casts), excluded non-app folders from `tsc`, zero lint warnings.
+- **Fixed lint warning** on Google Fonts by **self-hosting Hind Siliguri** (12 woff2 files, `@font-face`, SW precache `thatta-v9`) — Bangla text now renders offline on first cold load.
+- **Advanced tooling:** global **Undo/Redo** (`src/lib/history.ts`, 60-step stack, 450 ms gesture coalescing so one Ctrl+Z undoes a whole drag), **keyboard shortcuts** (Space, Ctrl+Z, Ctrl+Shift+Z, Ctrl+Y) with an in-app cheat-sheet dialog, and a **Roadmap dialog** in the header showing live plan progress.
+- **Repo hygiene:** `.gitignore` root-anchored `/local-*`, tsconfig excludes `examples/`, `skills/`, `mini-services/`.
 
 ---
 
-## 📏 নন-নেগোসিয়েবল কোয়ালিটি বার (প্রতি স্প্রিন্টে যাচাই হবে)
+## 1. Ground rules for all 100 days
 
-1. **৬০fps** মিড-রেঞ্জ অ্যান্ড্রয়েডে
-2. **প্রতিটি অবজেক্টের** পজিশন/গতি/স্পিড/ইজিং — সহজে কন্ট্রোলযোগ্য
-3. **সব UI বাংলায়** — মোবাইলে এক হাতে চালানো যায়
-4. অ্যানিমেশনে **cartoon ভাব** — যান্ত্রিক নয়, প্রাণবন্ত
-5. এক্সপোর্ট ভিডিও **YouTube-রেডি**
+1. **Quality bar (checked every phase):**
+   - `bun run lint` → 0 errors, 0 warnings; `bunx tsc --noEmit` → 0 errors.
+   - Browser golden path verified (play scene, edit beat, generate voice, export, offline reload).
+   - All UI text stays in **Bangla**; mobile one-hand usable; footer sticky on every viewport.
+2. **Weekly rituals:**
+   - *Friday:* bug bash — click through every tab, watch `dev.log` for runtime errors, fix same day.
+   - *Sunday:* performance profile on a mid-range Android profile + storage audit.
+   - *Phase end:* `git tag phase-N`, update `roadmap.ts` + this doc, write release notes.
+3. **"Find and fix all errors" protocol** (continuous, not one-time):
+   - Static: `tsc --noEmit`, `eslint`, Next.js build warnings treated as errors.
+   - Runtime: `dev.log` scan after every feature; console-error-free golden path before any commit.
+   - Data: round-trip every persistence path (save → reload → offline reload → old-version upgrade).
+   - UX: every new screen tested at 390×844 and 1280×800.
+4. **Every phase ships user-visible value** — no refactor-only phases.
 
-> 💰 মনিটাইজেশন: **Day 100 পর্যন্ত সম্পূর্ণ বন্ধ।** আগে প্রোডাক্ট প্রিমিয়াম হবে, তারপর ব্যবসা।
+---
+
+## 2. The 100-day plan (10 phases × 10 days)
+
+### Phase 1 (Day 1–10) — User-friendly core: "ভুল করলেও ভয় নেই"
+**Goal:** a beginner can never lose work or feel lost.
+- [x] Undo/Redo with drag-gesture coalescing (`src/lib/history.ts`)
+- [x] Keyboard shortcuts + cheat-sheet dialog
+- [ ] **Autosave + crash recovery** — debounced (3 s) save to a dedicated device slot; on load, offer "last session restored" toast if unsaved changes existed
+- [ ] **Scene templates** — 5 ready-made one-click scenes (বাজার কাণ্ড, স্কুল মজা, নদীর ধারে, রাজসভার হাসি, রাতের ভয়) from a "টেমপ্লেট" picker
+- [ ] **Guided first-run tour** — 4-step coach marks (stage → timeline → voice → export), dismissible, remembered
+- [ ] Empty-state tips in timeline & beat form (what to do next)
+
+**Accept:** kill the tab mid-edit → reopen → work restored; undo chain survives 60 steps; a new user creates + exports a cartoon without reading the course.
+
+### Phase 2 (Day 11–20) — Story system: multi-scene episodes
+**Goal:** full sketch episodes, not single scenes.
+- [ ] Scene list panel — add / duplicate / reorder / delete scenes
+- [ ] Transitions per scene boundary: cut / fade / cartoon wipe
+- [ ] Episode preview play-through (scenes chained, transitions applied)
+- [ ] Script importer: paste Bangla dialogue → auto-draft beats (speaker → actor mapping UI)
+- [ ] Export whole episode as one MP4
+- **Files:** `store.ts` (scene[] migration with old-data upgrade), `engine.ts`, `exporter.ts`, new `scenes-tab.tsx`
+
+**Accept:** 3-scene episode builds, plays, and exports; v0 projects auto-upgrade without data loss.
+
+### Phase 3 (Day 21–30) — Advanced animation control
+**Goal:** "যেকোনো অবজেক্টের মুভমেন্ট নিখুঁতভাবে কন্ট্রোল" — the core mantra.
+- [ ] Two-action blending (walk + talk simultaneously; secondary-action slider)
+- [ ] Custom pose editor — drag joints on a rig to create a reusable pose action
+- [ ] Motion paths: curved walk targets (bezier), jump arcs with gravity preview
+- [ ] Per-beat easing curve editor (visual graph, 6 presets + custom cubic-bezier)
+- [ ] 2-character interaction presets (slap+reaction sync, handshake, বহিষ্কার chase)
+- **Files:** `pose.ts`, `skeleton.ts`, `engine.ts`, new `pose-editor.tsx`
+
+**Accept:** every beat's position/speed/easing is editable from UI; blended actions stay 60 fps on mid-range Android.
+
+### Phase 4 (Day 31–40) — Sound studio
+**Goal:** cartoon sounds as rich as the visuals.
+- [ ] Background music library (procedurally synthesized দেশি loops, no licensing risk)
+- [ ] SFX library auto-synced to impact actions (slap/ fall/ laugh) with volume control
+- [ ] Visible audio track on timeline (music/SFX/voice lanes with waveforms)
+- [ ] Record own voice (mic) with basic noise gate; use in any beat
+- [ ] Per-character voice pitch/style fine-tuning persisting with the design
+- **Files:** new `audio-engine.ts`, `timeline-editor.tsx`, `/api/tts` unchanged
+
+**Accept:** scene with music + 2 SFX + 4 voice lines exports with correctly mixed audio.
+
+### Phase 5 (Day 41–50) — World building: backgrounds & props
+**Goal:** more realistic, customizable environments (continues the realism push).
+- [ ] Background customizer: time-of-day slider (ভোর/দুপুর/সন্ধ্যা/রাত), weather (clear/বৃষ্টি/কুয়াশা), color mood
+- [ ] 3 new backgrounds: রেলস্টেশন, সিনেমা হল, মেলা
+- [ ] 4 new props: চায়ের কাপ, মোবাইল, ব্যাগ, চেয়ার
+- [ ] Decor layer: place trees/rickshaw/stalls anywhere (draggable, depth-aware)
+- [ ] Weather particles integrated with ambience system
+- **Files:** `backgrounds.ts` (keep 2× supersample + cache), `props.ts`, `depth.ts`
+
+**Accept:** same background renders 4 time variants + rain at stable fps; decor items sort correctly with characters by z.
+
+### Phase 6 (Day 51–60) — Export & share
+**Goal:** one click from studio to audience.
+- [ ] 1080p60 export option (WebCodecs config matrix)
+- [ ] GIF export (first 6 s loop, for social)
+- [ ] Thumbnail designer: pick frame + title text style → PNG
+- [ ] Bangla subtitle burn-in toggle (renders dialogue text)
+- [ ] Share link: cloud project public read-only view
+- **Files:** `exporter.ts`, new `thumbnail.ts`, new public share route
+
+**Accept:** 1080p60 export of a 30 s scene completes on mid-range laptop without OOM; share link opens on a phone.
+
+### Phase 7 (Day 61–70) — Community gallery (free)
+**Goal:** creators inspire creators.
+- [ ] Public gallery grid (curated, no moderation overhead: report button first)
+- [ ] Character/template file export-import (JSON, works offline, shareable via WhatsApp)
+- [ ] Like counts; "সপ্তাহের সেরা" list
+- [ ] Creator profile page (name, avatar from character, public cartoons)
+- **Files:** Prisma schema additions (GalleryItem, Like, Profile), API routes, new gallery tab
+
+**Accept:** publish → appears in gallery → like → unlink/remove works; offline never blocks editing (gallery is online-only, clearly marked).
+
+### Phase 8 (Day 71–80) — Performance & mobile
+**Goal:** smooth on a $120 Android phone.
+- [ ] Quality mode selector: Auto/High/Battery (reduced supersampling, effects scale)
+- [ ] Memory audit: background cache LRU, frame object pooling
+- [ ] Touch gestures: pinch-zoom stage, two-finger pan
+- [ ] Offline storage manager UI: usage meter, per-project size, one-tap cleanup
+- **Accept:** 60 fps playback of 5-character scene on Android Go profile; storage manager clears ≥1 project without app restart.
+
+### Phase 9 (Day 81–90) — AI copilots (server-side SDK only)
+**Goal:** AI removes the blank-page problem.
+- [ ] Bangla comedy story idea generator (3 premises per click)
+- [ ] Dialogue punch-up suggestions (safe, family-friendly filter)
+- [ ] Idea → auto-storyboard draft (premises → beats skeleton the user edits)
+- [ ] Thumbnail text suggestions
+- **Files:** new `/api/ai/*` routes using z-ai-web-dev-sdk; graceful offline degradation (AI features simply hidden offline)
+
+**Accept:** one-tap flow idea → draft beats → user edits → playable scene in <2 min.
+
+### Phase 10 (Day 91–100) — Launch polish: v1.0
+**Goal:** confidence + completeness.
+- [ ] Full UX audit with 5 first-time users; fix top-10 frictions
+- [ ] Accessibility pass: full keyboard navigation, ARIA labels, focus rings, contrast
+- [ ] Intermediate course (7 lessons): camera craft, audio, episode building
+- [ ] v1.0 release: install prompt polish, release notes, deploy hardening (Vercel + standalone), docs refresh
+
+**Accept:** all quality-bar gates green; fresh user completes course + creates cartoon in one sitting; `git tag v1.0`.
+
+---
+
+## 3. KPIs at Day 100
+
+| Metric | Target |
+|---|---|
+| Time from blank stage to exported 30 s cartoon (new user) | ≤ 15 min |
+| Crash/lost-work reports | 0 (autosave + undo everywhere) |
+| Playback fps, 5 characters, mid-range Android | 60 |
+| Cold offline load (installed PWA, airplane mode) | < 3 s, zero console errors |
+| Backgrounds / actions / props | 16+ / 35+ / 15+ |
+| Course completion rate (baseline vs Day 100) | +30% |
+| `tsc` + `eslint` | permanently clean |
+
+## 4. Risk register
+
+| Risk | Mitigation |
+|---|---|
+| Multi-scene migration breaks old saved projects | version field + `normalizeScene` upgrade path + round-trip tests each phase |
+| WebCodecs gaps on some phones | MediaRecorder fallback stays; capability matrix in export dialog |
+| localStorage quota (device projects) | existing eviction + Phase 8 storage manager |
+| AI routes offline/unavailable | features hidden offline; never block core studio |
+| Scope creep | every phase has accept criteria; anything extra goes to backlog file |
+
+## 5. Progress convention
+
+- Each item above flips to `[x]` **only after** browser-verified golden-path testing.
+- `src/lib/roadmap.ts` mirrors this plan for the in-app Roadmap dialog.
+- Phase completion = commit + `git tag phase-N` + push to `github.com/topbook12/thatta-studio`.
+
+> 💰 **Monetization: fully off until Day 100.** Product quality first, business later.

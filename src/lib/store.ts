@@ -10,6 +10,7 @@ import {
   presetCast,
   starterScene,
 } from './cartoon/presets';
+import { history } from './history';
 import type {
   BgName,
   CameraShot,
@@ -50,11 +51,18 @@ export interface StudioState {
   updateCameraShot: (id: string, patch: Partial<CameraShot>) => void;
   removeCameraShot: (id: string) => void;
   setCameraShake: (on: boolean) => void;
+
+  // Sprint 8 — undo/redo (injected by the history middleware)
+  undo: () => void;
+  redo: () => void;
+  canUndo: boolean;
+  canRedo: boolean;
 }
 
 export const useStudio = create<StudioState>()(
-  persist(
-    (set, get) => ({
+  history(
+    persist(
+      (set, get) => ({
       designs: initialCast,
       scene: initialScene,
 
@@ -219,9 +227,17 @@ export const useStudio = create<StudioState>()(
             },
           },
         })),
+
+      // Sprint 8 — real implementations are injected by history()
+      undo: () => {},
+      redo: () => {},
+      canUndo: false,
+      canRedo: false,
     }),
     {
       name: 'thatta-studio-v1',
+      // history helpers must not be persisted — only creative content is
+      partialize: (s) => ({ designs: s.designs, scene: s.scene }),
       onRehydrateStorage: () => (state) => {
         // old saved scenes may lack absolute beat starts — normalize them
         if (state?.scene) {
@@ -229,6 +245,7 @@ export const useStudio = create<StudioState>()(
         }
       },
     },
+    ),
   ),
 );
 

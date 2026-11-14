@@ -1,5 +1,20 @@
-/* ঠাট্টা স্টুডিও — service worker v2 (Sprint 7: full offline) */
-const CACHE = 'thatta-v8'
+/* ঠাট্টা স্টুডিও — service worker v2 (Sprint 8: self-hosted fonts, full offline) */
+const CACHE = 'thatta-v9'
+
+const FONT_FILES = [
+  '/fonts/hind-siliguri-400-bengali.woff2',
+  '/fonts/hind-siliguri-400-latin.woff2',
+  '/fonts/hind-siliguri-400-latin-ext.woff2',
+  '/fonts/hind-siliguri-500-bengali.woff2',
+  '/fonts/hind-siliguri-500-latin.woff2',
+  '/fonts/hind-siliguri-500-latin-ext.woff2',
+  '/fonts/hind-siliguri-600-bengali.woff2',
+  '/fonts/hind-siliguri-600-latin.woff2',
+  '/fonts/hind-siliguri-600-latin-ext.woff2',
+  '/fonts/hind-siliguri-700-bengali.woff2',
+  '/fonts/hind-siliguri-700-latin.woff2',
+  '/fonts/hind-siliguri-700-latin-ext.woff2',
+]
 
 const PRECACHE_URLS = [
   '/',
@@ -8,15 +23,21 @@ const PRECACHE_URLS = [
   '/icons/icon-512.png',
   '/icons/icon-1024.png',
   '/logo.svg',
+  ...FONT_FILES,
 ]
 
+// kept for older cached pages that still reference Google Fonts
 const FONT_HOSTS = ['fonts.googleapis.com', 'fonts.gstatic.com']
 
 self.addEventListener('install', (event) => {
   event.waitUntil(
     caches
       .open(CACHE)
-      .then((cache) => cache.addAll(PRECACHE_URLS))
+      .then((cache) =>
+        // fonts first (small, critical for Bangla), then the app shell —
+        // one missing asset must not break the whole install
+        Promise.allSettled(PRECACHE_URLS.map((u) => cache.add(u)))
+      )
       .then(() => self.skipWaiting())
   )
 })
@@ -85,7 +106,7 @@ self.addEventListener('fetch', (event) => {
 
   const url = new URL(request.url)
 
-  // cross-origin: only Google Fonts (needed for Bangla text offline)
+  // cross-origin: only Google Fonts (legacy pages; fonts are self-hosted now)
   if (url.origin !== self.location.origin) {
     if (FONT_HOSTS.includes(url.hostname)) {
       event.respondWith(cacheFirst(request).catch(() => Response.error()))
@@ -115,6 +136,7 @@ self.addEventListener('fetch', (event) => {
   if (
     url.pathname.startsWith('/_next/static/') ||
     url.pathname.startsWith('/icons/') ||
+    url.pathname.startsWith('/fonts/') ||
     url.pathname === '/logo.svg' ||
     url.pathname === '/manifest.webmanifest'
   ) {
