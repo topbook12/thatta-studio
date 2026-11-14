@@ -1,11 +1,12 @@
 "use client";
 
-import { useState, useSyncExternalStore } from "react";
+import { useState, useSyncExternalStore, type ReactNode } from "react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import StudioTab from "@/components/tabs/studio-tab";
 import CreatorTab from "@/components/tabs/creator-tab";
 import CoursesTab from "@/components/tabs/courses-tab";
 import RoadmapDialog from "@/components/roadmap-dialog";
+import StudioErrorBoundary from "@/components/studio/error-boundary";
 import { Clapperboard, GraduationCap, Sparkles, UserRound, WifiOff } from "lucide-react";
 
 const emptySubscribe = () => () => {};
@@ -18,6 +19,11 @@ function subscribeOnline(onChange: () => void) {
     window.removeEventListener("online", onChange);
     window.removeEventListener("offline", onChange);
   };
+}
+
+/** per-tab crash guard: a broken tab never blanks the tab switcher */
+function Guarded({ children }: { children: ReactNode }) {
+  return <StudioErrorBoundary>{children}</StudioErrorBoundary>;
 }
 
 export default function Home() {
@@ -101,19 +107,29 @@ export default function Home() {
           </TabsList>
 
           <TabsContent value="studio" className="mt-0 focus-visible:outline-none">
-            {mounted ? (
-              <StudioTab onOpenCreator={() => setTab("creator")} />
-            ) : (
-              <div className="flex h-64 items-center justify-center rounded-2xl border border-amber-200 bg-white/60 text-sm font-medium text-amber-700">
-                স্টুডিও লোড হচ্ছে...
-              </div>
-            )}
+            <Guarded>
+              {mounted ? (
+                <StudioTab onOpenCreator={() => setTab("creator")} />
+              ) : (
+                <div className="flex h-64 items-center justify-center rounded-2xl border border-amber-200 bg-white/60 text-sm font-medium text-amber-700">
+                  স্টুডিও লোড হচ্ছে...
+                </div>
+              )}
+            </Guarded>
           </TabsContent>
           <TabsContent value="creator" className="mt-0 focus-visible:outline-none">
-            {mounted ? <CreatorTab /> : null}
+            {mounted ? (
+              <Guarded>
+                <CreatorTab />
+              </Guarded>
+            ) : null}
           </TabsContent>
           <TabsContent value="courses" className="mt-0 focus-visible:outline-none">
-            {mounted ? <CoursesTab onOpenStudio={() => setTab("studio")} /> : null}
+            {mounted ? (
+              <Guarded>
+                <CoursesTab onOpenStudio={() => setTab("studio")} />
+              </Guarded>
+            ) : null}
           </TabsContent>
         </Tabs>
       </main>

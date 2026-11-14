@@ -238,11 +238,23 @@ export const useStudio = create<StudioState>()(
       name: 'thatta-studio-v1',
       // history helpers must not be persisted — only creative content is
       partialize: (s) => ({ designs: s.designs, scene: s.scene }),
-      onRehydrateStorage: () => (state) => {
-        // old saved scenes may lack absolute beat starts — normalize them
-        if (state?.scene) {
-          useStudio.setState({ scene: normalizeScene(state.scene) });
-        }
+      /**
+       * Normalize + sanitize on load. merge() (not onRehydrateStorage!)
+       * because the callback form runs during create() where referencing
+       * this store throws a swallowed TDZ error that silently kills
+       * hydration (found during Phase 1 browser verification).
+       * Also guards corrupted shapes: a non-array designs / non-object
+       * scene falls back to the in-code defaults instead of crashing.
+       */
+      merge: (persisted, current) => {
+        const p = persisted as Partial<StudioState> | undefined;
+        return {
+          ...current,
+          designs: Array.isArray(p?.designs)
+            ? (p.designs as CharacterDesign[])
+            : current.designs,
+          scene: p?.scene ? normalizeScene(p.scene as Scene) : current.scene,
+        };
       },
     },
     ),

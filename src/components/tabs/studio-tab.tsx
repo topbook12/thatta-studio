@@ -40,6 +40,21 @@ import {
   type LocalProjectMeta,
 } from "@/lib/local-projects";
 import {
+  cancelScheduledAutosave,
+  flushAutosave,
+  markSessionClean,
+  markSessionOpen,
+  readLatestAutosave,
+  scheduleAutosave,
+  wasUncleanExit,
+} from "@/lib/autosave";
+import { applyTemplate, TEMPLATES } from "@/lib/cartoon/templates";
+import GuidedTour, {
+  markTourDone,
+  tourAlreadyDone,
+  type TourStep,
+} from "@/components/studio/guided-tour";
+import {
   ACTION_OPTIONS,
   BG_OPTIONS,
   EASING_OPTIONS,
@@ -69,12 +84,15 @@ import TimelineEditor, {
 import {
   ArrowDown,
   ArrowUp,
+  BadgeCheck,
   Cloud,
+  Compass,
   Download,
   Film,
   FolderOpen,
   HardDrive,
   Keyboard,
+  LayoutTemplate,
   Mic,
   Pause,
   Pencil,
@@ -121,6 +139,30 @@ const SHORTCUTS: { keys: string; label: string }[] = [
   { keys: "Ctrl + Z", label: "আনডু — আগের ধাপে ফিরুন" },
   { keys: "Ctrl + Shift + Z", label: "রিডু — আবার এগিয়ে যান" },
   { keys: "Ctrl + Y", label: "রিডু (বিকল্প)" },
+];
+
+// Phase 1 (Day 1–10) — guided tour script: stage → timeline → voice → export
+const TOUR_STEPS: TourStep[] = [
+  {
+    targetId: "tour-stage",
+    title: "এটাই আপনার মঞ্চ!",
+    body: "ক্যারেক্টার টেনে সরান, সাইজ ও গভীরতা (3D) বদলান — মঞ্চের সবকিছু আপনার হাতে।",
+  },
+  {
+    targetId: "tour-timeline",
+    title: "টাইমলাইনে গল্প সাজান",
+    body: "প্রতিটি দৃশ্য (বিট) একটি রঙিন ব্লক — টেনে সময় বদলান, কিনারা টেনে দৈর্ঘ্য কমান-বাড়ান।",
+  },
+  {
+    targetId: "tour-voice",
+    title: "সংলাপ + বাংলা ভয়েস",
+    body: "নিচের ফর্মে সংলাপ লিখে 'ভয়েস বানান' চাপুন — ক্যারেক্টার ঠোঁট মিলিয়ে কথা বলবে!",
+  },
+  {
+    targetId: "tour-export",
+    title: "ভিডিও এক্সপোর্ট",
+    body: "রেডি হলে এক ক্লিকে MP4 — YouTube/Facebook এ সরাসরি আপলোড করুন। কাজ স্বয়ংক্রিয় ব্যাকআপ হয়, ভয় নেই!",
+  },
 ];
 
 function pickMime(): { mime: string; ext: string } {
@@ -180,6 +222,8 @@ export default function StudioTab({
   const selectedBeatIdRef = useRef<string | null>(null);
   const rateRef = useRef(1);
   const lastTimePushRef = useRef(0);
+  const designsRef = useRef(designs);
+  const sceneRef = useRef(scene);
 
   const [playing, setPlaying] = useState(false);
   const [activeBeatIds, setActiveBeatIds] = useState<Set<string>>(new Set());
@@ -216,6 +260,12 @@ export default function StudioTab({
   const [cloudError, setCloudError] = useState(false);
   const [loadTab, setLoadTab] = useState("device");
   const [localProjects, setLocalProjects] = useState<LocalProjectMeta[]>([]);
+
+  // Phase 1 (Day 1–10) — templates / auto-save / crash recovery / guided tour
+  const [templatesOpen, setTemplatesOpen] = useState(false);
+  const [tourOpen, setTourOpen] = useState(false);
+  const [recoverAt, setRecoverAt] = useState<number | null>(null);
+  const [lastSaved, setLastSaved] = useState<number | null>(null);
 
   // Sprint 7 — premium export
   const [exportOpen, setExportOpen] = useState(false);
@@ -278,6 +328,87 @@ export default function StudioTab({
   useEffect(() => {
     stageRef.current?.setScene(scene, designs);
   }, [scene, designs]);
+
+  // ---------- Phase 1: auto-save + crash recovery (Day 1–10) ----------
+  useEffect(() => {
+    designsRef.current = designs;
+    sceneRef.current = scene;
+  }, [designs, scene]);
+
+  // debounced backup (3 s) on every store change — never blocks editing
+  useEffect(() => {
+    const unsub = useStudio.subscribe((s) => {
+      if (!s.designs || !s.scene) return;
+      scheduleAutosave(s.designs, s.scene, (at) => setLastSaved(at));
+    });
+    return () => {
+      unsub();
+      cancelScheduledAutosave();
+    };
+  }, []);
+
+  // clean-exit bookkeeping — absence of the flag = previous session died
+  useEffect(() => {
+    markSessionOpen();
+    const onHide = () => {
+      flushAutosave(designsRef.current, sceneRef.current);
+      markSessionClean();
+    };
+    window.addEventListener("pagehide", onHide);
+    window.addEventListener("beforeunload", onHide);
+    return () => {
+      window.removeEventListener("pagehide", onHide);
+      window.removeEventListener("beforeunload", onHide);
+    };
+  }, []);
+
+  // crash recovery: the previous session ended without cleanup.
+  // Race-proof: register the hydration listener FIRST, then check
+  // hasHydrated() (the event never fires for an already-finished
+  // hydration), and keep a timer fallback in case hydration stalls.
+  useEffect(() => {
+    let ran = false;
+    const check = () => {
+      if (ran) return;
+      ran = true;
+      const unclean = wasUncleanExit();
+      const backup = readLatestAutosave();
+      if (!unclean || !backup) return;
+      const current = useStudio.getState();
+      const same =
+        JSON.stringify(current.designs) === JSON.stringify(backup.designs) &&
+        JSON.stringify(current.scene) === JSON.stringify(backup.scene);
+      if (same) {
+        toast({
+          title: "শেষবার অ্যাপ হঠাৎ বন্ধ হয়েছিল",
+          description: "চিন্তা নেই — আপনার কাজ অক্ষত আছে ✅",
+        });
+      } else {
+        setRecoverAt(backup.savedAt);
+      }
+    };
+    const off = useStudio.persist.onFinishHydration(check);
+    if (useStudio.persist.hasHydrated()) {
+      off();
+      check();
+      return;
+    }
+    const fallback = setTimeout(() => {
+      off();
+      check();
+    }, 1500);
+    return () => {
+      off();
+      clearTimeout(fallback);
+    };
+  }, []);
+
+  // guided tour auto-opens once for first-time users
+  useEffect(() => {
+    if (tourAlreadyDone()) return;
+    const t = setTimeout(() => setTourOpen(true), 900);
+    return () => clearTimeout(t);
+  }, []);
 
   // audio-aware durations + viseme lip-sync envelopes + timeline data stay in sync
   useEffect(() => {
@@ -986,6 +1117,36 @@ export default function StudioTab({
     }
   };
 
+  // ---------- Phase 1: template loading + backup restore ----------
+  const handleLoadTemplate = (id: string) => {
+    const applied = applyTemplate(designs, id);
+    if (!applied) return;
+    // two sets in one tick → history coalesces into ONE undo step
+    setDesigns(applied.designs);
+    setScene(applied.scene);
+    setTemplatesOpen(false);
+    toast({
+      title: "টেমপ্লেট লোড হয়েছে 🎬",
+      description: "প্লে করে দেখুন — বদলাতে চাইলে Ctrl+Z দিয়ে ফিরে আসুন।",
+    });
+  };
+
+  const handleRestoreBackup = () => {
+    const backup = readLatestAutosave();
+    if (!backup) {
+      setRecoverAt(null);
+      return;
+    }
+    setDesigns(backup.designs);
+    setScene(backup.scene);
+    setRecoverAt(null);
+    setLastSaved(backup.savedAt);
+    toast({
+      title: "ব্যাকআপ রিস্টোর হয়েছে 💾",
+      description: "আপনার শেষ কাজ ফিরে এসেছে — এখন আবার এডিট করতে পারেন।",
+    });
+  };
+
   // ---------- derived ----------
   const designNameOf = (uid: string) => {
     const placed = scene.characters.find((c) => c.uid === uid);
@@ -1002,7 +1163,10 @@ export default function StudioTab({
       {/* ---------- Stage ---------- */}
       <Card className="border-amber-200">
         <CardContent className="space-y-4 p-4 sm:p-5">
-          <div className="overflow-hidden rounded-xl border border-amber-300 shadow-inner">
+          <div
+            id="tour-stage"
+            className="overflow-hidden rounded-xl border border-amber-300 shadow-inner"
+          >
             <canvas
               ref={canvasRef}
               className="block w-full bg-amber-100"
@@ -1074,6 +1238,7 @@ export default function StudioTab({
               </Select>
             </div>
             <Button
+              id="tour-export"
               onClick={openExportDialog}
               disabled={playing || exporting}
               className="bg-orange-600 text-white hover:bg-orange-700"
@@ -1082,6 +1247,7 @@ export default function StudioTab({
               {exporting ? "এক্সপোর্ট হচ্ছে..." : "ভিডিও এক্সপোর্ট"}
             </Button>
             <Button
+              id="tour-voice"
               variant="outline"
               onClick={genAllVoices}
               disabled={playing || exporting}
@@ -1089,7 +1255,36 @@ export default function StudioTab({
             >
               <Volume2 className="mr-2 h-4 w-4" /> সব ভয়েস জেনারেট
             </Button>
-            <div className="ml-auto flex gap-2.5">
+            <div className="ml-auto flex items-center gap-2.5">
+              <Button
+                variant="outline"
+                onClick={() => setTemplatesOpen(true)}
+                className="border-orange-300 text-orange-700 hover:bg-orange-50"
+              >
+                <LayoutTemplate className="mr-2 h-4 w-4" /> টেমপ্লেট
+              </Button>
+              {lastSaved != null && (
+                <span
+                  className="hidden items-center gap-1.5 rounded-full border border-emerald-200 bg-emerald-50 px-2.5 py-1.5 text-xs font-medium text-emerald-700 md:flex"
+                  title="আপনার কাজ প্রতি ৩ সেকেন্ডে ডিভাইসে ব্যাকআপ হচ্ছে"
+                >
+                  <BadgeCheck className="h-3.5 w-3.5" />
+                  স্বয়ংক্রিয় সেভ{" "}
+                  {new Date(lastSaved).toLocaleTimeString("bn-BD", {
+                    hour: "2-digit",
+                    minute: "2-digit",
+                  })}
+                </span>
+              )}
+              <Button
+                variant="outline"
+                onClick={() => setTourOpen(true)}
+                title="ব্যবহার গাইড (ট্যুর)"
+                aria-label="ব্যবহার গাইড দেখুন"
+                className="border-amber-300 px-2.5"
+              >
+                <Compass className="h-4 w-4" />
+              </Button>
               <Button
                 variant="outline"
                 onClick={() => setShortcutsOpen(true)}
@@ -1128,18 +1323,53 @@ export default function StudioTab({
       </Card>
 
       {/* ---------- Timeline ---------- */}
-      <TimelineEditor
-        beats={timelineBeats}
-        actors={timelineActors}
-        totalDuration={totalDuration}
-        currentTime={currentTime}
-        selectedBeatId={selectedBeatId}
-        playing={playing}
-        onSeek={handleSeek}
-        onSelectBeat={handleTimelineSelect}
-        onResizeBeat={handleTimelineResize}
-        onMoveBeat={handleTimelineMove}
-      />
+      {scene.beats.length === 0 && (
+        <div className="rounded-2xl border-2 border-dashed border-amber-300 bg-amber-50/70 p-5 text-center">
+          <p className="text-base font-bold text-amber-900">
+            🎬 টাইমলাইন খালি — এখানেই আপনার গল্প সাজবে!
+          </p>
+          <p className="mx-auto mt-1 max-w-xl text-sm text-amber-700">
+            নিচের "নতুন দৃশ্য (বিট) যোগ করুন" ফর্মে ক্যারেক্টার + অ্যাকশন + সংলাপ দিন,
+            অথবা এক ক্লিকে রেডিমেড টেমপ্লেট লোড করে সাথে সাথে শুরু করুন।
+          </p>
+          <div className="mt-3 flex flex-wrap justify-center gap-2">
+            <Button
+              size="sm"
+              onClick={() => setTemplatesOpen(true)}
+              className="bg-orange-600 text-white hover:bg-orange-700"
+            >
+              <LayoutTemplate className="mr-1.5 h-4 w-4" /> টেমপ্লেট দেখুন
+            </Button>
+            <Button
+              size="sm"
+              variant="outline"
+              className="border-amber-300"
+              onClick={() =>
+                editorCardRef.current?.scrollIntoView({
+                  behavior: "smooth",
+                  block: "center",
+                })
+              }
+            >
+              নিজে দৃশ্য যোগ করুন ↓
+            </Button>
+          </div>
+        </div>
+      )}
+      <div id="tour-timeline">
+        <TimelineEditor
+          beats={timelineBeats}
+          actors={timelineActors}
+          totalDuration={totalDuration}
+          currentTime={currentTime}
+          selectedBeatId={selectedBeatId}
+          playing={playing}
+          onSeek={handleSeek}
+          onSelectBeat={handleTimelineSelect}
+          onResizeBeat={handleTimelineResize}
+          onMoveBeat={handleTimelineMove}
+        />
+      </div>
 
       <div className="grid gap-6 lg:grid-cols-[340px_1fr]">
         {/* ---------- Left: scene setup ---------- */}
@@ -1177,17 +1407,27 @@ export default function StudioTab({
             <CardContent className="space-y-3">
               {scene.characters.length === 0 && (
                 <div className="rounded-lg border border-dashed border-amber-300 p-4 text-center text-sm text-amber-700">
-                  স্টেজে কোনো ক্যারেক্টার নেই।
-                  {onOpenCreator ? (
+                  স্টেজে কোনো ক্যারেক্টার নেই — প্যালেট থেকে যোগ করুন বা টেমপ্লেট দিয়ে শুরু করুন।
+                  <div className="mt-2 flex flex-wrap justify-center gap-2">
+                    {onOpenCreator && (
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={onOpenCreator}
+                        className="border-orange-300 text-orange-700"
+                      >
+                        <UserPlus className="mr-1.5 h-3.5 w-3.5" /> ক্যারেক্টার তৈরি করুন
+                      </Button>
+                    )}
                     <Button
                       size="sm"
                       variant="outline"
-                      onClick={onOpenCreator}
-                      className="mt-2 border-orange-300 text-orange-700"
+                      onClick={() => setTemplatesOpen(true)}
+                      className="border-orange-300 text-orange-700"
                     >
-                      <UserPlus className="mr-1.5 h-3.5 w-3.5" /> ক্যারেক্টার তৈরি করুন
+                      <LayoutTemplate className="mr-1.5 h-3.5 w-3.5" /> টেমপ্লেট দেখুন
                     </Button>
-                  ) : null}
+                  </div>
                 </div>
               )}
               <div className="thatta-scroll max-h-72 space-y-3 overflow-y-auto pr-1">
@@ -1629,6 +1869,12 @@ export default function StudioTab({
               </CardTitle>
             </CardHeader>
             <CardContent className="space-y-4">
+              {scene.beats.length === 0 && !editingBeatId && (
+                <p className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs leading-relaxed text-amber-800">
+                  শুরু করা সহজ: ১) ক্যারেক্টার বাছুন → ২) অ্যাকশন বাছুন → ৩) সংলাপ লিখুন →{" "}
+                  ৪) দৃশ্য যোগ করুন চাপুন। প্রতিটি দৃশ্য টাইমলাইনে রঙিন ব্লক হয়ে বসবে!
+                </p>
+              )}
               <div className="grid gap-4 sm:grid-cols-2">
                 <div className="space-y-2">
                   <Label className="text-sm font-semibold text-amber-900">ক্যারেক্টার</Label>
@@ -2152,6 +2398,85 @@ export default function StudioTab({
         </DialogContent>
       </Dialog>
 
+      {/* ---------- Template picker (Phase 1) ---------- */}
+      <Dialog open={templatesOpen} onOpenChange={setTemplatesOpen}>
+        <DialogContent className="sm:max-w-lg">
+          <DialogHeader>
+            <DialogTitle className="text-orange-800">রেডিমেড টেমপ্লেট</DialogTitle>
+            <DialogDescription>
+              এক ক্লিকে সাজানো মজার দৃশ্য — প্লে করে দেখুন, তারপর নিজের মতো বদলে ফেলুন।
+              বর্তমান দৃশ্য বদলে যাবে, তবে Ctrl+Z দিয়ে সবসময় ফিরে আসা যায়।
+            </DialogDescription>
+          </DialogHeader>
+          <div className="thatta-scroll max-h-80 space-y-2.5 overflow-y-auto pr-1">
+            {TEMPLATES.map((t) => (
+              <div
+                key={t.id}
+                className="flex items-center gap-3 rounded-xl border border-amber-200 bg-amber-50/60 p-3"
+              >
+                <span className="text-3xl" aria-hidden>
+                  {t.emoji}
+                </span>
+                <div className="min-w-0 flex-1">
+                  <p className="text-sm font-bold text-amber-950">{t.name}</p>
+                  <p className="text-xs leading-snug text-amber-700">{t.desc}</p>
+                </div>
+                <Button
+                  size="sm"
+                  onClick={() => handleLoadTemplate(t.id)}
+                  className="shrink-0 bg-orange-600 text-white hover:bg-orange-700"
+                >
+                  লোড করুন
+                </Button>
+              </div>
+            ))}
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* ---------- Crash recovery dialog (Phase 1) ---------- */}
+      <Dialog
+        open={recoverAt != null}
+        onOpenChange={(o) => {
+          if (!o) setRecoverAt(null);
+        }}
+      >
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="text-orange-800">
+              শেষবার অ্যাপ হঠাৎ বন্ধ হয়েছিল
+            </DialogTitle>
+            <DialogDescription>
+              {recoverAt != null && (
+                <>
+                  আপনার কাজের স্বয়ংক্রিয় ব্যাকআপ পাওয়া গেছে (সময়:{" "}
+                  {new Date(recoverAt).toLocaleTimeString("bn-BD", {
+                    hour: "2-digit",
+                    minute: "2-digit",
+                  })}
+                  )। বর্তমান অবস্থাও রক্ষা পেয়েছে — দরকার হলে ব্যাকআপ থেকে ফিরিয়ে আনুন।
+                </>
+              )}
+            </DialogDescription>
+          </DialogHeader>
+          <div className="flex flex-col gap-2 sm:flex-row">
+            <Button
+              onClick={handleRestoreBackup}
+              className="flex-1 bg-emerald-600 text-white hover:bg-emerald-700"
+            >
+              💾 ব্যাকআপ রিস্টোর করুন
+            </Button>
+            <Button
+              variant="outline"
+              onClick={() => setRecoverAt(null)}
+              className="flex-1 border-amber-300"
+            >
+              বর্তমান অবস্থা রাখুন
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
       {/* ---------- Keyboard shortcuts cheat-sheet ---------- */}
       <Dialog open={shortcutsOpen} onOpenChange={setShortcutsOpen}>
         <DialogContent className="max-w-md rounded-2xl border-amber-200">
@@ -2178,6 +2503,16 @@ export default function StudioTab({
           </div>
         </DialogContent>
       </Dialog>
+
+      {/* ---------- Guided tour (Phase 1) ---------- */}
+      <GuidedTour
+        steps={TOUR_STEPS}
+        open={tourOpen}
+        onClose={() => {
+          markTourDone();
+          setTourOpen(false);
+        }}
+      />
     </div>
   );
 }

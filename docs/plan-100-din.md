@@ -53,12 +53,16 @@
 **Goal:** a beginner can never lose work or feel lost.
 - [x] Undo/Redo with drag-gesture coalescing (`src/lib/history.ts`)
 - [x] Keyboard shortcuts + cheat-sheet dialog
-- [ ] **Autosave + crash recovery** — debounced (3 s) save to a dedicated device slot; on load, offer "last session restored" toast if unsaved changes existed
-- [ ] **Scene templates** — 5 ready-made one-click scenes (বাজার কাণ্ড, স্কুল মজা, নদীর ধারে, রাজসভার হাসি, রাতের ভয়) from a "টেমপ্লেট" picker
-- [ ] **Guided first-run tour** — 4-step coach marks (stage → timeline → voice → export), dismissible, remembered
-- [ ] Empty-state tips in timeline & beat form (what to do next)
+- [x] **Autosave + crash recovery** — debounced (3 s) save to rotating backup slots (`thatta.autosave.a/b`, previous good snapshot always survives a mid-write crash); clean-exit flag detects killed sessions and offers the backup; per-tab error boundary with "ব্যাকআপ রিস্টোর করুন" exit
+- [x] **Scene templates** — 5 ready-made one-click scenes (বাজার কাণ্ড, স্কুল মজা, নদীর ধারে, রাজসভার হাসি, রাতের ভয়) from a "টেমপ্লেট" picker; designs merge by name so user tweaks survive
+- [x] **Guided first-run tour** — 4-step coach marks (stage → timeline → voice → export), auto-opens once, replayable from the toolbar (compass button)
+- [x] Empty-state tips in timeline, character panel & beat form (what to do next) + live "স্বয়ংক্রিয় সেভ" pill
 
-**Accept:** kill the tab mid-edit → reopen → work restored; undo chain survives 60 steps; a new user creates + exports a cartoon without reading the course.
+**Accept (verified):** kill the tab mid-edit → reopen → recovery dialog offers the backup → restore returns the exact state; undo reverts a whole template load in one Ctrl+Z; a new user gets a 4-step tour and template one-click start without reading the course.
+
+**Bonus hardening found & fixed during Phase 1 browser verification:**
+- `onRehydrateStorage` referenced the store inside its own `create()` initializer — a swallowed TDZ error silently killed persist hydration (`hasHydrated()` stayed false forever). Replaced with a sanitized `merge()` (also guards corrupted `designs`/`scene` shapes).
+- Crash-recovery check is now race-proof (listener registered before `hasHydrated()` probe + 1.5 s fallback).
 
 ### Phase 2 (Day 11–20) — Story system: multi-scene episodes
 **Goal:** full sketch episodes, not single scenes.
