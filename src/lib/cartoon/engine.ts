@@ -201,11 +201,43 @@ function wrapText(
 }
 
 /** A beat scheduled on the absolute timeline: [start, end) in seconds. */
-interface BeatWindow {
+export interface BeatWindow {
   beat: SceneBeat;
   idx: number;
   start: number;
   end: number;
+}
+
+/**
+ * Pure beat-window layout — a function of (scene, audio-aware durations)
+ * only. Shared by the stage engine AND the episode exporter so realtime
+ * playback and MP4 export can never disagree about the timeline.
+ */
+export function computeBeatWindows(
+  scene: Scene,
+  durations: Record<string, number>,
+): BeatWindow[] {
+  const beats = scene.beats;
+  const wins = beats.map((b, i) => {
+    const start =
+      typeof b.start === 'number' && b.start >= 0 ? b.start : seqStart(beats, i);
+    const dur = Math.max(0.3, durations[b.id] ?? b.duration);
+    return { beat: b, idx: i, start, end: start + dur } as BeatWindow;
+  });
+  wins.sort((a, b) => a.start - b.start || a.idx - b.idx);
+  return wins;
+}
+
+/** Furthest beat end of a scene (0 for an empty scene). */
+export function sceneTotalDuration(
+  scene: Scene,
+  durations: Record<string, number> = {},
+): number {
+  let total = 0;
+  for (const w of computeBeatWindows(scene, durations)) {
+    total = Math.max(total, w.end);
+  }
+  return total;
 }
 
 export class CartoonStage {
@@ -277,12 +309,26 @@ export class CartoonStage {
   }
 
   /**
+   * Phase 2 — swap the stage's scene for deterministic EPISODE export:
+   * pure render-state change (no callbacks, no seek) so the exporter can
+   * walk scene-by-scene inside one renderFrame(t) call.
+   */
+  prepareExportScene(scene: Scene, designs: CharacterDesign[]) {
+    this.scene = scene;
+    this.designs = new Map(designs.map((d) => [d.id, d]));
+    this.activeIds.clear();
+    this.sceneTime = 0;
+  }
+
+  /**
    * Sprint 7 — render ONE deterministic frame at absolute scene time `t`
    * for the video exporter: no selection ring, no edit flag, shake on,
    * idle/ambient animations derived from `t` (identical output every run).
    */
   renderExportFrame(t: number, opts?: { hideNameTags?: boolean }) {
-    if (!this.scene || this.scene.beats.length === 0) return;
+    // NOTE: empty scenes still render (background + characters) — an episode
+    // may contain a pure establishing shot with zero beats.
+    if (!this.scene) return;
     const prevSelected = this.selectedUid;
     const prevEdit = this.editBeatId;
     const prevExport = this.exportOpts;
@@ -439,15 +485,7 @@ export class CartoonStage {
   /** All beat windows sorted by start time (parallel-safe). */
   private layout(): BeatWindow[] {
     if (!this.scene) return [];
-    const beats = this.scene.beats;
-    const wins = beats.map((b, i) => {
-      const start =
-        typeof b.start === 'number' && b.start >= 0 ? b.start : seqStart(beats, i);
-      const dur = Math.max(0.3, this.durations[b.id] ?? b.duration);
-      return { beat: b, idx: i, start, end: start + dur } as BeatWindow;
-    });
-    wins.sort((a, b) => a.start - b.start || a.idx - b.idx);
-    return wins;
+    return computeBeatWindows(this.scene, this.durations);
   }
 
   private totalDuration(): number {

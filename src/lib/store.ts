@@ -1,11 +1,20 @@
 // ============================================================
 // ঠাট্টা স্টুডিও — Global studio state (zustand + localStorage persist)
+//
+// Phase 2 — মাল্টি-সিন এপিসোড: the store now holds a LIST of named
+// scenes (`scenes`) plus the id of the scene being edited
+// (`activeSceneId`). Every legacy scene action (addBeat, addPlaced…)
+// writes through to the ACTIVE scene only. Old persisted projects
+// ({ designs, scene }) migrate into a one-scene episode on load.
 // ============================================================
 
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import {
+  cloneEpisodeScene,
+  freshEpisodeScene,
   newId,
+  nextSceneName,
   normalizeScene,
   presetCast,
   starterScene,
@@ -15,17 +24,27 @@ import type {
   BgName,
   CameraShot,
   CharacterDesign,
+  EpisodeScene,
   PlacedCharacter,
   Scene,
   SceneBeat,
+  SceneTransition,
 } from './cartoon/types';
 
 const initialCast = presetCast();
 const initialScene = normalizeScene(starterScene(initialCast));
+const initialEpisode: EpisodeScene = {
+  id: newId(),
+  name: 'দৃশ্য ১',
+  scene: initialScene,
+};
 
 export interface StudioState {
   designs: CharacterDesign[];
-  scene: Scene;
+  /** all scenes of the current episode, in play order */
+  scenes: EpisodeScene[];
+  /** which scene the stage/timeline is editing */
+  activeSceneId: string;
 
   addDesign: (d: CharacterDesign) => void;
   updateDesign: (id: string, patch: Partial<CharacterDesign>) => void;
@@ -43,8 +62,28 @@ export interface StudioState {
   moveBeat: (id: string, dir: -1 | 1) => void;
   /** re-time a beat on the absolute timeline (and optionally reassign actor) */
   moveBeatTo: (id: string, start: number, actorUid?: string) => void;
-  setScene: (s: Scene) => void;
+  /** replace the ACTIVE scene's content (templates, single-scene loads) */
+  setActiveScene: (s: Scene) => void;
   clearBeats: () => void;
+
+  // ---- Phase 2 — episode (multi-scene) management ----
+  setActiveSceneId: (id: string) => void;
+  /** new empty scene AFTER the active one (same bg + cast), becomes active */
+  addScene: () => void;
+  /** full copy with regenerated ids, placed right after the original */
+  duplicateScene: (id: string) => void;
+  /** remove a scene (never the last one); activate the next neighbour */
+  deleteScene: (id: string) => void;
+  renameScene: (id: string, name: string) => void;
+  moveScene: (id: string, dir: -1 | 1) => void;
+  /** outgoing transition of a scene into the next one */
+  setSceneTransition: (id: string, t: SceneTransition) => void;
+  /** whole-project load (device/cloud/backup); optional saved active id */
+  loadEpisodes: (
+    scenes: EpisodeScene[],
+    designs: CharacterDesign[],
+    activeId?: string,
+  ) => void;
 
   // Sprint 6 — cinematic camera
   addCameraShot: (shot: Omit<CameraShot, 'id'>) => void;
@@ -59,12 +98,25 @@ export interface StudioState {
   canRedo: boolean;
 }
 
+/** Map over the ACTIVE scene only (the episode keeps everything else). */
+function withActive(
+  s: { scenes: EpisodeScene[]; activeSceneId: string },
+  fn: (scene: Scene) => Scene,
+): Pick<StudioState, 'scenes'> {
+  return {
+    scenes: s.scenes.map((es) =>
+      es.id === s.activeSceneId ? { ...es, scene: fn(es.scene) } : es,
+    ),
+  };
+}
+
 export const useStudio = create<StudioState>()(
   history(
     persist(
-      (set, get) => ({
+      (set) => ({
       designs: initialCast,
-      scene: initialScene,
+      scenes: [initialEpisode],
+      activeSceneId: initialEpisode.id,
 
       addDesign: (d) => set((s) => ({ designs: [...s.designs, d] })),
       updateDesign: (id, patch) =>
@@ -73,101 +125,117 @@ export const useStudio = create<StudioState>()(
         })),
       deleteDesign: (id) =>
         set((s) => {
-          // also remove placed instances and beats referencing it
-          const affectedUids = new Set(
-            s.scene.characters.filter((c) => c.designId === id).map((c) => c.uid),
-          );
+          // also remove placed instances and beats referencing it — in EVERY
+          // scene of the episode (a cast member acts across the whole story)
           return {
             designs: s.designs.filter((x) => x.id !== id),
-            scene: {
-              ...s.scene,
-              characters: s.scene.characters.filter((c) => c.designId !== id),
-              beats: s.scene.beats.filter((b) => !affectedUids.has(b.actorUid)),
-            },
+            scenes: s.scenes.map((es) => {
+              const affectedUids = new Set(
+                es.scene.characters
+                  .filter((c) => c.designId === id)
+                  .map((c) => c.uid),
+              );
+              return {
+                ...es,
+                scene: {
+                  ...es.scene,
+                  characters: es.scene.characters.filter((c) => c.designId !== id),
+                  beats: es.scene.beats.filter((b) => !affectedUids.has(b.actorUid)),
+                },
+              };
+            }),
           };
         }),
       setDesigns: (list) => set({ designs: list }),
 
-      setBackground: (bg) => set((s) => ({ scene: { ...s.scene, background: bg } })),
+      setBackground: (bg) =>
+        set((s) => withActive(s, (sc) => ({ ...sc, background: bg }))),
       addPlaced: (designId) =>
-        set((s) => {
-          const count = s.scene.characters.length;
-          const x = count === 0 ? 30 : Math.min(85, 20 + count * 18);
-          const placed: PlacedCharacter = {
-            uid: newId(),
-            designId,
-            x,
-            scale: 1.1 + (count % 3) * 0.12,
-            flip: false,
-          };
-          return { scene: { ...s.scene, characters: [...s.scene.characters, placed] } };
-        }),
+        set((s) =>
+          withActive(s, (sc) => {
+            const count = sc.characters.length;
+            const x = count === 0 ? 30 : Math.min(85, 20 + count * 18);
+            const placed: PlacedCharacter = {
+              uid: newId(),
+              designId,
+              x,
+              scale: 1.1 + (count % 3) * 0.12,
+              flip: false,
+            };
+            return { ...sc, characters: [...sc.characters, placed] };
+          }),
+        ),
       updatePlaced: (uid, patch) =>
-        set((s) => ({
-          scene: {
-            ...s.scene,
-            characters: s.scene.characters.map((c) =>
+        set((s) =>
+          withActive(s, (sc) => ({
+            ...sc,
+            characters: sc.characters.map((c) =>
               c.uid === uid ? { ...c, ...patch } : c,
             ),
-          },
-        })),
+          })),
+        ),
       removePlaced: (uid) =>
-        set((s) => ({
-          scene: {
-            ...s.scene,
-            characters: s.scene.characters.filter((c) => c.uid !== uid),
-            beats: s.scene.beats.filter((b) => b.actorUid !== uid),
-          },
-        })),
+        set((s) =>
+          withActive(s, (sc) => ({
+            ...sc,
+            characters: sc.characters.filter((c) => c.uid !== uid),
+            beats: sc.beats.filter((b) => b.actorUid !== uid),
+          })),
+        ),
 
       addBeat: (beat) =>
-        set((s) => {
-          // default: place at the end of this actor's own track (parallel-safe)
-          let start = beat.start;
-          if (typeof start !== 'number' || start < 0) {
-            start = 0;
-            for (const b of s.scene.beats) {
-              if (b.actorUid !== beat.actorUid) continue;
-              const end = (b.start ?? 0) + Math.max(0.3, b.duration);
-              start = Math.max(start, end);
+        set((s) =>
+          withActive(s, (sc) => {
+            // default: place at the end of this actor's own track (parallel-safe)
+            let start = beat.start;
+            if (typeof start !== 'number' || start < 0) {
+              start = 0;
+              for (const b of sc.beats) {
+                if (b.actorUid !== beat.actorUid) continue;
+                const end = (b.start ?? 0) + Math.max(0.3, b.duration);
+                start = Math.max(start, end);
+              }
             }
-          }
-          return {
-            scene: {
-              ...s.scene,
+            return {
+              ...sc,
               beats: [
-                ...s.scene.beats,
+                ...sc.beats,
                 { ...beat, start: Math.round(start * 20) / 20, id: newId() },
               ],
-            },
-          };
-        }),
+            };
+          }),
+        ),
       updateBeat: (id, patch) =>
-        set((s) => ({
-          scene: {
-            ...s.scene,
-            beats: s.scene.beats.map((b) => (b.id === id ? { ...b, ...patch } : b)),
-          },
-        })),
+        set((s) =>
+          withActive(s, (sc) => ({
+            ...sc,
+            beats: sc.beats.map((b) => (b.id === id ? { ...b, ...patch } : b)),
+          })),
+        ),
       removeBeat: (id) =>
-        set((s) => ({
-          scene: { ...s.scene, beats: s.scene.beats.filter((b) => b.id !== id) },
-        })),
+        set((s) =>
+          withActive(s, (sc) => ({
+            ...sc,
+            beats: sc.beats.filter((b) => b.id !== id),
+          })),
+        ),
       moveBeat: (id, dir) =>
-        set((s) => {
-          const beats = [...s.scene.beats];
-          const i = beats.findIndex((b) => b.id === id);
-          if (i < 0) return {};
-          const j = i + dir;
-          if (j < 0 || j >= beats.length) return {};
-          [beats[i], beats[j]] = [beats[j], beats[i]];
-          return { scene: { ...s.scene, beats } };
-        }),
+        set((s) =>
+          withActive(s, (sc) => {
+            const beats = [...sc.beats];
+            const i = beats.findIndex((b) => b.id === id);
+            if (i < 0) return sc;
+            const j = i + dir;
+            if (j < 0 || j >= beats.length) return sc;
+            [beats[i], beats[j]] = [beats[j], beats[i]];
+            return { ...sc, beats };
+          }),
+        ),
       moveBeatTo: (id, start, actorUid) =>
-        set((s) => ({
-          scene: {
-            ...s.scene,
-            beats: s.scene.beats.map((b) =>
+        set((s) =>
+          withActive(s, (sc) => ({
+            ...sc,
+            beats: sc.beats.map((b) =>
               b.id === id
                 ? {
                     ...b,
@@ -176,57 +244,126 @@ export const useStudio = create<StudioState>()(
                   }
                 : b,
             ),
-          },
+          })),
+        ),
+      setActiveScene: (sc) =>
+        set((s) => withActive(s, () => normalizeScene(sc))),
+      clearBeats: () =>
+        set((s) => withActive(s, (sc) => ({ ...sc, beats: [] }))),
+
+      // ---- Phase 2 — episode management ----
+      setActiveSceneId: (id) =>
+        set((s) =>
+          s.scenes.some((es) => es.id === id) ? { activeSceneId: id } : {},
+        ),
+      addScene: () =>
+        set((s) => {
+          if (s.scenes.length >= 12) return {}; // sanity cap (mirrors the UI)
+          const src = s.scenes.find((es) => es.id === s.activeSceneId);
+          const created = freshEpisodeScene(nextSceneName(s.scenes), src?.scene);
+          const at = s.scenes.findIndex((es) => es.id === s.activeSceneId);
+          const scenes = [...s.scenes];
+          scenes.splice(at + 1, 0, created);
+          return { scenes, activeSceneId: created.id };
+        }),
+      duplicateScene: (id) =>
+        set((s) => {
+          const src = s.scenes.find((es) => es.id === id);
+          if (!src) return {};
+          const base = src.name.replace(/\s*\(কপি\)\s*\d*$/, '').trim();
+          // unique copy name: "নাম (কপি)", "নাম (কপি) ২", …
+          const taken = new Set(s.scenes.map((es) => es.name));
+          let name = `${base} (কপি)`;
+          let n = 2;
+          while (taken.has(name)) name = `${base} (কপি) ${n++}`;
+          const copy = cloneEpisodeScene(src, name);
+          const at = s.scenes.findIndex((es) => es.id === id);
+          const scenes = [...s.scenes];
+          scenes.splice(at + 1, 0, copy);
+          return { scenes, activeSceneId: copy.id };
+        }),
+      deleteScene: (id) =>
+        set((s) => {
+          if (s.scenes.length <= 1) return {}; // never leave zero scenes
+          const at = s.scenes.findIndex((es) => es.id === id);
+          if (at < 0) return {};
+          const scenes = s.scenes.filter((es) => es.id !== id);
+          const activeSceneId =
+            s.activeSceneId === id
+              ? (scenes[Math.min(at, scenes.length - 1)]?.id ?? scenes[0].id)
+              : s.activeSceneId;
+          return { scenes, activeSceneId };
+        }),
+      renameScene: (id, name) =>
+        set((s) => ({
+          scenes: s.scenes.map((es) =>
+            es.id === id ? { ...es, name: name.trim() || es.name } : es,
+          ),
         })),
-      setScene: (sc) => set({ scene: normalizeScene(sc) }),
-      clearBeats: () => set((s) => ({ scene: { ...s.scene, beats: [] } })),
+      moveScene: (id, dir) =>
+        set((s) => {
+          const at = s.scenes.findIndex((es) => es.id === id);
+          const to = at + dir;
+          if (at < 0 || to < 0 || to >= s.scenes.length) return {};
+          const scenes = [...s.scenes];
+          [scenes[at], scenes[to]] = [scenes[to], scenes[at]];
+          return { scenes };
+        }),
+      setSceneTransition: (id, t) =>
+        set((s) => ({
+          scenes: s.scenes.map((es) =>
+            es.id === id ? { ...es, transition: t } : es,
+          ),
+        })),
+      loadEpisodes: (scenes, designs, activeId) =>
+        set(() => {
+          const list = scenes.length > 0 ? scenes : [initialEpisode];
+          const activeSceneId = list.some((es) => es.id === activeId)
+            ? (activeId as string)
+            : list[0].id;
+          return { designs, scenes: list, activeSceneId };
+        }),
 
       // Sprint 6 — cinematic camera
       addCameraShot: (shot) =>
-        set((s) => ({
-          scene: {
-            ...s.scene,
+        set((s) =>
+          withActive(s, (sc) => ({
+            ...sc,
             camera: {
-              shots: [
-                ...(s.scene.camera?.shots ?? []),
-                { ...shot, id: newId() },
-              ],
-              shake: s.scene.camera?.shake,
+              shots: [...(sc.camera?.shots ?? []), { ...shot, id: newId() }],
+              shake: sc.camera?.shake,
             },
-          },
-        })),
+          })),
+        ),
       updateCameraShot: (id, patch) =>
-        set((s) => ({
-          scene: {
-            ...s.scene,
+        set((s) =>
+          withActive(s, (sc) => ({
+            ...sc,
             camera: {
-              shots: (s.scene.camera?.shots ?? []).map((x) =>
+              shots: (sc.camera?.shots ?? []).map((x) =>
                 x.id === id ? { ...x, ...patch } : x,
               ),
-              shake: s.scene.camera?.shake,
+              shake: sc.camera?.shake,
             },
-          },
-        })),
+          })),
+        ),
       removeCameraShot: (id) =>
-        set((s) => ({
-          scene: {
-            ...s.scene,
+        set((s) =>
+          withActive(s, (sc) => ({
+            ...sc,
             camera: {
-              shots: (s.scene.camera?.shots ?? []).filter((x) => x.id !== id),
-              shake: s.scene.camera?.shake,
+              shots: (sc.camera?.shots ?? []).filter((x) => x.id !== id),
+              shake: sc.camera?.shake,
             },
-          },
-        })),
+          })),
+        ),
       setCameraShake: (on) =>
-        set((s) => ({
-          scene: {
-            ...s.scene,
-            camera: {
-              shots: s.scene.camera?.shots ?? [],
-              shake: on,
-            },
-          },
-        })),
+        set((s) =>
+          withActive(s, (sc) => ({
+            ...sc,
+            camera: { shots: sc.camera?.shots ?? [], shake: on },
+          })),
+        ),
 
       // Sprint 8 — real implementations are injected by history()
       undo: () => {},
@@ -237,24 +374,47 @@ export const useStudio = create<StudioState>()(
     {
       name: 'thatta-studio-v1',
       // history helpers must not be persisted — only creative content is
-      partialize: (s) => ({ designs: s.designs, scene: s.scene }),
+      partialize: (s) => ({
+        designs: s.designs,
+        scenes: s.scenes,
+        activeSceneId: s.activeSceneId,
+      }),
       /**
-       * Normalize + sanitize on load. merge() (not onRehydrateStorage!)
-       * because the callback form runs during create() where referencing
-       * this store throws a swallowed TDZ error that silently kills
-       * hydration (found during Phase 1 browser verification).
-       * Also guards corrupted shapes: a non-array designs / non-object
-       * scene falls back to the in-code defaults instead of crashing.
+       * Normalize + sanitize on load, AND migrate the pre-Phase-2 shape
+       * ({ designs, scene }) into a one-scene episode. merge() (not
+       * onRehydrateStorage!) because the callback form runs during create()
+       * where referencing this store throws a swallowed TDZ error that
+       * silently kills hydration (found during Phase 1 browser verification).
        */
       merge: (persisted, current) => {
-        const p = persisted as Partial<StudioState> | undefined;
-        return {
-          ...current,
-          designs: Array.isArray(p?.designs)
-            ? (p.designs as CharacterDesign[])
-            : current.designs,
-          scene: p?.scene ? normalizeScene(p.scene as Scene) : current.scene,
-        };
+        const p = persisted as
+          | (Partial<StudioState> & { scene?: Scene })
+          | undefined;
+        const designs = Array.isArray(p?.designs)
+          ? (p.designs as CharacterDesign[])
+          : current.designs;
+
+        let scenes: EpisodeScene[];
+        if (Array.isArray(p?.scenes) && p.scenes.length > 0) {
+          scenes = p.scenes as EpisodeScene[];
+        } else if (p?.scene) {
+          // legacy single-scene project → wrap it
+          scenes = [
+            {
+              id: newId(),
+              name: 'দৃশ্য ১',
+              scene: p.scene as Scene,
+            },
+          ];
+        } else {
+          scenes = current.scenes;
+        }
+
+        const activeSceneId = scenes.some((es) => es.id === p?.activeSceneId)
+          ? (p!.activeSceneId as string)
+          : scenes[0].id;
+
+        return { ...current, designs, scenes, activeSceneId };
       },
     },
     ),
@@ -268,4 +428,15 @@ export function designOf(
 ): CharacterDesign | undefined {
   if (!placed) return undefined;
   return designs.find((d) => d.id === placed.designId);
+}
+
+/** The episode scene currently on the stage (always defined). */
+export function activeEpisodeOf(state: {
+  scenes: EpisodeScene[];
+  activeSceneId: string;
+}): EpisodeScene {
+  return (
+    state.scenes.find((es) => es.id === state.activeSceneId) ??
+    state.scenes[0]
+  );
 }

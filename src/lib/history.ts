@@ -14,14 +14,16 @@
 // ============================================================
 
 import type { StateCreator, StoreApi, StoreMutatorIdentifier } from 'zustand';
-import type { CharacterDesign, Scene } from './cartoon/types';
+import type { CharacterDesign, EpisodeScene } from './cartoon/types';
 
 const HISTORY_LIMIT = 60;
 const COALESCE_MS = 450;
 
 interface Snapshot {
   designs: CharacterDesign[];
-  scene: Scene;
+  /** Phase 2 — the WHOLE episode (all scenes) participates in undo/redo */
+  scenes: EpisodeScene[];
+  activeSceneId: string;
 }
 
 export const history = <
@@ -36,17 +38,26 @@ export const history = <
   const future: Snapshot[] = [];
   let lastPush = 0;
 
-  const slices = (s: unknown) => s as { designs: CharacterDesign[]; scene: Scene };
+  const slices = (s: unknown) => s as { designs: CharacterDesign[]; scenes: EpisodeScene[]; activeSceneId: string };
 
   const wrappedSet: StoreApi<T>['setState'] = (partial, replace) => {
     const prev = slices(get());
     set(partial, replace);
     const next = slices(get());
-    if (next.designs === prev.designs && next.scene === prev.scene) return;
+    // switching the active scene alone is navigation, not an edit — skip it
+    if (
+      next.designs === prev.designs &&
+      next.scenes === prev.scenes
+    )
+      return;
 
     const now = Date.now();
     if (now - lastPush > COALESCE_MS) {
-      past.push({ designs: prev.designs, scene: prev.scene });
+      past.push({
+        designs: prev.designs,
+        scenes: prev.scenes,
+        activeSceneId: prev.activeSceneId,
+      });
       if (past.length > HISTORY_LIMIT) past.shift();
       future.length = 0;
       api.setState({ canUndo: true, canRedo: false } as never);
@@ -64,10 +75,18 @@ export const history = <
     const prevSnap = past.pop();
     if (!prevSnap) return;
     const cur = slices(get());
-    future.push({ designs: cur.designs, scene: cur.scene });
+    future.push({
+      designs: cur.designs,
+      scenes: cur.scenes,
+      activeSceneId: cur.activeSceneId,
+    });
     if (future.length > HISTORY_LIMIT) future.shift();
     // api.setState (not raw set): persists the restore AND bypasses wrappedSet
-    api.setState({ designs: prevSnap.designs, scene: prevSnap.scene } as never);
+    api.setState({
+      designs: prevSnap.designs,
+      scenes: prevSnap.scenes,
+      activeSceneId: prevSnap.activeSceneId,
+    } as never);
     lastPush = 0;
     api.setState({ canUndo: past.length > 0, canRedo: true } as never);
   };
@@ -76,9 +95,17 @@ export const history = <
     const nextSnap = future.pop();
     if (!nextSnap) return;
     const cur = slices(get());
-    past.push({ designs: cur.designs, scene: cur.scene });
+    past.push({
+      designs: cur.designs,
+      scenes: cur.scenes,
+      activeSceneId: cur.activeSceneId,
+    });
     if (past.length > HISTORY_LIMIT) past.shift();
-    api.setState({ designs: nextSnap.designs, scene: nextSnap.scene } as never);
+    api.setState({
+      designs: nextSnap.designs,
+      scenes: nextSnap.scenes,
+      activeSceneId: nextSnap.activeSceneId,
+    } as never);
     lastPush = 0;
     api.setState({ canUndo: true, canRedo: future.length > 0 } as never);
   };

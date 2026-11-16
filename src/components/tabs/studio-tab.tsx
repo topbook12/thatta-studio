@@ -25,7 +25,14 @@ import {
 import { toast } from "@/hooks/use-toast";
 import { Progress } from "@/components/ui/progress";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { useStudio } from "@/lib/store";
+import {
+  episodeAudioBuses,
+  episodeTiming,
+  locateInEpisode,
+} from "@/lib/cartoon/episode";
+import SceneStrip from "@/components/studio/scene-strip";
 import {
   exportVideoWebCodecs,
   ExportCancelled,
@@ -69,10 +76,12 @@ import {
   restoreVoiceAudio,
   setCachedAudio,
 } from "@/lib/tts-cache";
+import { normalizeEpisodes } from "@/lib/cartoon/presets";
 import type {
   ActionName,
   CharacterDesign,
   EasingName,
+  EpisodeScene,
   PropName,
   Scene,
   SceneBeat,
@@ -189,7 +198,8 @@ export default function StudioTab({
 }) {
   const {
     designs,
-    scene,
+    scenes,
+    activeSceneId,
     setBackground,
     addPlaced,
     updatePlaced,
@@ -200,7 +210,9 @@ export default function StudioTab({
     moveBeat,
     moveBeatTo,
     setDesigns,
-    setScene,
+    setActiveScene,
+    setActiveSceneId,
+    loadEpisodes,
     addCameraShot,
     updateCameraShot,
     removeCameraShot,
@@ -210,6 +222,12 @@ export default function StudioTab({
     canUndo,
     canRedo,
   } = useStudio();
+
+  /** the scene currently on the stage (Phase 2 — the active EpisodeScene's Scene) */
+  const scene = useMemo(
+    () => (scenes.find((es) => es.id === activeSceneId) ?? scenes[0]).scene,
+    [scenes, activeSceneId],
+  );
 
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const stageRef = useRef<CartoonStage | null>(null);
@@ -223,7 +241,6 @@ export default function StudioTab({
   const rateRef = useRef(1);
   const lastTimePushRef = useRef(0);
   const designsRef = useRef(designs);
-  const sceneRef = useRef(scene);
 
   const [playing, setPlaying] = useState(false);
   const [activeBeatIds, setActiveBeatIds] = useState<Set<string>>(new Set());
@@ -232,6 +249,11 @@ export default function StudioTab({
   const [audioVersion, setAudioVersion] = useState(0);
   const [genBusyId, setGenBusyId] = useState<string | null>(null);
   const [exporting, setExporting] = useState(false);
+
+  // Phase 2 — মাল্টি-সিন এপিসোড: play/export the WHOLE episode vs one scene
+  const [episodePlay, setEpisodePlay] = useState(true);
+  const [exportScope, setExportScope] = useState<"episode" | "scene">("episode");
+  const episodeRef = useRef(false);
 
   // beat editor state
   const [editingBeatId, setEditingBeatId] = useState<string | null>(null);
@@ -284,6 +306,9 @@ export default function StudioTab({
   const fastExport = webCodecsAvailable();
 
   // ---------- stage lifecycle ----------
+  // advanceEpisodeRef: the onFinish callback below is created ONCE, so the
+  // latest episode-advance logic is reached through a ref (updated per render).
+  const advanceEpisodeRef = useRef<() => boolean>(() => false);
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
@@ -309,12 +334,15 @@ export default function StudioTab({
         }
       },
       onFinish: () => {
-        setPlaying(false);
-        setActiveBeatIds(new Set());
         stopAllAudio();
-        if (exportingRef.current) {
-          recorderRef.current?.stop();
-          recorderRef.current = null;
+        const advanced = advanceEpisodeRef.current();
+        if (!advanced) {
+          setPlaying(false);
+          setActiveBeatIds(new Set());
+          if (exportingRef.current) {
+            recorderRef.current?.stop();
+            recorderRef.current = null;
+          }
         }
       },
     });
@@ -332,14 +360,13 @@ export default function StudioTab({
   // ---------- Phase 1: auto-save + crash recovery (Day 1–10) ----------
   useEffect(() => {
     designsRef.current = designs;
-    sceneRef.current = scene;
-  }, [designs, scene]);
+  }, [designs]);
 
   // debounced backup (3 s) on every store change — never blocks editing
   useEffect(() => {
     const unsub = useStudio.subscribe((s) => {
-      if (!s.designs || !s.scene) return;
-      scheduleAutosave(s.designs, s.scene, (at) => setLastSaved(at));
+      if (!s.designs || !s.scenes?.length) return;
+      scheduleAutosave(s.designs, s.scenes, (at) => setLastSaved(at));
     });
     return () => {
       unsub();
@@ -351,7 +378,8 @@ export default function StudioTab({
   useEffect(() => {
     markSessionOpen();
     const onHide = () => {
-      flushAutosave(designsRef.current, sceneRef.current);
+      const s = useStudio.getState();
+      flushAutosave(s.designs, s.scenes);
       markSessionClean();
     };
     window.addEventListener("pagehide", onHide);
@@ -377,7 +405,7 @@ export default function StudioTab({
       const current = useStudio.getState();
       const same =
         JSON.stringify(current.designs) === JSON.stringify(backup.designs) &&
-        JSON.stringify(current.scene) === JSON.stringify(backup.scene);
+        JSON.stringify(current.scenes) === JSON.stringify(backup.scenes);
       if (same) {
         toast({
           title: "শেষবার অ্যাপ হঠাৎ বন্ধ হয়েছিল",
@@ -412,20 +440,7 @@ export default function StudioTab({
 
   // audio-aware durations + viseme lip-sync envelopes + timeline data stay in sync
   useEffect(() => {
-    const durMap: Record<string, number> = {};
-    const envMap: Record<string, number[]> = {};
-    const wideMap: Record<string, number[]> = {};
-    for (const b of scene.beats) {
-      const a = getCachedAudio(b.id);
-      if (a) {
-        durMap[b.id] = Math.max(b.duration, a.duration + 0.3);
-        const open = a.openEnv?.length ? a.openEnv : a.envelope;
-        if (open?.length) {
-          envMap[b.id] = open;
-          if (a.wideEnv?.length) wideMap[b.id] = a.wideEnv;
-        }
-      }
-    }
+    const { durMap, envMap, wideMap } = buildAudioMaps(scene);
     const stage = stageRef.current;
     stage?.setDurations(durMap);
     stage?.setEnvelopes(envMap, wideMap);
@@ -439,24 +454,29 @@ export default function StudioTab({
 
   // Sprint 7 — cold cache: rebuild voices from the offline IndexedDB store
   // (previously generated dialogue works again even with zero network)
+  // Phase 2 — rebuild for EVERY scene of the episode (episode playback
+  // and episode export need voices from scenes you are not editing)
   useEffect(() => {
     let alive = true;
     const run = async () => {
       let changed = false;
-      for (const b of scene.beats) {
-        if (!b.text.trim() || getCachedAudio(b.id)) continue;
-        const design = designs.find(
-          (d) => d.id === scene.characters.find((c) => c.uid === b.actorUid)?.designId,
-        );
-        const restored = await restoreVoiceAudio(
-          b.text.trim(),
-          design?.voice ?? "tongtong",
-          b.voiceSpeed ?? 1,
-        );
-        if (!alive) return;
-        if (restored) {
-          setCachedAudio(b.id, restored);
-          changed = true;
+      for (const es of scenes) {
+        for (const b of es.scene.beats) {
+          if (!b.text.trim() || getCachedAudio(b.id)) continue;
+          const design = designs.find(
+            (d) =>
+              d.id === es.scene.characters.find((c) => c.uid === b.actorUid)?.designId,
+          );
+          const restored = await restoreVoiceAudio(
+            b.text.trim(),
+            design?.voice ?? "tongtong",
+            b.voiceSpeed ?? 1,
+          );
+          if (!alive) return;
+          if (restored) {
+            setCachedAudio(b.id, restored);
+            changed = true;
+          }
         }
       }
       if (changed && alive) setAudioVersion((v) => v + 1);
@@ -465,7 +485,7 @@ export default function StudioTab({
     return () => {
       alive = false;
     };
-  }, [scene.beats, scene.characters, designs]);
+  }, [scenes, designs]);
 
   // keep a ref of the selected beat for pointer callbacks
   useEffect(() => {
@@ -547,6 +567,25 @@ export default function StudioTab({
     playingAudioRef.current.clear();
   };
 
+  /** audio-aware durations + lip-sync envelopes for ONE scene (engine maps) */
+  const buildAudioMaps = (sc: Scene) => {
+    const durMap: Record<string, number> = {};
+    const envMap: Record<string, number[]> = {};
+    const wideMap: Record<string, number[]> = {};
+    for (const b of sc.beats) {
+      const a = getCachedAudio(b.id);
+      if (a) {
+        durMap[b.id] = Math.max(b.duration, a.duration + 0.3);
+        const open = a.openEnv?.length ? a.openEnv : a.envelope;
+        if (open?.length) {
+          envMap[b.id] = open;
+          if (a.wideEnv?.length) wideMap[b.id] = a.wideEnv;
+        }
+      }
+    }
+    return { durMap, envMap, wideMap };
+  };
+
   const playBeatAudio = (beat: SceneBeat, offset = 0) => {
     const audio = getCachedAudio(beat.id);
     if (!audio) return;
@@ -584,17 +623,80 @@ export default function StudioTab({
   };
 
   // ---------- playback ----------
+  /**
+   * Phase 2 — when a scene finishes during EPISODE playback, roll straight
+   * into the next scene (stage.stop → swap scene → play from 0). Returns
+   * true when another scene started; false when the episode is over.
+   */
+  const advanceEpisode = (): boolean => {
+    if (!episodeRef.current) return false;
+    const st = useStudio.getState();
+    const idx = st.scenes.findIndex((es) => es.id === st.activeSceneId);
+    const next = idx >= 0 ? st.scenes[idx + 1] : undefined;
+    if (!next) return false;
+    const stage = stageRef.current;
+    if (!stage) return false;
+    stopAllAudio();
+    setActiveBeatIds(new Set());
+    stage.stop();
+    // swap the stage synchronously (the [scene] effect re-syncs afterwards — idempotent)
+    stage.setScene(next.scene, st.designs);
+    setActiveSceneId(next.id);
+    const ok = stage.play();
+    if (!ok) {
+      // empty scene → skip straight to the following one
+      setActiveSceneId(next.id);
+      const again = advanceEpisodeRef.current();
+      if (!again) {
+        setPlaying(false);
+        if (exportingRef.current) {
+          recorderRef.current?.stop();
+          recorderRef.current = null;
+        }
+      }
+      return again;
+    }
+    return true;
+  };
+  advanceEpisodeRef.current = advanceEpisode;
+
   const handlePlay = () => {
     const stage = stageRef.current;
     if (!stage) return;
     if (playing) {
+      episodeRef.current = false;
       stage.pause();
       stopAllAudio();
       setPlaying(false);
       return;
     }
+    const st = useStudio.getState();
+    const multiScene = st.scenes.length > 1;
+    episodeRef.current = episodePlay && multiScene;
+    const hasAnyBeats = st.scenes.some((es) => es.scene.beats.length > 0);
+    if (!hasAnyBeats) {
+      toast({
+        title: "কোনো দৃশ্য নেই",
+        description: "আগে টাইমলাইনের নিচে ফর্ম থেকে অন্তত একটি দৃশ্য (বিট) যোগ করুন।",
+        variant: "destructive",
+      });
+      return;
+    }
+    // playing an EPISODE always starts from scene 1; single-scene play
+    // resumes from the playhead like before
+    if (episodeRef.current) {
+      const first = st.scenes[0];
+      stage.stop();
+      if (first.id !== st.activeSceneId) setActiveSceneId(first.id);
+      stage.setScene(first.scene, st.designs);
+    }
     const ok = stage.play();
     if (!ok) {
+      // active scene empty but episode has content elsewhere → jump forward
+      if (episodeRef.current && advanceEpisodeRef.current()) {
+        setPlaying(true);
+        return;
+      }
       toast({
         title: "কোনো দৃশ্য নেই",
         description: "আগে টাইমলাইনের নিচে ফর্ম থেকে অন্তত একটি দৃশ্য (বিট) যোগ করুন।",
@@ -606,6 +708,7 @@ export default function StudioTab({
   };
 
   const handleStop = () => {
+    episodeRef.current = false;
     stageRef.current?.stop();
     stopAllAudio();
     setPlaying(false);
@@ -615,6 +718,16 @@ export default function StudioTab({
       recorderRef.current?.stop();
       recorderRef.current = null;
     }
+  };
+
+  /** stop playback before a scene-structure change (strip / switch) */
+  const stopForSceneChange = () => {
+    if (!playing && !stageRef.current?.isPlaying()) return;
+    episodeRef.current = false;
+    stageRef.current?.stop();
+    stopAllAudio();
+    setPlaying(false);
+    setActiveBeatIds(new Set());
   };
 
   // ---------- timeline ----------
@@ -726,7 +839,11 @@ export default function StudioTab({
   };
 
   const genAllVoices = async () => {
-    const pending = scene.beats.filter((b) => b.text.trim() && !getCachedAudio(b.id));
+    // Phase 2 — generate for EVERY scene of the episode (episode export
+    // and episode playback need voices everywhere)
+    const pending = scenes.flatMap((es) =>
+      es.scene.beats.filter((b) => b.text.trim() && !getCachedAudio(b.id)),
+    );
     if (pending.length === 0) {
       toast({ title: "সব ভয়েস আগেই রেডি ✅", description: "এখন প্লে করে দেখুন!" });
       return;
@@ -756,7 +873,8 @@ export default function StudioTab({
       toast({ title: "আগে প্লে বন্ধ করুন", variant: "destructive" });
       return;
     }
-    if (scene.beats.length === 0) {
+    const anyBeats = scenes.some((es) => es.scene.beats.length > 0);
+    if (!anyBeats) {
       toast({
         title: "কোনো দৃশ্য নেই",
         description: "আগে বিট যোগ করুন, তারপর এক্সপোর্ট করুন।",
@@ -764,6 +882,7 @@ export default function StudioTab({
       });
       return;
     }
+    setExportScope(scenes.length > 1 ? "episode" : "scene");
     setExportOpen(true);
   };
 
@@ -772,24 +891,116 @@ export default function StudioTab({
     const stage = stageRef.current;
     const canvas = canvasRef.current;
     if (!stage || !canvas) return;
+    const st = useStudio.getState();
+    const isEpisode = exportScope === "episode" && st.scenes.length > 1;
+    const exportScenes: EpisodeScene[] = isEpisode
+      ? st.scenes
+      : [
+          {
+            id: st.activeSceneId,
+            name: st.scenes.find((es) => es.id === st.activeSceneId)?.name ?? "দৃশ্য",
+            scene,
+          },
+        ];
+    if (exportScenes.every((es) => es.scene.beats.length === 0)) {
+      toast({
+        title: "কোনো দৃশ্য নেই",
+        description: "আগে বিট যোগ করুন, তারপর এক্সপোর্ট করুন।",
+        variant: "destructive",
+      });
+      return;
+    }
     cancelExportRef.current = false;
     setExporting(true);
     setExportProgress({ done: 0, total: 1, phase: "শুরু হচ্ছে" });
     stage.stop();
     try {
-      const dur = stage.getTotalDuration();
-      const windows = stage.beatWindows();
-      const buses: ExportBeatAudio[] = [];
-      for (const b of scene.beats) {
-        const a = getCachedAudio(b.id);
-        const w = windows.find((x) => x.id === b.id);
-        if (a && w) buses.push({ start: w.start, audio: a });
-      }
+      const audioOf = (id: string) => getCachedAudio(id);
+      const timing = episodeTiming(exportScenes, audioOf);
+      const buses: ExportBeatAudio[] = episodeAudioBuses(exportScenes, timing, audioOf);
+      // per-scene engine maps: correct walk timing + lip-sync while rendering
+      const maps = exportScenes.map((es) => buildAudioMaps(es.scene));
       const hi = exportQuality === "1080";
+      let curIdx = -1;
+      // Phase 2 — scene-boundary transitions (fade / circle wipe), 0.45 s
+      const TRANS = 0.45;
+      const smooth = (x: number) => x * x * (3 - 2 * x);
+      const offA = document.createElement("canvas");
+      const offB = document.createElement("canvas");
       const result = await exportVideoWebCodecs(
         canvas,
-        (t) => stage.renderExportFrame(t, { hideNameTags: !exportTags }),
-        dur,
+        (t) => {
+          const { index, localT } = locateInEpisode(timing, t);
+          if (index !== curIdx) {
+            curIdx = index;
+            const es = exportScenes[index];
+            stage.prepareExportScene(es.scene, st.designs);
+            stage.setDurations(maps[index].durMap);
+            stage.setEnvelopes(maps[index].envMap, maps[index].wideMap);
+          }
+          const es = exportScenes[index];
+          const dur = timing.scenes[index]?.duration ?? 0;
+          const trans = es.transition ?? "cut";
+          const hasNext = index < exportScenes.length - 1;
+          const prevTrans =
+            index > 0 ? (exportScenes[index - 1].transition ?? "cut") : "cut";
+          const ctx = canvas.getContext("2d");
+          if (!ctx) return;
+
+          // ---- cartoon circle wipe OUT: reveal the next scene in a growing circle
+          if (trans === "circle" && hasNext && localT > dur - TRANS) {
+            stage.renderExportFrame(localT, { hideNameTags: !exportTags });
+            const k = smooth(Math.max(0, Math.min(1, (localT - (dur - TRANS)) / TRANS)));
+            offA.width = canvas.width;
+            offA.height = canvas.height;
+            offA.getContext("2d")?.drawImage(canvas, 0, 0);
+            const nxt = exportScenes[index + 1];
+            stage.prepareExportScene(nxt.scene, st.designs);
+            stage.setDurations(maps[index + 1].durMap);
+            stage.setEnvelopes(maps[index + 1].envMap, maps[index + 1].wideMap);
+            stage.renderExportFrame(0, { hideNameTags: !exportTags });
+            offB.width = canvas.width;
+            offB.height = canvas.height;
+            offB.getContext("2d")?.drawImage(canvas, 0, 0);
+            ctx.drawImage(offA, 0, 0);
+            ctx.save();
+            ctx.beginPath();
+            ctx.arc(
+              canvas.width / 2,
+              canvas.height / 2,
+              k * Math.hypot(canvas.width, canvas.height) * 0.5,
+              0,
+              Math.PI * 2,
+            );
+            ctx.clip();
+            ctx.drawImage(offB, 0, 0);
+            ctx.restore();
+            // hand the stage back to THIS scene — later frames keep rendering it
+            stage.prepareExportScene(es.scene, st.designs);
+            stage.setDurations(maps[index].durMap);
+            stage.setEnvelopes(maps[index].envMap, maps[index].wideMap);
+            return;
+          }
+
+          stage.renderExportFrame(localT, { hideNameTags: !exportTags });
+
+          // ---- fade through black at the boundary (out on this scene, in on next)
+          let black = 0;
+          if (trans === "fade" && hasNext && localT > dur - TRANS) {
+            black = Math.max(black, (localT - (dur - TRANS)) / TRANS);
+          }
+          if (prevTrans === "fade" && localT < TRANS) {
+            black = Math.max(black, 1 - localT / TRANS);
+          }
+          if (black > 0.002) {
+            ctx.save();
+            ctx.globalAlpha = Math.min(1, black);
+            ctx.fillStyle = "#000";
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+            ctx.restore();
+          }
+        },
+        timing.total,
         buses,
         {
           fps: exportFps,
@@ -807,7 +1018,9 @@ export default function StudioTab({
       downloadBlob(result.blob, `thatta-cartoon-${Date.now()}.mp4`);
       toast({
         title: "MP4 ভিডিও তৈরি! 🎬",
-        description: `${hi ? "1080p" : "720p"} • ${bnNum(exportFps)}fps — এবার YouTube/Facebook এ আপলোড করুন!`,
+        description: isEpisode
+          ? `সম্পূর্ণ এপিসোড (${bnNum(exportScenes.length)}টি দৃশ্য) • ${hi ? "1080p" : "720p"} — এবার YouTube/Facebook এ আপলোড করুন!`
+          : `${hi ? "1080p" : "720p"} • ${bnNum(exportFps)}fps — এবার YouTube/Facebook এ আপলোড করুন!`,
       });
       setExportOpen(false);
     } catch (e: unknown) {
@@ -825,6 +1038,12 @@ export default function StudioTab({
         });
       }
     } finally {
+      // hand the stage back to the user's active scene (export walked it
+      // through every scene of the episode)
+      stage.setScene(scene, designsRef.current);
+      const active = buildAudioMaps(scene);
+      stage.setDurations(active.durMap);
+      stage.setEnvelopes(active.envMap, active.wideMap);
       setExporting(false);
       setExportProgress(null);
     }
@@ -839,7 +1058,10 @@ export default function StudioTab({
       toast({ title: "আগে প্লে বন্ধ করুন", variant: "destructive" });
       return;
     }
-    if (scene.beats.length === 0) {
+    const st = useStudio.getState();
+    const isEpisode = exportScope === "episode" && st.scenes.length > 1;
+    const relevant = isEpisode ? st.scenes : [st.scenes.find((es) => es.id === st.activeSceneId) ?? st.scenes[0]];
+    if (relevant.every((es) => es.scene.beats.length === 0)) {
       toast({
         title: "কোনো দৃশ্য নেই",
         description: "আগে বিট যোগ করুন, তারপর এক্সপোর্ট করুন।",
@@ -888,8 +1110,15 @@ export default function StudioTab({
       rec.start(250);
       setExporting(true);
       exportingRef.current = true;
-      // always export from the very beginning
+      // episode export = play the whole episode (auto scene-advance is on);
+      // single-scene export = play just this scene
+      episodeRef.current = isEpisode;
       stage.stop();
+      if (isEpisode) {
+        const first = st.scenes[0];
+        if (first.id !== st.activeSceneId) setActiveSceneId(first.id);
+        stage.setScene(first.scene, st.designs);
+      }
       const ok = stage.play();
       if (!ok) {
         rec.stop();
@@ -898,7 +1127,9 @@ export default function StudioTab({
       setPlaying(true);
       toast({
         title: "এক্সপোর্ট চলছে 🎥",
-        description: "কার্টুন শেষ হলে ভিডিও স্বয়ংক্রিয়ভাবে ডাউনলোড হবে।",
+        description: isEpisode
+          ? `সম্পূর্ণ এপিসোড রেকর্ড হচ্ছে (${bnNum(st.scenes.length)}টি দৃশ্য) — শেষ হলে স্বয়ংক্রিয়ভাবে ডাউনলোড হবে।`
+          : "কার্টুন শেষ হলে ভিডিও স্বয়ংক্রিয়ভাবে ডাউনলোড হবে।",
       });
     } catch (e: unknown) {
       setExporting(false);
@@ -992,19 +1223,53 @@ export default function StudioTab({
   };
 
   // ---------- projects ----------
+  const serializeProject = () =>
+    JSON.stringify({ designs, scenes, activeSceneId });
+
+  /**
+   * Parse a saved project: new shape { designs, scenes, activeSceneId }
+   * or legacy { designs, scene } (wrapped into a one-scene episode).
+   */
+  const parseProject = (
+    raw: string,
+  ): {
+    scenes: EpisodeScene[];
+    designs: CharacterDesign[];
+    activeSceneId?: string;
+  } | null => {
+    const parsed = JSON.parse(raw) as {
+      scene?: Scene;
+      scenes?: unknown;
+      designs?: CharacterDesign[];
+      activeSceneId?: string;
+    };
+    if (!parsed.designs) return null;
+    if (Array.isArray(parsed.scenes) && parsed.scenes.length > 0) {
+      const normalized = normalizeEpisodes(parsed.scenes, () => scene);
+      const activeSceneId = normalized.some((es) => es.id === parsed.activeSceneId)
+        ? (parsed.activeSceneId as string)
+        : normalized[0].id;
+      return { scenes: normalized, designs: parsed.designs, activeSceneId };
+    }
+    if (parsed.scene) {
+      return {
+        scenes: normalizeEpisodes([{ id: "legacy", name: "দৃশ্য ১", scene: parsed.scene }], () => scene),
+        designs: parsed.designs,
+      };
+    }
+    return null;
+  };
+
   const handleSaveLocal = () => {
     if (!projectName.trim()) {
       toast({ title: "প্রজেক্টের নাম দিন", variant: "destructive" });
       return;
     }
-    const meta = saveLocalProject(
-      projectName.trim(),
-      JSON.stringify({ scene, designs }),
-    );
+    const meta = saveLocalProject(projectName.trim(), serializeProject());
     setLocalProjects(listLocalProjects());
     toast({
       title: "ডিভাইসে সেভ হয়েছে 💾",
-      description: `"${meta.name}" — অফলাইনেও লোড করা যাবে।`,
+      description: `"${meta.name}" — সম্পূর্ণ এপিসোড (${bnNum(scenes.length)}টি দৃশ্য) সেভ হয়েছে, অফলাইনেও লোড করা যাবে।`,
     });
     setSaveOpen(false);
     setProjectName("");
@@ -1022,11 +1287,14 @@ export default function StudioTab({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           name: projectName.trim(),
-          data: JSON.stringify({ scene, designs }),
+          data: serializeProject(),
         }),
       });
       if (!res.ok) throw new Error("সেভ করা যায়নি");
-      toast({ title: "সেভ হয়েছে 💾", description: `"${projectName}" ক্লাউডে সেভ হয়েছে।` });
+      toast({
+        title: "সেভ হয়েছে 💾",
+        description: `"${projectName}" ক্লাউডে সেভ হয়েছে — সব দৃশ্য সহ।`,
+      });
       setSaveOpen(false);
       setProjectName("");
     } catch {
@@ -1063,15 +1331,15 @@ export default function StudioTab({
     const p = getLocalProject(id);
     if (!p) return;
     try {
-      const parsed = JSON.parse(p.data) as {
-        scene?: Scene;
-        designs?: CharacterDesign[];
-      };
-      if (parsed.scene && parsed.designs) {
-        setScene(parsed.scene);
-        setDesigns(parsed.designs);
+      const parsed = parseProject(p.data);
+      if (parsed) {
+        stopForSceneChange();
+        loadEpisodes(parsed.scenes, parsed.designs, parsed.activeSceneId);
         setLoadOpen(false);
-        toast({ title: "প্রজেক্ট লোড হয়েছে 📂", description: p.name });
+        toast({
+          title: "প্রজেক্ট লোড হয়েছে 📂",
+          description: `${p.name} — ${bnNum(parsed.scenes.length)}টি দৃশ্য`,
+        });
       } else {
         toast({ title: "ফাইল ভাঙা আছে", variant: "destructive" });
       }
@@ -1090,15 +1358,15 @@ export default function StudioTab({
     try {
       const res = await fetch(`/api/projects/${id}`);
       const j = await res.json();
-      const parsed = JSON.parse(j.project.data) as {
-        scene?: Scene;
-        designs?: CharacterDesign[];
-      };
-      if (parsed.scene && parsed.designs) {
-        setScene(parsed.scene);
-        setDesigns(parsed.designs);
+      const parsed = parseProject(j.project.data);
+      if (parsed) {
+        stopForSceneChange();
+        loadEpisodes(parsed.scenes, parsed.designs, parsed.activeSceneId);
         setLoadOpen(false);
-        toast({ title: "প্রজেক্ট লোড হয়েছে 📂", description: j.project.name });
+        toast({
+          title: "প্রজেক্ট লোড হয়েছে 📂",
+          description: `${j.project.name} — ${bnNum(parsed.scenes.length)}টি দৃশ্য`,
+        });
       } else {
         toast({ title: "ফাইল ভাঙা আছে", variant: "destructive" });
       }
@@ -1122,12 +1390,14 @@ export default function StudioTab({
     const applied = applyTemplate(designs, id);
     if (!applied) return;
     // two sets in one tick → history coalesces into ONE undo step
+    // Phase 2 — a template replaces the ACTIVE scene's content only;
+    // the rest of the episode stays untouched
     setDesigns(applied.designs);
-    setScene(applied.scene);
+    setActiveScene(applied.scene);
     setTemplatesOpen(false);
     toast({
       title: "টেমপ্লেট লোড হয়েছে 🎬",
-      description: "প্লে করে দেখুন — বদলাতে চাইলে Ctrl+Z দিয়ে ফিরে আসুন।",
+      description: "বর্তমান দৃশ্যে বসানো হয়েছে — প্লে করে দেখুন, Ctrl+Z দিয়ে ফিরে আসুন।",
     });
   };
 
@@ -1137,8 +1407,8 @@ export default function StudioTab({
       setRecoverAt(null);
       return;
     }
-    setDesigns(backup.designs);
-    setScene(backup.scene);
+    stopForSceneChange();
+    loadEpisodes(backup.scenes, backup.designs);
     setRecoverAt(null);
     setLastSaved(backup.savedAt);
     toast({
@@ -1163,6 +1433,12 @@ export default function StudioTab({
       {/* ---------- Stage ---------- */}
       <Card className="border-amber-200">
         <CardContent className="space-y-4 p-4 sm:p-5">
+          {/* Phase 2 — মাল্টি-সিন এপিসোড: scene manager strip */}
+          <SceneStrip
+            audioVersion={audioVersion}
+            onStopPlayback={stopForSceneChange}
+          />
+
           <div
             id="tour-stage"
             className="overflow-hidden rounded-xl border border-amber-300 shadow-inner"
@@ -1191,6 +1467,22 @@ export default function StudioTab({
                 </>
               )}
             </Button>
+            {scenes.length > 1 && (
+              <div className="flex items-center gap-2 rounded-xl border border-amber-300 bg-white px-2.5 py-1.5">
+                <Switch
+                  id="episode-play-toggle"
+                  checked={episodePlay}
+                  onCheckedChange={setEpisodePlay}
+                  aria-label="সম্পূর্ণ এপিসোড প্লে করুন"
+                />
+                <label
+                  htmlFor="episode-play-toggle"
+                  className="cursor-pointer text-xs font-semibold text-amber-800"
+                >
+                  সম্পূর্ণ এপিসোড
+                </label>
+              </div>
+            )}
             <Button
               variant="outline"
               onClick={handleStop}
@@ -1311,7 +1603,7 @@ export default function StudioTab({
             <p className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900">
               {exporting
                 ? "🎥 ভিডিও তৈরি হচ্ছে — শেষ না হওয়া পর্যন্ত অপেক্ষা করুন।"
-                : `▶ চলছে — ${bnNum(currentTime.toFixed(1))} সে. • এখন অভিনয়ে: ${bnNum(activeBeatIds.size)}টি দৃশ্য`}
+                : `▶ চলছে${episodeRef.current ? ` — এপিসোড: দৃশ্য ${bnNum(Math.max(1, scenes.findIndex((es) => es.id === activeSceneId) + 1))}/${bnNum(scenes.length)}` : ""} — ${bnNum(currentTime.toFixed(1))} সে. • এখন অভিনয়ে: ${bnNum(activeBeatIds.size)}টি দৃশ্য`}
             </p>
           )}
           {!playing && !exporting && scene.characters.length > 0 && (
@@ -2322,6 +2614,51 @@ export default function StudioTab({
                     </SelectContent>
                   </Select>
                 </div>
+              </div>
+
+              <div className="space-y-1.5">
+                <Label className="text-xs font-semibold text-amber-900">
+                  কী এক্সপোর্ট হবে?
+                </Label>
+                {scenes.length > 1 ? (
+                  <RadioGroup
+                    value={exportScope}
+                    onValueChange={(v) => setExportScope(v as "episode" | "scene")}
+                    className="grid grid-cols-2 gap-2"
+                  >
+                    <label
+                      htmlFor="scope-episode"
+                      className={`flex cursor-pointer items-center gap-2 rounded-xl border px-3 py-2.5 text-xs font-semibold transition-colors ${
+                        exportScope === "episode"
+                          ? "border-orange-600 bg-orange-50 text-orange-800"
+                          : "border-amber-200 bg-white text-amber-900 hover:bg-amber-50"
+                      }`}
+                    >
+                      <RadioGroupItem value="episode" id="scope-episode" />
+                      🎞️ সম্পূর্ণ এপিসোড ({bnNum(scenes.length)} দৃশ্য)
+                    </label>
+                    <label
+                      htmlFor="scope-scene"
+                      className={`flex cursor-pointer items-center gap-2 rounded-xl border px-3 py-2.5 text-xs font-semibold transition-colors ${
+                        exportScope === "scene"
+                          ? "border-orange-600 bg-orange-50 text-orange-800"
+                          : "border-amber-200 bg-white text-amber-900 hover:bg-amber-50"
+                      }`}
+                    >
+                      <RadioGroupItem value="scene" id="scope-scene" />
+                      🎬 শুধু এই দৃশ্যটি
+                    </label>
+                  </RadioGroup>
+                ) : (
+                  <p className="rounded-lg border border-amber-200 bg-amber-50/60 px-3 py-2 text-xs text-amber-700">
+                    🎬 শুধু বর্তমান দৃশ্যটি এক্সপোর্ট হবে। একাধিক দৃশ্য বানালে সম্পূর্ণ এপিসোড এক ভিডিওতে আসবে!
+                  </p>
+                )}
+                {exportScope === "episode" && scenes.length > 1 && (
+                  <p className="text-xs text-amber-600">
+                    দৃশ্যগুলো ক্রমানুসারে এক ভিডিওতে আসবে — দৃশ্য বদলে ছোট ফেড, মোট ~{bnNum(episodeTiming(scenes, (id) => getCachedAudio(id)).total.toFixed(1))} সেকেন্ড।
+                  </p>
+                )}
               </div>
 
               <div className="flex items-center justify-between rounded-xl border border-amber-200 bg-amber-50/60 p-3">

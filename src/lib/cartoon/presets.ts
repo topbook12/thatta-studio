@@ -7,10 +7,12 @@ import type {
   BgName,
   CharacterDesign,
   EasingName,
+  EpisodeScene,
   PlacedCharacter,
   PropName,
   Scene,
   SceneBeat,
+  SceneTransition,
 } from './types';
 
 export function newId(): string {
@@ -310,6 +312,119 @@ export function normalizeScene(scene: Scene): Scene {
     shake: scene.camera?.shake !== false,
   };
   return { ...scene, beats, characters, camera };
+}
+
+// ---------------- Phase 2: multi-scene episode helpers ----------------
+
+/**
+ * Sanitize an episode loaded from storage/projects. Idempotent:
+ *  • keeps only structurally valid scenes (arrays + string background)
+ *  • normalizeScene() every scene (old projects may miss start times)
+ *  • guarantees non-empty names and unique ids
+ *  • never returns an empty list (falls back to a single fresh scene)
+ */
+export function normalizeEpisodes(
+  input: unknown,
+  fallbackScene: () => Scene,
+): EpisodeScene[] {
+  const raw = Array.isArray(input) ? input : [];
+  const usedIds = new Set<string>();
+  const out: EpisodeScene[] = [];
+  raw.forEach((item, i) => {
+    const es = item as Partial<EpisodeScene> | undefined;
+    const sc = es?.scene as Scene | undefined;
+    if (
+      !sc ||
+      typeof sc !== 'object' ||
+      !Array.isArray(sc.beats) ||
+      !Array.isArray(sc.characters) ||
+      typeof sc.background !== 'string'
+    ) {
+      return;
+    }
+    let id = typeof es?.id === 'string' && es.id ? es.id : newId();
+    while (usedIds.has(id)) id = newId();
+    usedIds.add(id);
+    const name =
+      typeof es?.name === 'string' && es.name.trim()
+        ? es.name.trim()
+        : `দৃশ্য ${bn(i + 1)}`;
+    const transition: SceneTransition =
+      es?.transition === 'fade' || es?.transition === 'circle'
+        ? es.transition
+        : 'cut';
+    out.push({ id, name, scene: normalizeScene(sc), transition });
+  });
+  if (out.length === 0) {
+    out.push({ id: newId(), name: 'দৃশ্য ১', scene: fallbackScene() });
+  }
+  return out;
+}
+
+/** Bengali digits for generated scene names */
+const bn = (n: number | string): string =>
+  String(n).replace(/\d/g, (d) => '০১২৩৪৫৬৭৮৯'[+d]);
+
+/** Sequential Bengali default name — always unique within the episode. */
+export function nextSceneName(scenes: EpisodeScene[]): string {
+  const base = (n: number) => `দৃশ্য ${bn(n)}`;
+  let n = scenes.length + 1;
+  const taken = new Set(scenes.map((s) => s.name));
+  while (taken.has(base(n))) n++;
+  return base(n);
+}
+
+/**
+ * A fresh scene placed after the current one: same background, same cast
+ * (positions preserved), zero beats — "next shot, same characters".
+ */
+export function freshEpisodeScene(
+  name: string,
+  from: Scene | undefined,
+): EpisodeScene {
+  return {
+    id: newId(),
+    name,
+    scene: normalizeScene({
+      background: from?.background ?? 'village',
+      characters: from ? from.characters.map((c) => ({ ...c })) : [],
+      beats: [],
+      camera: from?.camera ? { shots: [], shake: from.camera.shake } : undefined,
+    }),
+  };
+}
+
+/** True copy with ALL ids regenerated (uids, beat ids, camera shot ids). */
+export function cloneEpisodeScene(src: EpisodeScene, name: string): EpisodeScene {
+  const uidMap = new Map<string, string>();
+  for (const c of src.scene.characters) uidMap.set(c.uid, newId());
+  return {
+    id: newId(),
+    name,
+    transition: src.transition ?? 'cut',
+    scene: normalizeScene({
+      background: src.scene.background,
+      characters: src.scene.characters.map((c) => ({
+        ...c,
+        uid: uidMap.get(c.uid) ?? newId(),
+      })),
+      beats: src.scene.beats.map((b) => ({
+        ...b,
+        id: newId(),
+        actorUid: uidMap.get(b.actorUid) ?? b.actorUid,
+      })),
+      camera: src.scene.camera
+        ? {
+            shots: src.scene.camera.shots.map((s) => ({
+              ...s,
+              id: newId(),
+              focusUid: s.focusUid ? (uidMap.get(s.focusUid) ?? null) : null,
+            })),
+            shake: src.scene.camera.shake,
+          }
+        : undefined,
+    }),
+  };
 }
 
 // ---------------- Starter scene (demo cartoon) ----------------

@@ -66,14 +66,14 @@
 
 ### Phase 2 (Day 11–20) — Story system: multi-scene episodes
 **Goal:** full sketch episodes, not single scenes.
-- [ ] Scene list panel — add / duplicate / reorder / delete scenes
-- [ ] Transitions per scene boundary: cut / fade / cartoon wipe
-- [ ] Episode preview play-through (scenes chained, transitions applied)
+- [x] Scene list panel — add / duplicate / rename / reorder / delete scenes (strip above the stage, `[` `]` keyboard nav, AlertDialog delete-confirm, 12-scene cap)
+- [x] Transitions per scene boundary: cut / fade (through black) / cartoon circle-wipe — per-scene outgoing transition, rendered in the MP4 export (fade verified by frame-brightness probe at the boundary)
+- [x] Episode preview play-through (scenes chained with auto-advance; toggle "সম্পূর্ণ এপিসোড" near Play; playback shows "এপিসোড: দৃশ্য ২/২"; transitions preview as cut)
 - [ ] Script importer: paste Bangla dialogue → auto-draft beats (speaker → actor mapping UI)
-- [ ] Export whole episode as one MP4
-- **Files:** `store.ts` (scene[] migration with old-data upgrade), `engine.ts`, `exporter.ts`, new `scenes-tab.tsx`
+- [x] Export whole episode as one MP4 (WebCodecs walks scene-by-scene via `prepareExportScene`; realtime MediaRecorder fallback records the chained play-through; scope radio in export dialog)
+- **Files:** `store.ts` (scenes[] migration with old-data upgrade), `engine.ts` (pure `computeBeatWindows`, `prepareExportScene`), new `episode.ts` (timing/windows/buses math), `exporter.ts` untouched, new `studio/scene-strip.tsx`, `studio-tab.tsx` wiring, `history.ts` + `autosave.ts` episode-aware snapshots
 
-**Accept:** 3-scene episode builds, plays, and exports; v0 projects auto-upgrade without data loss.
+**Accept (verified in browser):** 2-scene episode builds, plays through (auto scene-advance confirmed live), and exports as one 25.0 s H.264 MP4; single-scene v0 project auto-upgraded to a 1-scene episode without data loss; undo restores a deleted scene.
 
 ### Phase 3 (Day 21–30) — Advanced animation control
 **Goal:** "যেকোনো অবজেক্টের মুভমেন্ট নিখুঁতভাবে কন্ট্রোল" — the core mantra.

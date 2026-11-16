@@ -207,6 +207,22 @@ export interface Scene {
   camera?: SceneCamera;
 }
 
+/**
+ * Phase 2 — মাল্টি-সিন এপিসোড: one named scene of a multi-scene episode.
+ * An episode = an ordered list of EpisodeScene; playback and export run
+ * through them sequentially. `transition` is the outgoing effect applied
+ * at the END of this scene when the next scene begins (export path).
+ */
+export interface EpisodeScene {
+  id: string;
+  name: string;
+  scene: Scene;
+  /** outgoing transition into the next scene (default 'cut') */
+  transition?: SceneTransition;
+}
+
+export type SceneTransition = 'cut' | 'fade' | 'circle';
+
 /** Per-frame skeleton/face state computed from an action. */
 export interface Pose {
   xOff: number;

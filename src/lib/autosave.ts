@@ -16,7 +16,7 @@
 // (crash / killed tab / battery pull) → offer the backup.
 // ============================================================
 
-import type { CharacterDesign, Scene } from "./cartoon/types";
+import type { CharacterDesign, EpisodeScene, Scene } from "./cartoon/types";
 
 const SLOT_A = "thatta.autosave.a";
 const SLOT_B = "thatta.autosave.b";
@@ -27,7 +27,8 @@ export const AUTOSAVE_DEBOUNCE_MS = 3000;
 
 export interface AutosavePayload {
   designs: CharacterDesign[];
-  scene: Scene;
+  /** Phase 2 — the whole episode is backed up, not just the active scene */
+  scenes: EpisodeScene[];
   savedAt: number;
 }
 
@@ -42,7 +43,20 @@ function isValidSlot(value: unknown): value is StoredSlot {
   if (!value || typeof value !== "object") return false;
   const p = value as Partial<StoredSlot>;
   if (!Array.isArray(p.designs) || typeof p.savedAt !== "number") return false;
-  const sc = p.scene as Scene | undefined;
+  if (Array.isArray(p.scenes)) {
+    // multi-scene backup: every entry must carry a valid scene
+    return p.scenes.every((es) => {
+      const sc = (es as EpisodeScene | undefined)?.scene as Scene | undefined;
+      return (
+        !!sc &&
+        Array.isArray(sc.beats) &&
+        Array.isArray(sc.characters) &&
+        typeof sc.background === "string"
+      );
+    });
+  }
+  // legacy single-scene backup (pre-Phase 2)
+  const sc = (p as unknown as { scene?: Scene }).scene as Scene | undefined;
   return (
     !!sc &&
     Array.isArray(sc.beats) &&
@@ -90,12 +104,12 @@ function resolveActiveSlot(): "a" | "b" {
 /** Write a snapshot immediately. Returns savedAt, or null on failure. */
 export function flushAutosave(
   designs: CharacterDesign[],
-  scene: Scene,
+  scenes: EpisodeScene[],
 ): number | null {
   if (typeof window === "undefined") return null;
   const cur = resolveActiveSlot();
   const target: "a" | "b" = cur === "a" ? "b" : "a"; // rotate → previous stays safe
-  const payload: StoredSlot = { designs, scene, savedAt: Date.now(), slot: target };
+  const payload: StoredSlot = { designs, scenes, savedAt: Date.now(), slot: target };
   const ok = writeSlot(target === "a" ? SLOT_A : SLOT_B, payload);
   if (ok) activeSlot = target;
   return ok ? payload.savedAt : null;
@@ -106,14 +120,14 @@ let debounceTimer: ReturnType<typeof setTimeout> | null = null;
 /** Debounced (3 s) backup — call on every studio change. */
 export function scheduleAutosave(
   designs: CharacterDesign[],
-  scene: Scene,
+  scenes: EpisodeScene[],
   onSaved?: (savedAt: number) => void,
 ): void {
   if (typeof window === "undefined") return;
   if (debounceTimer) clearTimeout(debounceTimer);
   debounceTimer = setTimeout(() => {
     debounceTimer = null;
-    const at = flushAutosave(designs, scene);
+    const at = flushAutosave(designs, scenes);
     if (at && onSaved) onSaved(at);
   }, AUTOSAVE_DEBOUNCE_MS);
 }
@@ -131,10 +145,22 @@ export function cancelScheduledAutosave(): void {
 /** Newest valid backup across both slots (null when none). */
 export function readLatestAutosave(): AutosavePayload | null {
   if (typeof window === "undefined") return null;
-  const a = readSlot(SLOT_A);
-  const b = readSlot(SLOT_B);
+  const a = normalizeSlot(readSlot(SLOT_A));
+  const b = normalizeSlot(readSlot(SLOT_B));
   if (a && b) return a.savedAt >= b.savedAt ? a : b;
   return a ?? b;
+}
+
+/** Upgrade legacy `{ designs, scene }` backups into the episode shape. */
+function normalizeSlot(slot: StoredSlot | null): StoredSlot | null {
+  if (!slot) return null;
+  if (Array.isArray(slot.scenes) && slot.scenes.length > 0) return slot;
+  const legacy = (slot as unknown as { scene?: Scene }).scene as Scene | undefined;
+  if (!legacy) return null;
+  return {
+    ...slot,
+    scenes: [{ id: "autosave-legacy", name: "দৃশ্য ১", scene: legacy }],
+  };
 }
 
 /** Wipe both backup slots (used by "start fresh" recovery). */
@@ -180,7 +206,8 @@ export function wasUncleanExit(): boolean {
 
 /**
  * Copy the newest backup into the zustand persist key and reload.
- * The persist format is `{ state: { designs, scene }, version: 0 }`.
+ * Phase 2 shape: `{ state: { designs, scenes }, version: 0 }`.
+ * Legacy single-scene backups are wrapped into a one-scene episode.
  */
 export function restoreAutosaveIntoStore(): boolean {
   const backup = readLatestAutosave();
@@ -189,7 +216,7 @@ export function restoreAutosaveIntoStore(): boolean {
     localStorage.setItem(
       "thatta-studio-v1",
       JSON.stringify({
-        state: { designs: backup.designs, scene: backup.scene },
+        state: { designs: backup.designs, scenes: backup.scenes },
         version: 0,
       }),
     );
