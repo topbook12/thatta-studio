@@ -33,6 +33,11 @@ import {
   locateInEpisode,
 } from "@/lib/cartoon/episode";
 import SceneStrip from "@/components/studio/scene-strip";
+import ScriptDialog from "@/components/studio/script-dialog";
+import InteractionDialog from "@/components/studio/interaction-dialog";
+import EasingCurvePicker from "@/components/studio/easing-curve-picker";
+import PoseEditor from "@/components/studio/pose-editor";
+import VoiceMapping from "@/components/studio/voice-mapping";
 import {
   exportVideoWebCodecs,
   ExportCancelled,
@@ -65,9 +70,13 @@ import {
   ACTION_OPTIONS,
   BG_OPTIONS,
   EASING_OPTIONS,
+  PATH_STYLE_OPTIONS,
   PROP_OPTIONS,
+  SECONDARY_ACTIONS,
   SPEED_OPTIONS,
   VOICE_SPEED_OPTIONS,
+  sanitizeCustomEasing,
+  sanitizePoseOffset,
 } from "@/lib/cartoon/presets";
 import { CartoonStage } from "@/lib/cartoon/engine";
 import {
@@ -80,8 +89,11 @@ import { normalizeEpisodes } from "@/lib/cartoon/presets";
 import type {
   ActionName,
   CharacterDesign,
+  CustomEasing,
   EasingName,
   EpisodeScene,
+  PathStyle,
+  PoseOffset,
   PropName,
   Scene,
   SceneBeat,
@@ -97,6 +109,7 @@ import {
   Cloud,
   Compass,
   Download,
+  FileText,
   Film,
   FolderOpen,
   HardDrive,
@@ -109,6 +122,7 @@ import {
   Redo2,
   Save,
   Square,
+  Theater,
   Trash2,
   Undo2,
   UserPlus,
@@ -267,6 +281,12 @@ export default function StudioTab({
   const [moveZ, setMoveZ] = useState(0);
   const [beatSpeed, setBeatSpeed] = useState(1);
   const [beatEasing, setBeatEasing] = useState<EasingName>("easeInOut");
+  const [beatCustomEasing, setBeatCustomEasing] = useState<CustomEasing>([0.3, 0.6, 0.7, 0.2]);
+  // Phase 3 — advanced beat animation state
+  const [beatAction2, setBeatAction2] = useState<ActionName | "_none">("_none");
+  const [beatPathStyle, setBeatPathStyle] = useState<PathStyle>("straight");
+  const [beatPoseOffset, setBeatPoseOffset] = useState<PoseOffset | undefined>(undefined);
+  const [poseEditorOpen, setPoseEditorOpen] = useState(false);
   // TTS voice speaking rate for this line (0.5..2) — Sprint 5
   const [voiceSpeed, setVoiceSpeed] = useState(1);
   // null = auto (end of this actor's track); number = pinned absolute start
@@ -285,6 +305,9 @@ export default function StudioTab({
 
   // Phase 1 (Day 1–10) — templates / auto-save / crash recovery / guided tour
   const [templatesOpen, setTemplatesOpen] = useState(false);
+  // Phase 2/3 — script importer + two-character interactions
+  const [scriptOpen, setScriptOpen] = useState(false);
+  const [interactionsOpen, setInteractionsOpen] = useState(false);
   const [tourOpen, setTourOpen] = useState(false);
   const [recoverAt, setRecoverAt] = useState<number | null>(null);
   const [lastSaved, setLastSaved] = useState<number | null>(null);
@@ -1157,6 +1180,11 @@ export default function StudioTab({
     setMoveZ(0);
     setBeatSpeed(1);
     setBeatEasing("easeInOut");
+    setBeatCustomEasing([0.3, 0.6, 0.7, 0.2]);
+    setBeatAction2("_none");
+    setBeatPathStyle("straight");
+    setBeatPoseOffset(undefined);
+    setPoseEditorOpen(false);
     setVoiceSpeed(1);
     setBeatStart(null);
     stageRef.current?.setEditBeat(null);
@@ -1171,6 +1199,7 @@ export default function StudioTab({
       });
       return;
     }
+    const isMove = action === "walk" || action === "run";
     const payload = {
       actorUid,
       action,
@@ -1182,11 +1211,22 @@ export default function StudioTab({
         editingBeatId || beatStart != null
           ? Math.max(0, beatStart ?? 0)
           : undefined,
-      moveTo: action === "walk" || action === "run" ? moveTo : undefined,
+      moveTo: isMove ? moveTo : undefined,
       // 3D depth path — 0 = stage plane (towards camera when negative)
-      moveZ: action === "walk" || action === "run" ? moveZ : undefined,
+      moveZ: isMove ? moveZ : undefined,
       speed: beatSpeed !== 1 ? beatSpeed : undefined,
-      easing: action === "walk" || action === "run" ? beatEasing : undefined,
+      easing: isMove ? beatEasing : undefined,
+      // Phase 3 — custom bezier + path shape (movement only)
+      customEasing: isMove && beatEasing === "custom"
+        ? sanitizeCustomEasing(beatCustomEasing)
+        : undefined,
+      pathStyle: isMove && beatPathStyle !== "straight" ? beatPathStyle : undefined,
+      // Phase 3 — blended secondary action + pose-editor offsets
+      action2:
+        beatAction2 !== "_none" && beatAction2 !== action
+          ? (beatAction2 as ActionName)
+          : undefined,
+      poseOffset: sanitizePoseOffset(beatPoseOffset ?? {}),
       voiceSpeed: voiceSpeed !== 1 ? voiceSpeed : undefined,
     };
     if (editingBeatId) {
@@ -1213,6 +1253,11 @@ export default function StudioTab({
     setMoveZ(b.moveZ ?? scene.characters.find((c) => c.uid === b.actorUid)?.z ?? 0);
     setBeatSpeed(b.speed ?? 1);
     setBeatEasing(b.easing ?? "easeInOut");
+    setBeatCustomEasing(b.customEasing ?? [0.3, 0.6, 0.7, 0.2]);
+    setBeatAction2(b.action2 ?? "_none");
+    setBeatPathStyle(b.pathStyle ?? "straight");
+    setBeatPoseOffset(b.poseOffset);
+    setPoseEditorOpen(!!b.poseOffset);
     setVoiceSpeed(b.voiceSpeed ?? 1);
     setBeatStart(b.start ?? 0);
     // walk/run beats show the draggable destination flag on the stage
@@ -2021,14 +2066,37 @@ export default function StudioTab({
               </Button>
             </CardContent>
           </Card>
+
+          {/* Phase 2 — character-voice mapping for the whole episode */}
+          <VoiceMapping onAudioChanged={() => setAudioVersion((v) => v + 1)} />
         </div>
 
         {/* ---------- Right: beats ---------- */}
         <div className="min-w-0 space-y-6">
           <Card className="min-w-0 border-amber-200">
             <CardHeader className="pb-3">
-              <CardTitle className="text-orange-800">
+              <CardTitle className="flex flex-wrap items-center justify-between gap-2 text-orange-800">
                 🎬 দৃশ্য তালিকা ({bnNum(scene.beats.length)}টি বিট)
+                <span className="flex flex-wrap gap-1.5">
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => setScriptOpen(true)}
+                    className="border-orange-300 text-xs text-orange-700 hover:bg-orange-50"
+                    title="বাংলা সংলাপ পেস্ট করে অটো দৃশ্য বানান"
+                  >
+                    <FileText className="mr-1.5 h-3.5 w-3.5" /> স্ক্রিপ্ট পেস্ট
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => setInteractionsOpen(true)}
+                    className="border-orange-300 text-xs text-orange-700 hover:bg-orange-50"
+                    title="দুই ক্যারেক্টারের রেডিমেড ইন্টারঅ্যাকশন"
+                  >
+                    <Theater className="mr-1.5 h-3.5 w-3.5" /> দুই-জনের দৃশ্য
+                  </Button>
+                </span>
               </CardTitle>
             </CardHeader>
             <CardContent>
@@ -2125,6 +2193,26 @@ export default function StudioTab({
                             🚶 হাঁটবে {bnNum(Math.round(b.moveTo))}% পর্যন্ত
                           </span>
                         )}
+                        {b.pathStyle && b.pathStyle !== "straight" && (
+                          <span className="rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-800">
+                            🛤 {PATH_STYLE_OPTIONS.find((o) => o.id === b.pathStyle)?.label}
+                          </span>
+                        )}
+                        {b.action2 && (
+                          <span className="rounded-full bg-violet-100 px-2 py-0.5 text-xs font-medium text-violet-800">
+                            ✚ {ACTION_OPTIONS.find((a) => a.id === b.action2)?.label}
+                          </span>
+                        )}
+                        {b.poseOffset && (
+                          <span className="rounded-full bg-orange-100 px-2 py-0.5 text-xs font-medium text-orange-800">
+                            🦴 পোজ টিউন
+                          </span>
+                        )}
+                        {b.easing === "custom" && (
+                          <span className="rounded-full bg-teal-100 px-2 py-0.5 text-xs font-medium text-teal-800">
+                            📈 কাস্টম কার্ভ
+                          </span>
+                        )}
                         {(b.moveZ ?? 0) !== 0 && (
                           <span className="text-xs text-amber-600">
                             🎥 গভীরে {bnNum(Math.round(b.moveZ ?? 0))} পর্যন্ত
@@ -2198,6 +2286,33 @@ export default function StudioTab({
                     </SelectContent>
                   </Select>
                 </div>
+              </div>
+
+              {/* Phase 3 — two-action blending */}
+              <div className="space-y-2 rounded-xl border border-violet-200 bg-violet-50/50 p-3">
+                <Label className="text-sm font-semibold text-violet-900">
+                  ✚ মিক্সড অ্যাকশন (ঐচ্ছিক) — দুটো অ্যাকশন একসাথে
+                </Label>
+                <p className="text-xs text-violet-700">
+                  হাঁটার সাথে হাত নাড়া, দৌড়ের সাথে ইশারা — শরীর দুটো অ্যাকশন
+                  মিশিয়ে অভিনয় করবে, মুখ ও অভিব্যক্তি মূল অ্যাকশনের নিয়ন্ত্রণে।
+                </p>
+                <Select
+                  value={beatAction2}
+                  onValueChange={(v) => setBeatAction2(v as ActionName | "_none")}
+                >
+                  <SelectTrigger className="border-violet-300">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="_none">কিছু না (শুধু মূল অ্যাকশন)</SelectItem>
+                    {SECONDARY_ACTIONS.map((a) => (
+                      <SelectItem key={a.id} value={a.id}>
+                        {a.emoji} {a.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
               </div>
 
               <div className="flex items-end gap-2 rounded-xl border border-amber-200 bg-amber-50/60 p-3">
@@ -2289,6 +2404,40 @@ export default function StudioTab({
                 </Select>
               </div>
 
+              {/* Phase 3 — custom pose editor (joint fine-tuning) */}
+              <div className="space-y-2 rounded-xl border border-amber-200 bg-amber-50/60 p-3">
+                <button
+                  type="button"
+                  className="flex w-full items-center justify-between"
+                  onClick={() => setPoseEditorOpen((o) => !o)}
+                  aria-expanded={poseEditorOpen}
+                >
+                  <span className="text-sm font-semibold text-amber-900">
+                    🦴 পোজ এডিটর — জয়েন্ট নিখুঁত করুন (ঐচ্ছিক)
+                    {beatPoseOffset && (
+                      <span className="ml-2 rounded-full bg-orange-600 px-2 py-0.5 text-[10px] font-bold text-white">
+                        টিউনড
+                      </span>
+                    )}
+                  </span>
+                  <span className="text-xs font-bold text-orange-700">
+                    {poseEditorOpen ? "− লুকান" : "+ খুলুন"}
+                  </span>
+                </button>
+                {poseEditorOpen && (
+                  <PoseEditor
+                    design={designs.find(
+                      (d) =>
+                        d.id ===
+                        scene.characters.find((c) => c.uid === actorUid)?.designId,
+                    )}
+                    action={action}
+                    value={beatPoseOffset}
+                    onChange={setBeatPoseOffset}
+                  />
+                )}
+              </div>
+
               {action === "walk" || action === "run" ? (
                 <div className="space-y-2">
                   <div className="flex justify-between">
@@ -2306,24 +2455,41 @@ export default function StudioTab({
                   />
                   <div className="space-y-2 pt-1">
                     <Label className="text-sm font-semibold text-amber-900">
-                      গতিপথের ভাব (easing)
+                      গতিপথের আকৃতি (motion path)
                     </Label>
-                    <Select
-                      value={beatEasing}
-                      onValueChange={(v) => setBeatEasing(v as EasingName)}
-                    >
-                      <SelectTrigger className="border-amber-300">
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {EASING_OPTIONS.map((e) => (
-                          <SelectItem key={e.id} value={e.id}>
-                            {e.label}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
+                    <div className="flex flex-wrap gap-1.5">
+                      {PATH_STYLE_OPTIONS.map((p) => (
+                        <button
+                          key={p.id}
+                          type="button"
+                          onClick={() => setBeatPathStyle(p.id)}
+                          className={`rounded-full border px-3 py-1.5 text-xs font-medium transition-colors ${
+                            beatPathStyle === p.id
+                              ? "border-orange-600 bg-orange-600 text-white"
+                              : "border-amber-200 bg-white text-amber-900 hover:bg-amber-100"
+                          }`}
+                        >
+                          {p.emoji} {p.label}
+                        </button>
+                      ))}
+                    </div>
+                    {beatPathStyle !== "straight" && (
+                      <p className="text-[11px] text-amber-600">
+                        {beatPathStyle === "arc"
+                          ? "🌊 মাঝপথে একটু দূরে ঘুরে যাবে — বাঁকা রাস্তার মতো"
+                          : "〰️ কাছে-দূরে-কাছে জোয়ালের মতো ঘুরে হাঁটবে — মজার স্ট্রল"}
+                      </p>
+                    )}
                   </div>
+
+                  <EasingCurvePicker
+                    value={beatEasing}
+                    custom={beatCustomEasing}
+                    onChange={(easing, custom) => {
+                      setBeatEasing(easing);
+                      setBeatCustomEasing(custom);
+                    }}
+                  />
                   <div className="space-y-2 rounded-xl border border-teal-200 bg-teal-50/50 p-3">
                     <div className="flex justify-between">
                       <Label className="text-sm font-semibold text-teal-900">
@@ -2840,6 +3006,12 @@ export default function StudioTab({
           </div>
         </DialogContent>
       </Dialog>
+
+      {/* ---------- Phase 2: script importer ---------- */}
+      <ScriptDialog open={scriptOpen} onOpenChange={setScriptOpen} />
+
+      {/* ---------- Phase 3: two-character interactions ---------- */}
+      <InteractionDialog open={interactionsOpen} onOpenChange={setInteractionsOpen} />
 
       {/* ---------- Guided tour (Phase 1) ---------- */}
       <GuidedTour

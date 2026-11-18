@@ -5,7 +5,7 @@
 // Every action is a pure function of t — deterministic for scrubbing/export.
 // ============================================================
 
-import type { ActionName, EasingName, Pose } from './types';
+import type { ActionName, EasingName, Pose, PoseOffset } from './types';
 import { applyExpression } from './expression';
 
 const TAU = Math.PI * 2;
@@ -791,8 +791,45 @@ export function easeInOut(x: number): number {
   return x < 0.5 ? 2 * x * x : 1 - Math.pow(-2 * x + 2, 2) / 2;
 }
 
+/**
+ * Phase 3 — CSS-style cubic-bezier easing solver (P0=(0,0), P3=(1,1),
+ * control points (x1,y1),(x2,y2)). Binary search on the curve parameter
+ * keeps it deterministic and fast enough for per-frame use.
+ */
+export function cubicBezierEase(
+  x1: number,
+  y1: number,
+  x2: number,
+  y2: number,
+): (x: number) => number {
+  const bez = (t: number, a: number, b: number) =>
+    3 * a * (1 - t) * (1 - t) * t + 3 * b * (1 - t) * t * t + t * t * t;
+  const solveT = (x: number): number => {
+    // find t where bezX(t) === x (bezX is monotonic for 0<=x1,x2<=1)
+    let lo = 0;
+    let hi = 1;
+    for (let i = 0; i < 22; i++) {
+      const mid = (lo + hi) / 2;
+      if (bez(mid, x1, x2) < x) lo = mid;
+      else hi = mid;
+    }
+    return (lo + hi) / 2;
+  };
+  return (x: number) => {
+    if (x <= 0) return 0;
+    if (x >= 1) return 1;
+    return bez(solveT(x), y1, y2);
+  };
+}
+
 /** Movement-quality easings for beat paths (walk/run targets). */
-export function easingByName(name: EasingName): (x: number) => number {
+export function easingByName(
+  name: EasingName,
+  custom?: [number, number, number, number],
+): (x: number) => number {
+  if (name === 'custom' && custom && custom.length === 4) {
+    return cubicBezierEase(custom[0], custom[1], custom[2], custom[3]);
+  }
   switch (name) {
     case 'linear':
       return (x) => x;
@@ -812,8 +849,61 @@ export function easingByName(name: EasingName): (x: number) => number {
         const c4 = (2 * Math.PI) / 3;
         return Math.pow(2, -10 * x) * Math.sin((x * 10 - 0.75) * c4) + 1;
       };
+    case 'custom':
+      // no control points persisted → behave like smooth easeInOut
+      return easeInOut;
     case 'easeInOut':
     default:
       return easeInOut;
   }
+}
+
+// ---------------- Phase 3: pose blending ----------------
+
+/**
+ * Blend a secondary action's pose OVER the primary one (k = how much of
+ * the secondary shows, 0..1). The FACE (eyes/brows/expression/tears)
+ * always stays with the primary action, and lip-sync drives the mouth
+ * afterwards anyway — blending only shapes body/limbs/motion.
+ */
+export function blendPoses(primary: Pose, secondary: Pose, k: number): Pose {
+  const L = (a: number, b: number) => a + (b - a) * k;
+  return {
+    ...primary,
+    xOff: L(primary.xOff, secondary.xOff),
+    yOff: L(primary.yOff, secondary.yOff),
+    bodyLean: L(primary.bodyLean, secondary.bodyLean),
+    headTilt: L(primary.headTilt, secondary.headTilt),
+    headNod: L(primary.headNod, secondary.headNod),
+    shoulderL: L(primary.shoulderL, secondary.shoulderL),
+    elbowL: L(primary.elbowL, secondary.elbowL),
+    shoulderR: L(primary.shoulderR, secondary.shoulderR),
+    elbowR: L(primary.elbowR, secondary.elbowR),
+    hipL: L(primary.hipL, secondary.hipL),
+    kneeL: L(primary.kneeL, secondary.kneeL),
+    hipR: L(primary.hipR, secondary.hipR),
+    kneeR: L(primary.kneeR, secondary.kneeR),
+    mouthOpen: Math.max(primary.mouthOpen, secondary.mouthOpen * 0.45),
+    squash: L(primary.squash, secondary.squash),
+    clothSway: L(primary.clothSway, secondary.clothSway),
+    hairSway: L(primary.hairSway, secondary.hairSway),
+  };
+}
+
+/**
+ * Phase 3 — apply the pose editor's hand offsets on top of a computed
+ * pose (additive; clamped ranges are enforced at save time).
+ */
+export function applyPoseOffsets(p: Pose, po: PoseOffset | undefined): Pose {
+  if (!po) return p;
+  return {
+    ...p,
+    bodyLean: p.bodyLean + (po.bodyLean ?? 0),
+    headTilt: p.headTilt + (po.headTilt ?? 0),
+    shoulderR: p.shoulderR + (po.shoulderR ?? 0),
+    elbowR: p.elbowR + (po.elbowR ?? 0),
+    shoulderL: p.shoulderL + (po.shoulderL ?? 0),
+    elbowL: p.elbowL + (po.elbowL ?? 0),
+    yOff: p.yOff + (po.yOff ?? 0),
+  };
 }

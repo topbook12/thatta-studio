@@ -58,7 +58,38 @@ export type EasingName =
   | 'easeIn'
   | 'easeOut'
   | 'backOut'
-  | 'elasticOut';
+  | 'elasticOut'
+  /** Phase 3 — user-drawn cubic-bezier curve (see customEasing) */
+  | 'custom';
+
+/**
+ * Phase 3 — custom cubic-bezier control points for easing 'custom'
+ * (same shape as CSS cubic-bezier: P1=(x1,y1), P2=(x2,y2), 0..1 each).
+ */
+export type CustomEasing = [number, number, number, number];
+
+/**
+ * Phase 3 — walk/run path shape. The destination is the same, but the
+ * ROUTE bends: straight = direct, arc = swings deeper mid-way (curved
+ * route), sCurve = weaves near-far-near (S-shaped stroll).
+ */
+export type PathStyle = 'straight' | 'arc' | 'sCurve';
+
+/**
+ * Phase 3 — hand-pose offsets applied ON TOP of the computed action pose.
+ * Lets the user fine-tune joints per beat (the "pose editor").
+ * Values are in the pose's own units: angles in radians-ish (−1..1),
+ * yOff in px.
+ */
+export interface PoseOffset {
+  bodyLean?: number;
+  headTilt?: number;
+  shoulderR?: number;
+  elbowR?: number;
+  shoulderL?: number;
+  elbowL?: number;
+  yOff?: number;
+}
 
 export type EyeState = 'open' | 'blink' | 'closed' | 'happy' | 'wide';
 export type BrowState = 'normal' | 'angry' | 'raised' | 'sad';
@@ -162,6 +193,18 @@ export interface SceneBeat {
   speed?: number;
   /** easing used for the walk-to-target motion (default easeInOut) */
   easing?: EasingName;
+  /** control points when easing === 'custom' — Phase 3 curve editor */
+  customEasing?: CustomEasing;
+  /** route shape for walk/run movement — Phase 3 motion paths */
+  pathStyle?: PathStyle;
+  /**
+   * Phase 3 — secondary action BLENDED on top of the primary one
+   * (e.g. walk + wave together). Face/mouth stay driven by the primary
+   * action; limbs blend at ~55%.
+   */
+  action2?: ActionName;
+  /** fine-tuned joint offsets (pose editor) applied over the action pose */
+  poseOffset?: PoseOffset;
   /** TTS voice speaking rate for this line (0.5..2, default 1) — Sprint 5 */
   voiceSpeed?: number;
   /**

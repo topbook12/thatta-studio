@@ -69,7 +69,8 @@
 - [x] Scene list panel — add / duplicate / rename / reorder / delete scenes (strip above the stage, `[` `]` keyboard nav, AlertDialog delete-confirm, 12-scene cap)
 - [x] Transitions per scene boundary: cut / fade (through black) / cartoon circle-wipe — per-scene outgoing transition, rendered in the MP4 export (fade verified by frame-brightness probe at the boundary)
 - [x] Episode preview play-through (scenes chained with auto-advance; toggle "সম্পূর্ণ এপিসোড" near Play; playback shows "এপিসোড: দৃশ্য ২/২"; transitions preview as cut)
-- [ ] Script importer: paste Bangla dialogue → auto-draft beats (speaker → actor mapping UI)
+- [x] Script importer: paste Bangla dialogue → auto-draft beats (speaker → actor mapping UI) — *verified:* 7-line script with `(রেগে)/(হাসতে হাসতে)` hints + `--- বাজারে গন্ডগোল ---` marker → 6 beats / 2 scenes in one click; hint→action mapping (😠 😂), fuzzy speaker match + hand-assign in preview
+- [x] **Voice mapping** (roadmap item): "ভয়েস ম্যাপিং" card — every character × voice (7 voices), audition sample (TTS 200), per-character **rebuild** re-records all spoken beats of that character across the episode
 - [x] Export whole episode as one MP4 (WebCodecs walks scene-by-scene via `prepareExportScene`; realtime MediaRecorder fallback records the chained play-through; scope radio in export dialog)
 - **Files:** `store.ts` (scenes[] migration with old-data upgrade), `engine.ts` (pure `computeBeatWindows`, `prepareExportScene`), new `episode.ts` (timing/windows/buses math), `exporter.ts` untouched, new `studio/scene-strip.tsx`, `studio-tab.tsx` wiring, `history.ts` + `autosave.ts` episode-aware snapshots
 
@@ -77,14 +78,14 @@
 
 ### Phase 3 (Day 21–30) — Advanced animation control
 **Goal:** "যেকোনো অবজেক্টের মুভমেন্ট নিখুঁতভাবে কন্ট্রোল" — the core mantra.
-- [ ] Two-action blending (walk + talk simultaneously; secondary-action slider)
-- [ ] Custom pose editor — drag joints on a rig to create a reusable pose action
-- [ ] Motion paths: curved walk targets (bezier), jump arcs with gravity preview
-- [ ] Per-beat easing curve editor (visual graph, 6 presets + custom cubic-bezier)
-- [ ] 2-character interaction presets (slap+reaction sync, handshake, বহিষ্কার chase)
-- **Files:** `pose.ts`, `skeleton.ts`, `engine.ts`, new `pose-editor.tsx`
+- [x] Two-action blending — `action2` on a beat; `blendPoses()` mixes a secondary gesture (wave/point/clap/nod/think/salute/eat/carry) over the primary action at 55% (face stays primary; lip-sync still rules the mouth) — verified: slap beat + wave blend plays live, violet badge in beat list
+- [x] Custom pose editor — per-beat `poseOffset` (bodyLean / headTilt / both shoulders & elbows / yOff) tuned with 7 sliders + a LIVE mini-canvas preview running the real pipeline (computePose → blend → offsets); "🦴 পোজ টিউন" badge; all offsets clamped in `sanitizePoseOffset`
+- [x] Motion paths — walk/run route shapes: straight / **arc** (swings deeper mid-way, sin(π)) / **sCurve** (near-far-near weave, sin(2π)); destination stays exact so walk chains still align; "🛤 বাঁকা পথ" badge
+- [x] Per-beat easing curve editor — SVG speed graph: 6 preset mini-curves + **custom cubic-bezier with two draggable handles** (`cubicBezierEase` solver, deterministic for scrub/export); "📈 কাস্টম কার্ভ" badge
+- [x] 2-character interaction presets — 6 one-click choreographies (কথোপকথন, থাপ্পড় কাণ্ড, ধাওয়া, সালাম-সম্মান, একসাথে উদযাপন, খোঁচা ও কান্না) with comic-impact reaction timing; appended at scene end in ONE undo step
+- **Files:** `pose.ts` (`blendPoses`, `applyPoseOffsets`, `cubicBezierEase`, `easingByName(custom)`), `engine.ts` (blend/offset/path/easing in the render loop), `types.ts` (`action2`/`poseOffset`/`pathStyle`/`customEasing`), new `script-parser.ts`, `interactions.ts`, new `studio/{script-dialog,interaction-dialog,easing-curve-picker,pose-editor,voice-mapping}.tsx`, `presets.ts` (normalize + option lists), `studio-tab.tsx` wiring
 
-**Accept:** every beat's position/speed/easing is editable from UI; blended actions stay 60 fps on mid-range Android.
+**Accept (verified in browser):** script paste → 2 scenes/6 beats; slap preset → +5 beats with reaction timing; pose slider (head tilt ০.৯) shows in the live preview, "টিউনড" badge on save; custom bezier handle drag reshapes the graph; বাঁকা পথ + কাস্টম কার্ভ + mix-wave all persist through playback — zero console errors at 1280×800 and 390×844.
 
 ### Phase 4 (Day 31–40) — Sound studio
 **Goal:** cartoon sounds as rich as the visuals.

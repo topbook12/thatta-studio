@@ -6,9 +6,11 @@ import type {
   ActionName,
   BgName,
   CharacterDesign,
+  CustomEasing,
   EasingName,
   EpisodeScene,
   PlacedCharacter,
+  PoseOffset,
   PropName,
   Scene,
   SceneBeat,
@@ -110,6 +112,29 @@ export const EASING_OPTIONS: { id: EasingName; label: string }[] = [
   { id: 'easeOut', label: 'ধীরে শেষ' },
   { id: 'backOut', label: 'একটু এগিয়ে-পিছিয়ে' },
   { id: 'elasticOut', label: 'স্প্রিং এর মতো' },
+  { id: 'custom', label: 'নিজের কার্ভ (গ্রাফে টানুন)' },
+];
+
+/** Phase 3 — walk/run গতিপথের আকৃতি (motion path) */
+export const PATH_STYLE_OPTIONS: { id: 'straight' | 'arc' | 'sCurve'; label: string; emoji: string }[] = [
+  { id: 'straight', label: 'সোজা পথ', emoji: '➡️' },
+  { id: 'arc', label: 'বাঁকা পথ', emoji: '🌊' },
+  { id: 'sCurve', label: 'S-আকৃতির পথ', emoji: '〰️' },
+];
+
+/**
+ * Phase 3 — actions that blend nicely ON TOP of another action
+ * (upper-body gestures that don't fight the primary locomotion).
+ */
+export const SECONDARY_ACTIONS: { id: ActionName; label: string; emoji: string }[] = [
+  { id: 'wave', label: 'হাত নাড়ছে', emoji: '👋' },
+  { id: 'point', label: 'ইশারা করছে', emoji: '👉' },
+  { id: 'clap', label: 'হাত তালি', emoji: '👏' },
+  { id: 'nod', label: 'মাথা নাড়ছে', emoji: '🙂' },
+  { id: 'think', label: 'ভাবছে', emoji: '🤔' },
+  { id: 'salute', label: 'স্যালুট', emoji: '🫡' },
+  { id: 'eat', label: 'মিষ্টি খাচ্ছে', emoji: '😋' },
+  { id: 'carry', label: 'মাথায় বোঝা', emoji: '📦' },
 ];
 
 /** গ্লোবাল প্লেব্যাক স্পিড অপশন */
@@ -271,12 +296,41 @@ function sequentialStart(beats: SceneBeat[], i: number): number {
 }
 
 /**
+ * Phase 3 — clamp user-drawn pose offsets into safe ranges and drop
+ * all-zero offsets (undefined = use the pure action pose).
+ */
+export function sanitizePoseOffset(po: PoseOffset): PoseOffset | undefined {
+  const clamp = (v: number | undefined, lo: number, hi: number) =>
+    typeof v === 'number' && Number.isFinite(v)
+      ? Math.max(lo, Math.min(hi, Math.round(v * 1000) / 1000))
+      : undefined;
+  const out: PoseOffset = {
+    bodyLean: clamp(po.bodyLean, -0.7, 0.7),
+    headTilt: clamp(po.headTilt, -0.9, 0.9),
+    shoulderR: clamp(po.shoulderR, -1.2, 1.2),
+    elbowR: clamp(po.elbowR, -1.4, 1.4),
+    shoulderL: clamp(po.shoulderL, -1.2, 1.2),
+    elbowL: clamp(po.elbowL, -1.4, 1.4),
+    yOff: clamp(po.yOff, -24, 48),
+  };
+  const any = Object.values(out).some((v) => typeof v === 'number' && Math.abs(v) > 0.001);
+  return any ? out : undefined;
+}
+
+/** clamp a custom cubic-bezier into valid control points */
+export function sanitizeCustomEasing(c: CustomEasing): CustomEasing {
+  const cl = (v: number, lo: number, hi: number) =>
+    Math.max(lo, Math.min(hi, Math.round(v * 1000) / 1000));
+  return [cl(c[0], 0, 1), cl(c[1], -0.4, 1.4), cl(c[2], 0, 1), cl(c[3], -0.4, 1.4)];
+}
+
+/**
  * Fill in absolute `start` times for beats loaded from old projects and
  * clamp walk/speed fields into safe ranges. Idempotent.
  * Sprint 6: also normalizes depth (z/moveZ) and the cinematic camera.
  */
 export function normalizeScene(scene: Scene): Scene {
-  const beats = scene.beats.map((b, i) => {
+  const beats: SceneBeat[] = scene.beats.map((b, i) => {
     const start =
       typeof b.start === 'number' && b.start >= 0
         ? Math.round(b.start * 100) / 100
@@ -290,6 +344,30 @@ export function normalizeScene(scene: Scene): Scene {
         b.action === 'walk' || b.action === 'run'
           ? Math.max(-120, Math.min(480, Math.round(b.moveZ ?? 0)))
           : undefined,
+      // Phase 3 — movement-only fields stay movement-only
+      easing:
+        b.action === 'walk' || b.action === 'run'
+          ? b.easing ?? 'easeInOut'
+          : undefined,
+      customEasing:
+        (b.action === 'walk' || b.action === 'run') &&
+        Array.isArray(b.customEasing) &&
+        b.customEasing.length === 4 &&
+        b.customEasing.every((n) => typeof n === 'number' && Number.isFinite(n))
+          ? ([...b.customEasing] as [number, number, number, number])
+          : undefined,
+      pathStyle:
+        b.action === 'walk' || b.action === 'run'
+          ? b.pathStyle === 'arc' || b.pathStyle === 'sCurve'
+            ? b.pathStyle
+            : 'straight'
+          : undefined,
+      // blending: the secondary must not equal the primary (that's a no-op)
+      action2:
+        b.action2 && b.action2 !== 'idle' && b.action2 !== b.action
+          ? b.action2
+          : undefined,
+      poseOffset: b.poseOffset ? sanitizePoseOffset(b.poseOffset) : undefined,
       speed:
         b.speed != null
           ? Math.max(0.25, Math.min(2.5, b.speed))

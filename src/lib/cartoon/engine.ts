@@ -19,7 +19,13 @@ import {
 } from './backgrounds';
 import { depthAlpha, depthScale, groundYAt, worldXAt } from './depth';
 import { drawCharacter } from './draw';
-import { basePose, computePose, easingByName } from './pose';
+import {
+  applyPoseOffsets,
+  basePose,
+  blendPoses,
+  computePose,
+  easingByName,
+} from './pose';
 import {
   STAGE_H,
   STAGE_W,
@@ -892,6 +898,21 @@ export class CartoonStage {
         // + facing swap below completes the pseudo-3D spin.
         pose = computePose(beat.action, localT, beat.text.trim().length > 0);
 
+        // Phase 3 — two-action blending: a secondary gesture rides on top
+        // of the primary action (walk + wave, run + point…). Slightly
+        // faster local clock keeps the blend from looking bolted-on.
+        if (beat.action2 && beat.action2 !== 'idle') {
+          pose = blendPoses(
+            pose,
+            computePose(beat.action2, localT * 1.25, false),
+            0.55,
+          );
+        }
+        // Phase 3 — pose editor hand offsets (joint fine-tuning)
+        if (beat.poseOffset) {
+          pose = applyPoseOffsets(pose, beat.poseOffset);
+        }
+
         // ---- real viseme lip-sync: audio envelopes drive the mouth ----
         const env = this.envelopes[beat.id];
         const wideEnv = this.wideEnvelopes[beat.id];
@@ -921,13 +942,22 @@ export class CartoonStage {
         ) {
           const dur = Math.max(0.3, w.end - w.start);
           const progress = Math.min(1, beatElapsed / dur);
-          const eased = easingByName(beat.easing ?? 'easeInOut')(progress);
+          const eased = easingByName(beat.easing ?? 'easeInOut', beat.customEasing)(
+            progress,
+          );
           const from = this.charPosAt(placed.uid, w.start, placed);
           const targetX =
             beat.moveTo != null ? (beat.moveTo / 100) * STAGE_W : from.x;
           const targetZ = beat.moveZ != null ? beat.moveZ : from.z;
           baseX = lerp(from.x, targetX, eased);
           z = lerp(from.z, targetZ, eased);
+          // Phase 3 — motion paths: the ROUTE bends while the destination
+          // stays exact (sin vanishes at both ends, so chains still align)
+          if (beat.pathStyle === 'arc') {
+            z += Math.sin(progress * Math.PI) * 90; // swings deeper mid-way
+          } else if (beat.pathStyle === 'sCurve') {
+            z += Math.sin(progress * Math.PI * 2) * 55; // near-far-near weave
+          }
           if (beat.moveTo != null) flip = targetX < from.x;
         }
 
