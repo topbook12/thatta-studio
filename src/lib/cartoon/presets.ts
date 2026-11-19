@@ -196,6 +196,7 @@ export function makeDesign(partial: Partial<CharacterDesign> = {}): CharacterDes
     beardStyle: 0,
     glasses: false,
     voice: 'tongtong',
+    voicePitch: 0,
     ...partial,
   };
 }
@@ -389,7 +390,41 @@ export function normalizeScene(scene: Scene): Scene {
       })),
     shake: scene.camera?.shake !== false,
   };
-  return { ...scene, beats, characters, camera };
+  // Phase 4 — soundtrack sanitization (tolerates old/garbage data)
+  const validMusic =
+    typeof scene.audio?.music === 'string' &&
+    scene.audio.music !== 'none' &&
+    scene.audio.music !== ''
+      ? scene.audio.music
+      : undefined;
+  const audio =
+    scene.audio || validMusic
+      ? {
+          music: validMusic,
+          musicVolume:
+            typeof scene.audio?.musicVolume === 'number'
+              ? Math.max(0, Math.min(1, scene.audio.musicVolume))
+              : 0.55,
+          sfx: (scene.audio?.sfx ?? [])
+            .filter(
+              (e) =>
+                e &&
+                typeof e.sfx === 'string' &&
+                e.sfx.length > 0 &&
+                typeof e.at === 'number' &&
+                Number.isFinite(e.at),
+            )
+            .map((e) => ({
+              ...e,
+              at: Math.max(0, Math.round(e.at * 20) / 20),
+              volume:
+                typeof e.volume === 'number'
+                  ? Math.max(0, Math.min(1.5, e.volume))
+                  : 1,
+            })),
+        }
+      : undefined;
+  return { ...scene, beats, characters, camera, audio };
 }
 
 // ---------------- Phase 2: multi-scene episode helpers ----------------

@@ -48,25 +48,32 @@ function openDb(): Promise<IDBDatabase | null> {
   return dbPromise;
 }
 
-/** Compact, collision-resistant-enough key: voice|speed|hash|len */
-export function voiceKey(text: string, voice: string, speed: number): string {
+/**
+ * Compact, collision-resistant-enough key: voice|speed|pitch|hash|len
+ * (pitch in semitones — Phase 4 voice tuning; 0 for classic lines)
+ */
+export function voiceKey(text: string, voice: string, speed: number, pitch = 0): string {
   let h = 5381;
   for (let i = 0; i < text.length; i++) {
     h = ((h << 5) + h + text.charCodeAt(i)) | 0;
   }
-  return `${voice}|${speed}|${(h >>> 0).toString(36)}|${text.length}`;
+  return `${voice}|${speed}|${pitch}|${(h >>> 0).toString(36)}|${text.length}`;
 }
 
 export async function loadStoredVoice(
   text: string,
   voice: string,
   speed: number,
+  pitch = 0,
 ): Promise<StoredVoice | null> {
   const db = await openDb();
   if (!db) return null;
   return new Promise((resolve) => {
     try {
-      const req = db.transaction(STORE, 'readonly').objectStore(STORE).get(voiceKey(text, voice, speed));
+      const req = db
+        .transaction(STORE, "readonly")
+        .objectStore(STORE)
+        .get(voiceKey(text, voice, speed, pitch));
       req.onsuccess = () => resolve((req.result as StoredVoice | undefined) ?? null);
       req.onerror = () => resolve(null);
     } catch {

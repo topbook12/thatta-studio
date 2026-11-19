@@ -11,7 +11,6 @@
 // ============================================================
 
 import { ArrayBufferTarget, Muxer } from 'mp4-muxer';
-import type { CachedAudio } from '@/lib/tts-cache';
 
 // ---------- minimal WebCodecs typings (runtime-checked, no `any`) ----------
 
@@ -89,10 +88,18 @@ export function webCodecsAvailable(): boolean {
 
 // ---------- public API ----------
 
+/**
+ * One mono audio event on the export timeline. Phase 4: every bus
+ * (dialogue, SFX, background music) is just {start, url, volume} —
+ * all of them go through the same offline mixdown.
+ */
 export interface ExportBeatAudio {
-  /** absolute start (seconds) of the beat on the timeline */
+  /** absolute start (seconds) on the export timeline */
   start: number;
-  audio: CachedAudio;
+  /** playable URL (blob URL for procedural/procedurally-processed audio) */
+  url: string;
+  /** linear loudness 0..1.5 (default 1) */
+  volume?: number;
 }
 
 export interface ExportOptions {
@@ -360,7 +367,7 @@ function waitFor(encoder: VideoEncoderLike): Promise<void> {
   });
 }
 
-/** Mix all dialogue voices into one mono AudioBuffer at exact times. */
+/** Mix every bus (dialogue + SFX + music) into one mono AudioBuffer. */
 async function mixDialogue(
   buses: ExportBeatAudio[],
   totalSeconds: number,
@@ -378,12 +385,15 @@ async function mixDialogue(
   );
   for (const bus of buses) {
     try {
-      const res = await fetch(bus.audio.url);
+      const res = await fetch(bus.url);
       const ab = await res.arrayBuffer();
       const decoded = await ctx.decodeAudioData(ab);
       const src = ctx.createBufferSource();
       src.buffer = decoded;
-      src.connect(ctx.destination);
+      // per-bus loudness (SFX volume, music loudness…)
+      const g = ctx.createGain();
+      g.gain.value = Math.max(0, Math.min(1.5, bus.volume ?? 1));
+      src.connect(g).connect(ctx.destination);
       src.start(Math.max(0, bus.start));
     } catch {
       /* a broken voice line must never kill the export */

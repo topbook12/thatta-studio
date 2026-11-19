@@ -28,6 +28,7 @@ import type {
   PlacedCharacter,
   Scene,
   SceneBeat,
+  SceneSfxEvent,
   SceneTransition,
 } from './cartoon/types';
 
@@ -90,6 +91,14 @@ export interface StudioState {
   updateCameraShot: (id: string, patch: Partial<CameraShot>) => void;
   removeCameraShot: (id: string) => void;
   setCameraShake: (on: boolean) => void;
+
+  // ---- Phase 4 — সাউন্ড স্টুডিও ----
+  /** pick (or drop with 'none') the active scene's background music */
+  setSceneMusic: (trackId: string | null, volume?: number) => void;
+  /** adjust only the music loudness of the active scene */
+  setSceneMusicVolume: (volume: number) => void;
+  /** replace the active scene's whole SFX event list */
+  setSfxEvents: (events: SceneSfxEvent[]) => void;
 
   // Sprint 8 — undo/redo (injected by the history middleware)
   undo: () => void;
@@ -362,6 +371,47 @@ export const useStudio = create<StudioState>()(
           withActive(s, (sc) => ({
             ...sc,
             camera: { shots: sc.camera?.shots ?? [], shake: on },
+          })),
+        ),
+
+      // ---- Phase 4 — সাউন্ড স্টুডিও ----
+      setSceneMusic: (trackId, volume) =>
+        set((s) =>
+          withActive(s, (sc) => ({
+            ...sc,
+            audio: {
+              ...sc.audio,
+              music: trackId && trackId !== 'none' ? trackId : undefined,
+              musicVolume:
+                volume != null
+                  ? Math.max(0, Math.min(1, volume))
+                  : (sc.audio?.musicVolume ?? 0.55),
+              sfx: sc.audio?.sfx ?? [],
+            },
+          })),
+        ),
+      setSceneMusicVolume: (volume) =>
+        set((s) =>
+          withActive(s, (sc) => ({
+            ...sc,
+            audio: {
+              ...sc.audio,
+              music: sc.audio?.music,
+              musicVolume: Math.max(0, Math.min(1, volume)),
+              sfx: sc.audio?.sfx ?? [],
+            },
+          })),
+        ),
+      setSfxEvents: (events) =>
+        set((s) =>
+          withActive(s, (sc) => ({
+            ...sc,
+            audio: {
+              ...sc.audio,
+              music: sc.audio?.music,
+              musicVolume: sc.audio?.musicVolume ?? 0.55,
+              sfx: events,
+            },
           })),
         ),
 

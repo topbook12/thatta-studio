@@ -28,10 +28,23 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { useStudio } from "@/lib/store";
 import {
-  episodeAudioBuses,
+  buildExportAudio,
   episodeTiming,
   locateInEpisode,
 } from "@/lib/cartoon/episode";
+import SoundStudio from "@/components/studio/sound-studio";
+import {
+  musicPeaks,
+  musicTrackOf,
+  musicUrl,
+  type MusicTrackId,
+} from "@/lib/audio/music";
+import {
+  AUTO_SFX_OF,
+  sfxDefOf,
+  sfxUrl,
+  type SfxId,
+} from "@/lib/audio/sfx";
 import SceneStrip from "@/components/studio/scene-strip";
 import ScriptDialog from "@/components/studio/script-dialog";
 import InteractionDialog from "@/components/studio/interaction-dialog";
@@ -75,6 +88,7 @@ import {
   SECONDARY_ACTIONS,
   SPEED_OPTIONS,
   VOICE_SPEED_OPTIONS,
+  newId,
   sanitizeCustomEasing,
   sanitizePoseOffset,
 } from "@/lib/cartoon/presets";
@@ -97,14 +111,18 @@ import type {
   PropName,
   Scene,
   SceneBeat,
+  SceneSfxEvent,
 } from "@/lib/cartoon/types";
 import TimelineEditor, {
   type TimelineActor,
   type TimelineBeat,
+  type TimelineMusic,
+  type TimelineSfx,
 } from "@/components/studio/timeline-editor";
 import {
   ArrowDown,
   ArrowUp,
+  AudioLines,
   BadgeCheck,
   Cloud,
   Compass,
@@ -231,6 +249,7 @@ export default function StudioTab({
     updateCameraShot,
     removeCameraShot,
     setCameraShake,
+    setSfxEvents,
     undo,
     redo,
     canUndo,
@@ -255,6 +274,13 @@ export default function StudioTab({
   const rateRef = useRef(1);
   const lastTimePushRef = useRef(0);
   const designsRef = useRef(designs);
+
+  // ---- Phase 4 — সাউন্ড স্টুডিও: realtime music + SFX ----
+  const musicElRef = useRef<HTMLAudioElement | null>(null);
+  const sfxFiredRef = useRef<Set<string>>(new Set());
+  const lastSceneTRef = useRef(0);
+  const [soundOpen, setSoundOpen] = useState(false);
+  const [musicPeaksState, setMusicPeaksState] = useState<number[] | null>(null);
 
   const [playing, setPlaying] = useState(false);
   const [activeBeatIds, setActiveBeatIds] = useState<Set<string>>(new Set());
@@ -355,9 +381,22 @@ export default function StudioTab({
           lastTimePushRef.current = now;
           setCurrentTime(t);
         }
+        // Phase 4 — fire SFX events that crossed their scene time
+        lastSceneTRef.current = t;
+        const st = useStudio.getState();
+        const cur = st.scenes.find((es) => es.id === st.activeSceneId);
+        const events = cur?.scene.audio?.sfx ?? [];
+        for (const e of events) {
+          if (sfxFiredRef.current.has(e.id)) continue;
+          if (e.at <= t && t - e.at < 0.4) {
+            sfxFiredRef.current.add(e.id);
+            void playSfx(e.sfx, e.volume ?? 1);
+          }
+        }
       },
       onFinish: () => {
         stopAllAudio();
+        stopSceneMusic();
         const advanced = advanceEpisodeRef.current();
         if (!advanced) {
           setPlaying(false);
@@ -494,6 +533,7 @@ export default function StudioTab({
             b.text.trim(),
             design?.voice ?? "tongtong",
             b.voiceSpeed ?? 1,
+            design?.voicePitch ?? 0,
           );
           if (!alive) return;
           if (restored) {
@@ -590,6 +630,110 @@ export default function StudioTab({
     playingAudioRef.current.clear();
   };
 
+  // ---------- Phase 4 — সাউন্ড স্টুডিও: realtime soundtrack ----------
+  // (only refs + module imports inside — safe to close over from the
+  //  one-time stage callbacks above)
+
+  /** route a media element into the realtime-export recorder graph */
+  const hookExportAudio = (el: HTMLAudioElement) => {
+    if (!exportingRef.current || !audioCtxRef.current || !destRef.current) return;
+    if (el.dataset.exportHooked) return;
+    el.dataset.exportHooked = "1";
+    try {
+      const src = audioCtxRef.current.createMediaElementSource(el);
+      src.connect(destRef.current);
+      src.connect(audioCtxRef.current.destination);
+    } catch {
+      /* already hooked or unsupported — ignore */
+    }
+  };
+
+  const playSfx = async (sfxId: string, volume: number) => {
+    try {
+      const url = await sfxUrl(sfxId as SfxId);
+      if (!url) return;
+      const el = new Audio(url);
+      el.volume = Math.max(0, Math.min(1, volume));
+      hookExportAudio(el);
+      el.play().catch(() => {});
+    } catch {
+      /* one failed SFX never breaks playback */
+    }
+  };
+
+  const stopSceneMusic = () => {
+    if (musicElRef.current) {
+      musicElRef.current.pause();
+      musicElRef.current = null;
+    }
+  };
+
+  /** audio-aware length of a scene (mirrors the timeline's total) */
+  const sceneLengthOf = (sc: Scene) => {
+    let total = 0;
+    for (const b of sc.beats) {
+      const st = typeof b.start === "number" && b.start >= 0 ? b.start : 0;
+      const a = getCachedAudio(b.id);
+      const dur = Math.max(0.3, a ? Math.max(b.duration, a.duration + 0.3) : b.duration);
+      total = Math.max(total, st + dur);
+    }
+    return Math.max(total, 1.2);
+  };
+
+  /**
+   * Start the scene's background music (looping) + arm its SFX
+   * events. Events at/before `fromT` are marked fired (they are in
+   * the past — a seek must not replay them).
+   */
+  const startSceneAudio = (sc: Scene) => {
+    stopSceneMusic();
+    const events = sc.audio?.sfx ?? [];
+    sfxFiredRef.current = new Set(
+      events.filter((e) => e.at <= lastSceneTRef.current + 0.001).map((e) => e.id),
+    );
+    const musicId = sc.audio?.music;
+    if (!musicId || musicId === "none") return;
+    const vol = Math.max(0, Math.min(1, sc.audio?.musicVolume ?? 0.55));
+    musicUrl(musicId as MusicTrackId, sceneLengthOf(sc))
+      .then((url) => {
+        if (!url) return;
+        const el = new Audio(url);
+        el.loop = true;
+        el.volume = vol;
+        hookExportAudio(el);
+        musicElRef.current = el;
+        el.play().catch(() => {});
+      })
+      .catch(() => {});
+  };
+
+  /**
+   * অটো-সিঙ্ক bookkeeping: when a beat is added/edited, replace its
+   * auto SFX with the one matching its CURRENT action.
+   */
+  const syncAutoSfxForBeat = (beat: SceneBeat) => {
+    const desired = AUTO_SFX_OF(beat.action);
+    const st = useStudio.getState();
+    const cur = st.scenes.find((es) => es.id === st.activeSceneId);
+    if (!cur) return;
+    const events = cur.scene.audio?.sfx ?? [];
+    const stale = events.filter((e) => e.auto && e.beatId === beat.id && e.sfx !== desired);
+    const hasDesired = desired != null && events.some((e) => e.beatId === beat.id && e.sfx === desired);
+    if (stale.length === 0 && (desired == null || hasDesired)) return;
+    const next = events.filter((e) => !(e.auto && e.beatId === beat.id && e.sfx !== desired));
+    if (desired != null && !hasDesired) {
+      next.push({
+        id: newId(),
+        sfx: desired,
+        at: Math.max(0, Math.round((typeof beat.start === "number" && beat.start >= 0 ? beat.start : 0) * 20) / 20),
+        volume: 1,
+        auto: true,
+        beatId: beat.id,
+      });
+    }
+    setSfxEvents(next);
+  };
+
   /** audio-aware durations + lip-sync envelopes for ONE scene (engine maps) */
   const buildAudioMaps = (sc: Scene) => {
     const durMap: Record<string, number> = {};
@@ -660,11 +804,13 @@ export default function StudioTab({
     const stage = stageRef.current;
     if (!stage) return false;
     stopAllAudio();
+    stopSceneMusic();
     setActiveBeatIds(new Set());
     stage.stop();
     // swap the stage synchronously (the [scene] effect re-syncs afterwards — idempotent)
     stage.setScene(next.scene, st.designs);
     setActiveSceneId(next.id);
+    lastSceneTRef.current = 0;
     const ok = stage.play();
     if (!ok) {
       // empty scene → skip straight to the following one
@@ -679,6 +825,7 @@ export default function StudioTab({
       }
       return again;
     }
+    startSceneAudio(next.scene);
     return true;
   };
   advanceEpisodeRef.current = advanceEpisode;
@@ -690,6 +837,7 @@ export default function StudioTab({
       episodeRef.current = false;
       stage.pause();
       stopAllAudio();
+      stopSceneMusic();
       setPlaying(false);
       return;
     }
@@ -727,6 +875,9 @@ export default function StudioTab({
       });
       return;
     }
+    // Phase 4 — start this scene's music + arm its SFX events
+    lastSceneTRef.current = 0;
+    startSceneAudio(episodeRef.current ? st.scenes[0].scene : scene);
     setPlaying(true);
   };
 
@@ -734,6 +885,7 @@ export default function StudioTab({
     episodeRef.current = false;
     stageRef.current?.stop();
     stopAllAudio();
+    stopSceneMusic();
     setPlaying(false);
     setActiveBeatIds(new Set());
     setCurrentTime(0);
@@ -749,6 +901,7 @@ export default function StudioTab({
     episodeRef.current = false;
     stageRef.current?.stop();
     stopAllAudio();
+    stopSceneMusic();
     setPlaying(false);
     setActiveBeatIds(new Set());
   };
@@ -805,11 +958,76 @@ export default function StudioTab({
     [scene.beats, scene.characters, designs, audioVersion],
   );
 
+  // ---- Phase 4 — audio timeline rows ----
+  const timelineMusic: TimelineMusic | null = useMemo(() => {
+    const id = scene.audio?.music;
+    if (!id || id === "none") return null;
+    const def = musicTrackOf(id);
+    if (!def) return null;
+    return {
+      id,
+      name: def.name,
+      emoji: def.emoji,
+      volume: scene.audio?.musicVolume ?? 0.55,
+      peaks: musicPeaksState,
+    };
+  }, [scene.audio?.music, scene.audio?.musicVolume, musicPeaksState]);
+
+  const timelineSfx: TimelineSfx[] = useMemo(
+    () =>
+      (scene.audio?.sfx ?? []).map((e) => {
+        const def = sfxDefOf(e.sfx);
+        return {
+          id: e.id,
+          sfxId: e.sfx,
+          emoji: def?.emoji ?? "🔔",
+          label: def?.name ?? e.sfx,
+          at: e.at,
+          volume: e.volume ?? 1,
+          auto: !!e.auto,
+        };
+      }),
+    [scene.audio?.sfx],
+  );
+
+  const handleSfxMove = (id: string, at: number) => {
+    setSfxEvents(
+      (scene.audio?.sfx ?? []).map((e) => (e.id === id ? { ...e, at } : e)),
+    );
+  };
+
+  const handleSfxRemove = (id: string) => {
+    setSfxEvents((scene.audio?.sfx ?? []).filter((e) => e.id !== id));
+  };
+
+  // render + cache the waveform of the active scene's music track
+  useEffect(() => {
+    let alive = true;
+    const id = scene.audio?.music;
+    if (!id || id === "none") {
+      setMusicPeaksState(null);
+      return;
+    }
+    setMusicPeaksState(null);
+    musicPeaks(id as MusicTrackId, Math.max(4, totalDuration))
+      .then((p) => {
+        if (alive) setMusicPeaksState(p);
+      })
+      .catch(() => {});
+    return () => {
+      alive = false;
+    };
+  }, [scene.audio?.music, totalDuration]);
+
   const handleSeek = (t: number) => {
     if (exportingRef.current) return;
     stopAllAudio();
+    stopSceneMusic();
+    lastSceneTRef.current = t;
     stageRef.current?.seek(t);
     setCurrentTime(t);
+    // keep the soundtrack running from the new position
+    if (stageRef.current?.isPlaying()) startSceneAudio(scene);
   };
 
   const handleTimelineSelect = (id: string) => {
@@ -841,6 +1059,7 @@ export default function StudioTab({
         beat.text,
         design?.voice ?? "tongtong",
         beat.voiceSpeed ?? 1,
+        design?.voicePitch ?? 0,
       );
       setCachedAudio(beat.id, audio);
       setAudioVersion((v) => v + 1);
@@ -940,7 +1159,8 @@ export default function StudioTab({
     try {
       const audioOf = (id: string) => getCachedAudio(id);
       const timing = episodeTiming(exportScenes, audioOf);
-      const buses: ExportBeatAudio[] = episodeAudioBuses(exportScenes, timing, audioOf);
+      // Phase 4 — full mix: dialogue + per-scene music + SFX events
+      const buses: ExportBeatAudio[] = await buildExportAudio(exportScenes, timing, audioOf);
       // per-scene engine maps: correct walk timing + lip-sync while rendering
       const maps = exportScenes.map((es) => buildAudioMaps(es.scene));
       const hi = exportQuality === "1080";
@@ -1147,6 +1367,9 @@ export default function StudioTab({
         rec.stop();
         return;
       }
+      // Phase 4 — realtime capture also records music + SFX
+      lastSceneTRef.current = 0;
+      startSceneAudio(relevant[0].scene);
       setPlaying(true);
       toast({
         title: "এক্সপোর্ট চলছে 🎥",
@@ -1231,9 +1454,16 @@ export default function StudioTab({
     };
     if (editingBeatId) {
       updateBeat(editingBeatId, payload);
+      syncAutoSfxForBeat({ ...payload, id: editingBeatId } as SceneBeat);
       toast({ title: "দৃশ্য আপডেট হয়েছে ✅" });
     } else {
       addBeat(payload);
+      // অটো-সিঙ্ক: slap/laugh/walk… অ্যাকশনে মিলিয়ে শব্দ বসান
+      const stNow = useStudio.getState();
+      const curBeats =
+        stNow.scenes.find((es) => es.id === stNow.activeSceneId)?.scene.beats ?? [];
+      const added = curBeats[curBeats.length - 1];
+      if (added) syncAutoSfxForBeat(added);
       toast({
         title: "দৃশ্য যোগ হয়েছে 🎬",
         description: `মোট দৃশ্য: ${bnNum(scene.beats.length + 1)}টি`,
@@ -1595,6 +1825,14 @@ export default function StudioTab({
             <div className="ml-auto flex items-center gap-2.5">
               <Button
                 variant="outline"
+                onClick={() => setSoundOpen(true)}
+                className="border-teal-300 text-teal-800 hover:bg-teal-50"
+                title="মিউজিক, শব্দ-ইফেক্ট, রেকর্ডিং, ভয়েস টিউনিং"
+              >
+                <AudioLines className="mr-2 h-4 w-4" /> সাউন্ড স্টুডিও
+              </Button>
+              <Button
+                variant="outline"
                 onClick={() => setTemplatesOpen(true)}
                 className="border-orange-300 text-orange-700 hover:bg-orange-50"
               >
@@ -1705,6 +1943,12 @@ export default function StudioTab({
           onSelectBeat={handleTimelineSelect}
           onResizeBeat={handleTimelineResize}
           onMoveBeat={handleTimelineMove}
+          music={timelineMusic}
+          sfx={timelineSfx}
+          onMusicSelect={() => setSoundOpen(true)}
+          onSfxMove={handleSfxMove}
+          onSfxSelect={() => setSoundOpen(true)}
+          onSfxRemove={handleSfxRemove}
         />
       </div>
 
@@ -3011,6 +3255,15 @@ export default function StudioTab({
       <ScriptDialog open={scriptOpen} onOpenChange={setScriptOpen} />
 
       {/* ---------- Phase 3: two-character interactions ---------- */}
+      {/* ---------- Phase 4: সাউন্ড স্টুডিও ---------- */}
+      <SoundStudio
+        open={soundOpen}
+        onOpenChange={setSoundOpen}
+        onAudioChanged={() => setAudioVersion((v) => v + 1)}
+        playhead={currentTime}
+        sceneDuration={Math.max(2, totalDuration)}
+      />
+
       <InteractionDialog open={interactionsOpen} onOpenChange={setInteractionsOpen} />
 
       {/* ---------- Guided tour (Phase 1) ---------- */}

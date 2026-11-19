@@ -265,7 +265,12 @@ export default function CreatorTab() {
     if (testingVoice) return;
     setTestingVoice(true);
     try {
-      const { url } = await generateVoice("ওই মামা, কী রে? আমার কণ্ঠ কেমন লাগছে?", draft.voice);
+      const { url } = await generateVoice(
+        "ওই মামা, কী রে? আমার কণ্ঠ কেমন লাগছে?",
+        draft.voice,
+        1,
+        draft.voicePitch ?? 0,
+      );
       const el = new Audio(url);
       el.onended = () => setTestingVoice(false);
       await el.play();

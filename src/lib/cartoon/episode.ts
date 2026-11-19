@@ -9,6 +9,8 @@
 
 import { computeBeatWindows, sceneTotalDuration } from './engine';
 import type { CachedAudio } from '@/lib/tts-cache';
+import { musicUrl, type MusicTrackId } from '@/lib/audio/music';
+import { sfxUrl, sfxDefOf, type SfxId } from '@/lib/audio/sfx';
 import type { EpisodeScene, Scene } from './types';
 
 /** Audio-aware engine duration for one beat (mirrors studio-tab rules). */
@@ -94,19 +96,71 @@ export function locateInEpisode(
   return { index: 0, localT: 0 };
 }
 
-/** All dialogue buses for an episode export, shifted by scene offsets. */
+/**
+ * All dialogue buses for an episode export, shifted by scene offsets.
+ * (kept for callers that only want speech — the Phase 4 full mix is
+ * buildExportAudio() below)
+ */
 export function episodeAudioBuses(
   scenes: EpisodeScene[],
   timing: EpisodeTiming,
   audioOf: (beatId: string) => CachedAudio | undefined,
-): { start: number; audio: CachedAudio }[] {
-  const buses: { start: number; audio: CachedAudio }[] = [];
+): { start: number; url: string; volume: number }[] {
+  const buses: { start: number; url: string; volume: number }[] = [];
   scenes.forEach((es, i) => {
     const off = timing.scenes[i]?.offset ?? 0;
     for (const w of sceneBeatWindows(es.scene, audioOf)) {
       const a = audioOf(w.id);
-      if (a) buses.push({ start: off + w.start, audio: a });
+      if (a) buses.push({ start: off + w.start, url: a.url, volume: 1 });
     }
   });
+  return buses;
+}
+
+export interface ExportAudioBus {
+  start: number;
+  url: string;
+  volume: number;
+}
+
+/**
+ * Phase 4 — সাউন্ড স্টুডিও: the FULL episode audio mix for MP4 export.
+ * Dialogue buses (as before) + per-scene background music (rendered to
+ * the exact scene length) + per-scene SFX events — all offline.
+ */
+export async function buildExportAudio(
+  scenes: EpisodeScene[],
+  timing: EpisodeTiming,
+  audioOf: (beatId: string) => CachedAudio | undefined,
+): Promise<ExportAudioBus[]> {
+  const buses: ExportAudioBus[] = episodeAudioBuses(scenes, timing, audioOf);
+  for (let i = 0; i < scenes.length; i++) {
+    const es = scenes[i];
+    const off = timing.scenes[i]?.offset ?? 0;
+    const dur = timing.scenes[i]?.duration ?? 0;
+    const audio = es.scene.audio;
+
+    // background music — one contiguous segment per scene
+    const musicId = audio?.music;
+    if (musicId && musicId !== 'none' && dur > 0.5) {
+      try {
+        const url = await musicUrl(musicId as MusicTrackId, dur);
+        if (url) buses.push({ start: off, url, volume: audio?.musicVolume ?? 0.55 });
+      } catch {
+        /* music is optional — never block the export */
+      }
+    }
+
+    // SFX events at their absolute scene times
+    for (const e of audio?.sfx ?? []) {
+      if (!sfxDefOf(e.sfx)) continue;
+      try {
+        const url = await sfxUrl(e.sfx as SfxId);
+        if (url) buses.push({ start: off + e.at, url, volume: e.volume ?? 1 });
+      } catch {
+        /* single SFX failure never blocks the export */
+      }
+    }
+  }
   return buses;
 }

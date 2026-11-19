@@ -56,6 +56,7 @@ export default function VoiceMapping({
         `নমস্কার! আমি ${d.name}, এই কণ্ঠে কথা বলব।`,
         d.voice,
         1,
+        d.voicePitch ?? 0,
       );
       const el = new Audio(audio.url);
       audioRef.current = el;
@@ -91,7 +92,7 @@ export default function VoiceMapping({
     setRebuilding(d.id);
     try {
       for (const b of targets) {
-        const audio = await generateVoice(b.text, d.voice, b.voiceSpeed ?? 1);
+        const audio = await generateVoice(b.text, d.voice, b.voiceSpeed ?? 1, d.voicePitch ?? 0);
         setCachedAudio(b.id, audio);
       }
       onAudioChanged();

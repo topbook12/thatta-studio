@@ -136,6 +136,12 @@ export interface CharacterDesign {
   glasses: boolean;
   /** TTS voice id (tongtong / chuichui / kazi / ...) */
   voice: string;
+  /**
+   * Phase 4 — voice tuning in semitones (−6..+6, default 0).
+   * Applied by the offline pitch shifter at generation time; duration
+   * is preserved so lip-sync and beat timing stay exact.
+   */
+  voicePitch?: number;
 }
 
 /** Props a character can hold in the (near) hand — Sprint 2. */
@@ -242,12 +248,43 @@ export interface SceneCamera {
   shake?: boolean;
 }
 
+/**
+ * Phase 4 — সাউন্ড স্টুডিও: per-scene soundtrack.
+ * `music` is a procedural desi tune id ('none' = silent), `sfx` are
+ * absolute-time sound-effect events (slap/laugh/footsteps…) shown on
+ * the audio timeline. Everything synthesizes offline in the browser.
+ */
+export interface SceneSfxEvent {
+  id: string;
+  /** SfxId from lib/audio/sfx */
+  sfx: string;
+  /** absolute start time on the scene timeline (seconds) */
+  at: number;
+  /** 0..1.5 (default 1) */
+  volume?: number;
+  /** true when placed by the auto-sync engine (beat action mapping) */
+  auto?: boolean;
+  /** which beat placed it (auto-sync bookkeeping) */
+  beatId?: string;
+}
+
+export interface SceneAudio {
+  /** background music track id — undefined/'none' = no music */
+  music?: string;
+  /** music loudness 0..1 (default 0.55) */
+  musicVolume?: number;
+  /** sound-effect events on the scene timeline */
+  sfx?: SceneSfxEvent[];
+}
+
 export interface Scene {
   background: BgName;
   characters: PlacedCharacter[];
   beats: SceneBeat[];
   /** Sprint 6 — cinematic camera (older saved scenes omit) */
   camera?: SceneCamera;
+  /** Phase 4 — per-scene soundtrack (older saved scenes omit) */
+  audio?: SceneAudio;
 }
 
 /**

@@ -53,6 +53,26 @@ export interface TimelineActor {
   color: string;
 }
 
+/** Phase 4 — background-music row data (peaks drive the waveform). */
+export interface TimelineMusic {
+  id: string;
+  name: string;
+  emoji: string;
+  volume: number;
+  peaks: number[] | null;
+}
+
+/** Phase 4 — sound-effect chip on the audio timeline. */
+export interface TimelineSfx {
+  id: string;
+  sfxId: string;
+  emoji: string;
+  label: string;
+  at: number;
+  volume: number;
+  auto: boolean;
+}
+
 export interface TimelineEditorProps {
   beats: TimelineBeat[];
   actors: TimelineActor[];
@@ -65,6 +85,17 @@ export interface TimelineEditorProps {
   onResizeBeat: (id: string, newDuration: number) => void;
   onMoveBeat: (id: string, newStart: number, newActorUid?: string) => void;
   pxPerSec?: number; // default 56
+  // ---- Phase 4 — audio timeline rows ----
+  music?: TimelineMusic | null;
+  sfx?: TimelineSfx[];
+  /** open the Sound Studio (music row click) */
+  onMusicSelect?: () => void;
+  /** drag an SFX chip to a new time */
+  onSfxMove?: (id: string, at: number) => void;
+  /** click an SFX chip (opens Sound Studio) */
+  onSfxSelect?: (id: string) => void;
+  /** remove an SFX chip */
+  onSfxRemove?: (id: string) => void;
 }
 
 /** A beat as laid out (possibly with drag preview overrides applied). */
@@ -105,6 +136,7 @@ const MAX_DUR = 20; // seconds
 const MAX_START = 120; // seconds — hard timeline limit
 const RULER_H = 26; // px
 const ROW_H = 44; // px
+const AUDIO_ROW_H = 34; // px — Phase 4 music/SFX rows
 const WAVE_MIN_WIDTH = 48; // px — skip waveform on narrower blocks
 
 /** Fallback row for beats whose actorUid is not in `actors`. */
@@ -113,6 +145,19 @@ const OTHERS_ACTOR: TimelineActor = {
   name: "অন্যান্য",
   color: "#9ca3af",
 };
+
+/**
+ * Downsample a peaks array to ~`widthPx` 3px bars for wide audio rows.
+ */
+function downsamplePeaks(peaks: number[], widthPx: number): number[] {
+  const maxBars = Math.min(400, Math.max(4, Math.floor(widthPx / 3)));
+  const step = peaks.length / maxBars;
+  const out: number[] = [];
+  for (let i = 0; i < maxBars; i++) {
+    out.push(clamp(peaks[Math.min(peaks.length - 1, Math.floor(i * step))] ?? 0, 0, 1));
+  }
+  return out;
+}
 
 /**
  * Snap a moved/extended beat into the nearest free gap of its actor track,
@@ -249,6 +294,12 @@ export default function TimelineEditor({
   onResizeBeat,
   onMoveBeat,
   pxPerSec,
+  music,
+  sfx,
+  onMusicSelect,
+  onSfxMove,
+  onSfxSelect,
+  onSfxRemove,
 }: TimelineEditorProps) {
   const pps = pxPerSec && pxPerSec > 0 ? pxPerSec : DEFAULT_PPS;
 
@@ -283,6 +334,45 @@ export default function TimelineEditor({
 
   const [scrubbing, setScrubbing] = useState(false);
   const [resizePreview, setResizePreview] = useState<Record<string, number>>({});
+
+  // ---- Phase 4 — SFX chip drag ----
+  const sfxDragRef = useRef<{ id: string; startX: number; origAt: number } | null>(null);
+  const [sfxPreview, setSfxPreview] = useState<{ id: string; at: number } | null>(null);
+
+  const onSfxDragDown = useCallback(
+    (e: ReactPointerEvent<HTMLDivElement>, evt: TimelineSfx) => {
+      if (e.pointerType === "mouse" && e.button !== 0) return;
+      e.stopPropagation();
+      e.preventDefault();
+      e.currentTarget.setPointerCapture(e.pointerId);
+      sfxDragRef.current = { id: evt.id, startX: e.clientX, origAt: evt.at };
+    },
+    [],
+  );
+  const onSfxDragMove = useCallback(
+    (e: ReactPointerEvent<HTMLDivElement>) => {
+      const st = sfxDragRef.current;
+      if (!st) return;
+      const at = Math.max(
+        0,
+        Math.round((st.origAt + (e.clientX - st.startX) / pps) * 20) / 20,
+      );
+      setSfxPreview({ id: st.id, at });
+    },
+    [pps],
+  );
+  const onSfxDragEnd = useCallback(
+    (e: ReactPointerEvent<HTMLDivElement>) => {
+      const st = sfxDragRef.current;
+      sfxDragRef.current = null;
+      setSfxPreview((prev) => {
+        if (st && prev?.id === st.id && onSfxMove) onSfxMove(st.id, prev.at);
+        return null;
+      });
+      e.stopPropagation();
+    },
+    [onSfxMove],
+  );
   const movePreviewRef = useRef<{
     id: string;
     start: number;
@@ -692,6 +782,147 @@ export default function TimelineEditor({
                 );
               })}
             </div>
+
+            {/* ---- Phase 4 — audio timeline rows ---- */}
+            {(music || (sfx && sfx.length > 0)) && (
+              <>
+                {/* music waveform row */}
+                <div
+                  className="flex border-t border-amber-100 bg-teal-50/30"
+                  style={{ height: AUDIO_ROW_H }}
+                >
+                  <button
+                    type="button"
+                    onClick={onMusicSelect}
+                    title="সাউন্ড স্টুডিও খুলুন"
+                    className="sticky left-0 z-20 flex w-28 shrink-0 items-center gap-1.5 border-r border-amber-200 bg-white px-2 text-left"
+                  >
+                    <span aria-hidden>🎵</span>
+                    <span className="truncate text-[11px] font-bold text-teal-900">মিউজিক</span>
+                  </button>
+                  <div
+                    className="relative shrink-0 touch-none"
+                    style={{ width: contentWidth }}
+                    onPointerDown={beginScrub}
+                    onPointerMove={moveScrub}
+                    onPointerUp={endScrub}
+                    onPointerCancel={endScrub}
+                  >
+                    {music ? (
+                      <div
+                        className="absolute top-[3px] h-[28px] cursor-pointer overflow-hidden rounded-lg border border-teal-300 bg-teal-600/90"
+                        style={{ left: 0, width: Math.max(80, totalDuration * pps) }}
+                        onClick={onMusicSelect}
+                        title={`${music.name} — সাউন্ড স্টুডিও`}
+                      >
+                        <div className="flex h-full items-center justify-between gap-1 px-2">
+                          <span className="truncate text-[11px] font-bold text-white drop-shadow-sm">
+                            {music.emoji} {music.name}
+                            <span className="ml-1.5 rounded bg-black/25 px-1 text-[10px]">
+                              {bnNum(Math.round(music.volume * 100))}%
+                            </span>
+                          </span>
+                        </div>
+                        {music.peaks && music.peaks.length > 0 && (
+                          <div className="pointer-events-none absolute inset-x-1 bottom-[2px] flex h-[12px] items-end gap-px overflow-hidden">
+                            {downsamplePeaks(music.peaks, Math.max(80, totalDuration * pps - 16)).map(
+                              (p, i) => (
+                                <div
+                                  key={i}
+                                  className="w-[2px] shrink-0 rounded-full bg-white/60"
+                                  style={{ height: 2 + p * 10 }}
+                                />
+                              ),
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={onMusicSelect}
+                        className="absolute top-[6px] flex h-[22px] items-center gap-1.5 rounded-md border border-dashed border-teal-300 bg-white/70 px-2 text-[11px] font-semibold text-teal-800 hover:bg-teal-50"
+                        style={{ left: 4 }}
+                        title="সাউন্ড স্টুডিও — মিউজিক যোগ করুন"
+                      >
+                        + মিউজিক যোগ করুন
+                      </button>
+                    )}
+                  </div>
+                </div>
+
+                {/* SFX chips row */}
+                <div
+                  className="flex border-t border-amber-100 bg-amber-50/40"
+                  style={{ height: AUDIO_ROW_H }}
+                >
+                  <button
+                    type="button"
+                    onClick={onMusicSelect}
+                    title="সাউন্ড স্টুডিও খুলুন"
+                    className="sticky left-0 z-20 flex w-28 shrink-0 items-center gap-1.5 border-r border-amber-200 bg-white px-2 text-left"
+                  >
+                    <span aria-hidden>🔊</span>
+                    <span className="truncate text-[11px] font-bold text-amber-900">SFX</span>
+                  </button>
+                  <div
+                    className="relative shrink-0 touch-none"
+                    style={{ width: contentWidth }}
+                    onPointerDown={beginScrub}
+                    onPointerMove={moveScrub}
+                    onPointerUp={endScrub}
+                    onPointerCancel={endScrub}
+                  >
+                    {(sfx ?? []).map((evt) => {
+                      const at = sfxPreview?.id === evt.id ? sfxPreview.at : evt.at;
+                      return (
+                        <div
+                          key={evt.id}
+                          data-sfx-id={evt.id}
+                          className={`absolute top-[4px] flex h-[26px] cursor-grab touch-none select-none items-center gap-1 rounded-md px-1.5 text-[11px] font-bold text-white shadow-sm active:cursor-grabbing ${
+                            evt.auto ? "bg-teal-700" : "bg-orange-700"
+                          } ${sfxPreview?.id === evt.id ? "ring-2 ring-emerald-500" : ""}`}
+                          style={{ left: at * pps }}
+                          title={`${evt.label} @ ${at.toFixed(1)}s${evt.auto ? " (অটো-সিঙ্ক)" : ""}`}
+                          onPointerDown={(e) => onSfxDragDown(e, evt)}
+                          onPointerMove={onSfxDragMove}
+                          onPointerUp={onSfxDragEnd}
+                          onPointerCancel={onSfxDragEnd}
+                          onClick={() => onSfxSelect?.(evt.id)}
+                        >
+                          <span aria-hidden>{evt.emoji}</span>
+                          <span className="max-w-[64px] truncate">{evt.label}</span>
+                          {onSfxRemove && (
+                            <button
+                              type="button"
+                              className="ml-0.5 flex h-4 w-4 items-center justify-center rounded-full bg-black/25 hover:bg-black/45"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                onSfxRemove(evt.id);
+                              }}
+                              aria-label={`${evt.label} মুছুন`}
+                            >
+                              ×
+                            </button>
+                          )}
+                        </div>
+                      );
+                    })}
+                    {(!sfx || sfx.length === 0) && (
+                      <button
+                        type="button"
+                        onClick={onMusicSelect}
+                        className="absolute top-[6px] flex h-[22px] items-center gap-1.5 rounded-md border border-dashed border-orange-300 bg-white/70 px-2 text-[11px] font-semibold text-orange-800 hover:bg-orange-50"
+                        style={{ left: 4 }}
+                        title="সাউন্ড স্টুডিও — শব্দ-ইফেক্ট যোগ করুন"
+                      >
+                        + শব্দ-ইফেক্ট যোগ করুন
+                      </button>
+                    )}
+                  </div>
+                </div>
+              </>
+            )}
 
             {/* playhead */}
             <div

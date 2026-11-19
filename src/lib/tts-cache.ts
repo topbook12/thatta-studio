@@ -13,6 +13,8 @@
 // ============================================================
 
 import { loadStoredVoice, storeVoice, voiceKey } from './audio-store';
+import { shiftPitchBuffer } from './audio/pitch';
+import { encodeWav } from './audio/wav';
 
 export interface CachedAudio {
   url: string;
@@ -211,21 +213,51 @@ function syntheticEnvelopes(duration: number): BandEnvelopes {
 }
 
 /**
+ * Decode a blob and build the full CachedAudio (duration + peaks +
+ * viseme envelopes). Shared by TTS generation AND Phase 4 mic
+ * recordings (a recorded clip drives lip-sync exactly like TTS).
+ */
+export async function cachedAudioFromBlob(blob: Blob): Promise<CachedAudio> {
+  const AC: typeof AudioContext =
+    window.AudioContext ??
+    (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
+  if (!AC) throw new Error('no audio context');
+  const ctx = new AC();
+  const buf = await ctx.decodeAudioData(await blob.arrayBuffer());
+  const bands = spectralBands(buf.getChannelData(0), buf.sampleRate);
+  const duration = buf.duration;
+  ctx.close().catch(() => {});
+  if (!(duration > 0.1)) throw new Error('audio too short');
+  return {
+    url: URL.createObjectURL(blob),
+    duration,
+    peaks: bands.peaks,
+    envelope: bands.open,
+    openEnv: bands.open,
+    wideEnv: bands.wide,
+  };
+}
+
+/**
  * Generate Bangla voice for a dialogue line.
  * Order: memory cache → IndexedDB (offline) → /api/tts network call.
  * The result is persisted so it works even when offline later.
+ * Phase 4: `pitch` (semitones, per-character tuning) is applied
+ * OFFLINE at generation time — duration is preserved, so beat
+ * timing + lip-sync stay exact. The PROCESSED audio is persisted.
  */
 export async function generateVoice(
   text: string,
   voice: string,
   speed = 1,
+  pitch = 0,
 ): Promise<CachedAudio> {
   // 1) already in memory?
   // (caller decides — we are keyed by beatId; here we are keyed by content)
 
-  // 2) offline IndexedDB store (same text+voice+speed → instant reuse)
+  // 2) offline IndexedDB store (same text+voice+speed+pitch → instant reuse)
   try {
-    const stored = await loadStoredVoice(text, voice, speed);
+    const stored = await loadStoredVoice(text, voice, speed, pitch);
     if (stored?.blob) {
       const url = URL.createObjectURL(stored.blob);
       return {
@@ -251,9 +283,9 @@ export async function generateVoice(
     const msg = await res.json().catch(() => ({}));
     throw new Error(msg?.error ?? `TTS failed (${res.status})`);
   }
-  const blob = await res.blob();
-  const url = URL.createObjectURL(blob);
+  const raw = await res.blob();
 
+  let blob = raw;
   let duration: number;
   let peaks: number[];
   let open: number[];
@@ -264,7 +296,13 @@ export async function generateVoice(
       (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
     if (!AC) throw new Error('no audio context');
     const ctx = new AC();
-    const buf = await ctx.decodeAudioData(await blob.arrayBuffer());
+    let buf = await ctx.decodeAudioData(await raw.arrayBuffer());
+    // Phase 4 — per-character pitch tuning (offline PCM processing)
+    if (pitch && Math.abs(pitch) >= 0.01) {
+      buf = shiftPitchBuffer(buf, pitch);
+      // re-wrap the shifted PCM into a WAV blob (self-contained, storable)
+      blob = encodeWav(buf);
+    }
     const bands = spectralBands(buf.getChannelData(0), buf.sampleRate);
     duration = buf.duration;
     peaks = bands.peaks;
@@ -273,17 +311,19 @@ export async function generateVoice(
     ctx.close().catch(() => {});
     if (!(duration > 0.1)) throw new Error('too short');
   } catch {
-    duration = await getAudioDuration(url);
+    duration = await getAudioDuration(raw.size > 0 ? URL.createObjectURL(raw) : '');
     const syn = syntheticEnvelopes(duration);
     peaks = syn.peaks;
     open = syn.open;
     wide = syn.wide;
   }
 
+  const url = URL.createObjectURL(blob);
+
   // persist for offline reuse (best effort — never blocks the UI)
   try {
     await storeVoice({
-      key: voiceKey(text, voice, speed),
+      key: voiceKey(text, voice, speed, pitch),
       blob,
       duration,
       peaks,
@@ -302,14 +342,16 @@ export async function generateVoice(
 /**
  * Sprint 7 — rebuild a CachedAudio for a beat from the offline store.
  * Used when a saved project is reopened and the in-memory cache is cold.
+ * Phase 4: pitch-aware keys.
  */
 export async function restoreVoiceAudio(
   text: string,
   voice: string,
   speed = 1,
+  pitch = 0,
 ): Promise<CachedAudio | null> {
   try {
-    const stored = await loadStoredVoice(text, voice, speed);
+    const stored = await loadStoredVoice(text, voice, speed, pitch);
     if (!stored?.blob) return null;
     const url = URL.createObjectURL(stored.blob);
     return {
