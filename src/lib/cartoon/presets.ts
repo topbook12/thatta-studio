@@ -7,6 +7,7 @@ import type {
   BgName,
   CharacterDesign,
   CustomEasing,
+  DecorName,
   EasingName,
   EpisodeScene,
   PlacedCharacter,
@@ -15,6 +16,8 @@ import type {
   Scene,
   SceneBeat,
   SceneTransition,
+  TimeOfDay,
+  WeatherFx,
 } from './types';
 
 export function newId(): string {
@@ -157,6 +160,10 @@ export const BG_OPTIONS: { id: BgName; label: string }[] = [
   { id: 'school', label: '🏫 স্কুল' },
   { id: 'ghat', label: '🛕 ঘাট' },
   { id: 'night', label: '🌙 রাতের গ্রাম' },
+  // Phase 5 — জগৎ তৈরি
+  { id: 'station', label: '🚉 রেলস্টেশন' },
+  { id: 'cinema', label: '🎥 সিনেমা হল' },
+  { id: 'mela', label: '🎡 মেলা' },
 ];
 
 /** হাতে ধরা যায় এমন প্রপ (Sprint 2 + Sprint 4) */
@@ -172,6 +179,33 @@ export const PROP_OPTIONS: { id: PropName; label: string; emoji: string }[] = [
   { id: 'lamp', label: 'কুপি', emoji: '🏮' },
   { id: 'sack', label: 'বস্তা', emoji: '🎒' },
   { id: 'flower', label: 'ফুলের তোড়া', emoji: '🌸' },
+  // Phase 5 — জগৎ তৈরি
+  { id: 'tea', label: 'চায়ের কাপ', emoji: '🍵' },
+  { id: 'mobile', label: 'মোবাইল', emoji: '📱' },
+  { id: 'bag', label: 'ঝোলা', emoji: '👝' },
+];
+
+/** Phase 5 — ডেকোর লেয়ার picker entries (ground set pieces) */
+export const DECOR_OPTIONS: { id: DecorName; label: string; emoji: string }[] = [
+  { id: 'tree', label: 'গাছ', emoji: '🌳' },
+  { id: 'rickshaw', label: 'রিকশা', emoji: '🛺' },
+  { id: 'chair', label: 'চেয়ার', emoji: '🪑' },
+  { id: 'stall', label: 'মেলার দোকান', emoji: '🎪' },
+];
+
+/** Phase 5 — ব্যাকগ্রাউন্ড এডিটর option lists */
+export const TIME_OF_DAY_OPTIONS: { id: TimeOfDay; label: string; emoji: string }[] = [
+  { id: 'day', label: 'দিন', emoji: '☀️' },
+  { id: 'dawn', label: 'ভোর', emoji: '🌅' },
+  { id: 'dusk', label: 'গোধূলি', emoji: '🌇' },
+  { id: 'night', label: 'রাত', emoji: '🌃' },
+];
+
+export const WEATHER_OPTIONS: { id: WeatherFx; label: string; emoji: string }[] = [
+  { id: 'none', label: 'পরিষ্কার', emoji: '🌤️' },
+  { id: 'rain', label: 'বৃষ্টি', emoji: '🌧️' },
+  { id: 'fog', label: 'কুয়াশা', emoji: '🌫️' },
+  { id: 'dust', label: 'ধুলো', emoji: '🌪️' },
 ];
 
 // ---------------- Design factory ----------------
@@ -424,7 +458,58 @@ export function normalizeScene(scene: Scene): Scene {
             })),
         }
       : undefined;
-  return { ...scene, beats, characters, camera, audio };
+  // Phase 5 — environment + decor sanitization (old scenes omit both)
+  const environment = scene.environment
+    ? {
+        timeOfDay: (
+          ['dawn', 'dusk', 'night'] as string[]
+        ).includes(scene.environment.timeOfDay ?? 'day')
+          ? (scene.environment.timeOfDay as TimeOfDay)
+          : 'day',
+        weather: (
+          ['rain', 'fog', 'dust'] as string[]
+        ).includes(scene.environment.weather ?? 'none')
+          ? (scene.environment.weather as WeatherFx)
+          : 'none',
+        intensity:
+          typeof scene.environment.intensity === 'number'
+            ? Math.max(0, Math.min(1, scene.environment.intensity))
+            : 0.6,
+        warmth:
+          typeof scene.environment.warmth === 'number'
+            ? Math.max(-1, Math.min(1, scene.environment.warmth))
+            : 0,
+      }
+    : undefined;
+  const decor = (scene.decor ?? [])
+    .filter(
+      (d) =>
+        d &&
+        ['tree', 'rickshaw', 'chair', 'stall'].includes(d.decorId) &&
+        typeof d.x === 'number' &&
+        Number.isFinite(d.x),
+    )
+    .map((d) => ({
+      ...d,
+      x: Math.max(0, Math.min(100, d.x)),
+      scale:
+        typeof d.scale === 'number'
+          ? Math.max(0.4, Math.min(2.5, d.scale))
+          : 1,
+      z:
+        typeof d.z === 'number'
+          ? Math.max(-120, Math.min(480, Math.round(d.z)))
+          : undefined,
+    }));
+  return {
+    ...scene,
+    beats,
+    characters,
+    camera,
+    audio,
+    environment,
+    decor: decor.length > 0 ? decor : undefined,
+  };
 }
 
 // ---------------- Phase 2: multi-scene episode helpers ----------------

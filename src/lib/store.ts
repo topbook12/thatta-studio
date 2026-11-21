@@ -24,10 +24,12 @@ import type {
   BgName,
   CameraShot,
   CharacterDesign,
+  DecorName,
   EpisodeScene,
   PlacedCharacter,
   Scene,
   SceneBeat,
+  SceneEnvironment,
   SceneSfxEvent,
   SceneTransition,
 } from './cartoon/types';
@@ -99,6 +101,14 @@ export interface StudioState {
   setSceneMusicVolume: (volume: number) => void;
   /** replace the active scene's whole SFX event list */
   setSfxEvents: (events: SceneSfxEvent[]) => void;
+
+  // ---- Phase 5 — জগৎ তৈরি (world building) ----
+  /** patch the active scene's environment (time-of-day / weather / warmth) */
+  setSceneEnvironment: (patch: Partial<SceneEnvironment>) => void;
+  /** add a decor piece at a default spot; becomes the most-recent layer */
+  addDecor: (decorId: DecorName) => void;
+  updateDecor: (uid: string, patch: Partial<{ x: number; scale: number; z: number }>) => void;
+  removeDecor: (uid: string) => void;
 
   // Sprint 8 — undo/redo (injected by the history middleware)
   undo: () => void;
@@ -412,6 +422,57 @@ export const useStudio = create<StudioState>()(
               musicVolume: sc.audio?.musicVolume ?? 0.55,
               sfx: events,
             },
+          })),
+        ),
+
+      // ---- Phase 5 — জগৎ তৈরি ----
+      setSceneEnvironment: (patch) =>
+        set((s) =>
+          withActive(s, (sc) => ({
+            ...sc,
+            environment: {
+              timeOfDay: 'day',
+              weather: 'none',
+              intensity: 0.6,
+              warmth: 0,
+              ...sc.environment,
+              ...patch,
+            },
+          })),
+        ),
+      addDecor: (decorId) =>
+        set((s) =>
+          withActive(s, (sc) => {
+            const n = (sc.decor ?? []).length;
+            return {
+              ...sc,
+              decor: [
+                ...(sc.decor ?? []),
+                {
+                  uid: newId(),
+                  decorId,
+                  x: n === 0 ? 22 : ((n * 29) % 76) + 8,
+                  scale: 1,
+                  z: 0,
+                },
+              ],
+            };
+          }),
+        ),
+      updateDecor: (uid, patch) =>
+        set((s) =>
+          withActive(s, (sc) => ({
+            ...sc,
+            decor: (sc.decor ?? []).map((d) =>
+              d.uid === uid ? { ...d, ...patch } : d,
+            ),
+          })),
+        ),
+      removeDecor: (uid) =>
+        set((s) =>
+          withActive(s, (sc) => ({
+            ...sc,
+            decor: (sc.decor ?? []).filter((d) => d.uid !== uid),
           })),
         ),
 

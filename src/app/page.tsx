@@ -5,9 +5,10 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import StudioTab from "@/components/tabs/studio-tab";
 import CreatorTab from "@/components/tabs/creator-tab";
 import CoursesTab from "@/components/tabs/courses-tab";
+import GalleryTab from "@/components/tabs/gallery-tab";
 import RoadmapDialog from "@/components/roadmap-dialog";
 import StudioErrorBoundary from "@/components/studio/error-boundary";
-import { Clapperboard, GraduationCap, Sparkles, UserRound, WifiOff } from "lucide-react";
+import { Clapperboard, GraduationCap, Images, Sparkles, UserRound, WifiOff } from "lucide-react";
 
 const emptySubscribe = () => () => {};
 
@@ -82,7 +83,7 @@ export default function Home() {
       {/* Main */}
       <main className="mx-auto w-full max-w-7xl flex-1 px-3 py-4 sm:px-6 sm:py-6">
         <Tabs value={tab} onValueChange={setTab} className="w-full">
-          <TabsList className="mb-4 grid h-auto w-full grid-cols-3 gap-1 rounded-2xl border border-amber-200 bg-white/80 p-1.5 sm:w-auto sm:inline-grid">
+          <TabsList className="mb-4 grid h-auto w-full grid-cols-2 gap-1 rounded-2xl border border-amber-200 bg-white/80 p-1.5 sm:w-auto sm:inline-grid sm:grid-cols-4">
             <TabsTrigger
               value="studio"
               className="gap-1.5 rounded-xl py-2.5 text-sm font-semibold data-[state=active]:bg-orange-600 data-[state=active]:text-white sm:px-6"
@@ -96,6 +97,13 @@ export default function Home() {
             >
               <UserRound className="h-4 w-4" />
               ক্যারেক্টার তৈরি
+            </TabsTrigger>
+            <TabsTrigger
+              value="gallery"
+              className="gap-1.5 rounded-xl py-2.5 text-sm font-semibold data-[state=active]:bg-orange-600 data-[state=active]:text-white sm:px-6"
+            >
+              <Images className="h-4 w-4" />
+              গ্যালারি
             </TabsTrigger>
             <TabsTrigger
               value="courses"
@@ -121,6 +129,13 @@ export default function Home() {
             {mounted ? (
               <Guarded>
                 <CreatorTab />
+              </Guarded>
+            ) : null}
+          </TabsContent>
+          <TabsContent value="gallery" className="mt-0 focus-visible:outline-none">
+            {mounted ? (
+              <Guarded>
+                <GalleryTab onOpenInStudio={() => setTab("studio")} />
               </Guarded>
             ) : null}
           </TabsContent>

@@ -52,6 +52,19 @@ export function ensureSchema(): Promise<void> {
            "updatedAt" DATETIME NOT NULL
          )`,
       )
+      // Phase 7 — কমিউনিটি গ্যালারি (created lazily on serverless too)
+      await db.$executeRawUnsafe(
+        `CREATE TABLE IF NOT EXISTS "GalleryItem" (
+           "id" TEXT NOT NULL PRIMARY KEY,
+           "name" TEXT NOT NULL,
+           "author" TEXT NOT NULL,
+           "data" TEXT NOT NULL,
+           "thumbnail" TEXT,
+           "duration" REAL NOT NULL DEFAULT 0,
+           "likes" INTEGER NOT NULL DEFAULT 0,
+           "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+         )`,
+      )
     })().catch((error) => {
       console.error('[db] schema bootstrap failed:', error)
       // retry on the next request

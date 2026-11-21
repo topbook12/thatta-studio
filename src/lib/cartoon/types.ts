@@ -49,7 +49,11 @@ export type BgName =
   | 'temple' // কালীবাড়ির উঠান
   | 'river' // নদীপথ — নৌকা
   | 'kitchen' // রান্নাঘর
-  | 'jungle'; // জঙ্গলের পথ
+  | 'jungle' // জঙ্গলের পথ
+  // Phase 5 — জগৎ তৈরি
+  | 'station' // রেলস্টেশন
+  | 'cinema' // সিনেমা হল
+  | 'mela'; // গ্রামের মেলা
 
 /** Easing for beat-level movement (walk path etc.) */
 export type EasingName =
@@ -157,7 +161,49 @@ export type PropName =
   | 'book' // পোথি/বই
   | 'lamp' // কুপি
   | 'sack' // বস্তা
-  | 'flower'; // ফুলের তোড়া
+  | 'flower' // ফুলের তোড়া
+  // Phase 5 — জগৎ তৈরি
+  | 'tea' // চায়ের কাপ (ধোঁয়া উঠছে)
+  | 'mobile' // মোবাইল (স্ক্রিন জ্বলছে)
+  | 'bag'; // ঝোলা ব্যাগ
+
+/**
+ * Phase 5 — ডেকোর লেয়ার: ground-anchored set pieces (গাছ, রিকশা,
+ * চেয়ার…) placed freely in the scene, independent of characters.
+ * z follows the character depth convention: 0 = stage plane,
+ * + = farther (drawn behind actors), − = closer (drawn in front).
+ */
+export type DecorName = 'tree' | 'rickshaw' | 'chair' | 'stall';
+
+export interface PlacedDecor {
+  uid: string;
+  decorId: DecorName;
+  /** horizontal position, 0..100 (% of stage width) */
+  x: number;
+  /** 0.4 .. 2.5 */
+  scale: number;
+  /** depth px (same convention as PlacedCharacter.z) */
+  z?: number;
+}
+
+/**
+ * Phase 5 — ব্যাকগ্রাউন্ড এডিটর: per-scene environment grading.
+ * Everything is applied as a deterministic overlay INSIDE the engine,
+ * so scrubbing and export render identical frames.
+ */
+export type TimeOfDay = 'day' | 'dawn' | 'dusk' | 'night';
+export type WeatherFx = 'none' | 'rain' | 'fog' | 'dust';
+
+export interface SceneEnvironment {
+  /** lighting pass over the whole frame (default 'day' = no overlay) */
+  timeOfDay?: TimeOfDay;
+  /** animated weather particle layer (default 'none') */
+  weather?: WeatherFx;
+  /** weather strength 0..1 (default 0.6) */
+  intensity?: number;
+  /** color warmth −1 (cool/teal) .. +1 (warm/amber), 0 = untouched */
+  warmth?: number;
+}
 
 /** A character placed into the stage scene. */
 export interface PlacedCharacter {
@@ -285,6 +331,10 @@ export interface Scene {
   camera?: SceneCamera;
   /** Phase 4 — per-scene soundtrack (older saved scenes omit) */
   audio?: SceneAudio;
+  /** Phase 5 — ব্যাকগ্রাউন্ড এডিটর environment grading (omits = neutral) */
+  environment?: SceneEnvironment;
+  /** Phase 5 — ডেকোর লেয়ার (older saved scenes omit) */
+  decor?: PlacedDecor[];
 }
 
 /**

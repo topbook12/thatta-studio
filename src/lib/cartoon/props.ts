@@ -484,6 +484,122 @@ function drawFlower(ctx: CanvasRenderingContext2D, t: number) {
   grip(ctx, '#eab88a');
 }
 
+// ---------------- Phase 5 props ----------------
+
+/** চায়ের কাপ — steaming clay cup (মাটির কাপ), held level so the tea won't spill */
+function drawTea(ctx: CanvasRenderingContext2D, t: number) {
+  ctx.rotate(Math.sin(t * 2.2) * 3 * D - 10 * D);
+  // clay cup body (matir cup — small trapezoid cup)
+  ctx.fillStyle = '#c2691a';
+  ctx.beginPath();
+  ctx.moveTo(-10, -12);
+  ctx.quadraticCurveTo(-12, 6, -8, 12);
+  ctx.lineTo(8, 12);
+  ctx.quadraticCurveTo(12, 6, 10, -12);
+  ctx.closePath();
+  ctx.fill();
+  ctx.strokeStyle = OUTLINE;
+  ctx.lineWidth = 2.3;
+  ctx.stroke();
+  // tea surface
+  ctx.fillStyle = '#8a4b12';
+  ctx.beginPath();
+  ctx.ellipse(0, -11, 8.6, 3.2, 0, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.fillStyle = 'rgba(255, 255, 255, 0.22)';
+  ctx.beginPath();
+  ctx.ellipse(-3, -11.5, 3, 1.2, 0, 0, Math.PI * 2);
+  ctx.fill();
+  // rising steam (two lazy swirls, deterministic)
+  ctx.strokeStyle = 'rgba(255, 255, 255, 0.55)';
+  ctx.lineWidth = 2.2;
+  ctx.lineCap = 'round';
+  for (const [dx, ph] of [[-3, 0], [3, 2.1]] as const) {
+    const sway = Math.sin(t * 3.4 + ph) * 3.5;
+    const lift = ((t * 26 + ph * 14) % 26);
+    ctx.globalAlpha = Math.max(0, 0.65 - lift / 26);
+    ctx.beginPath();
+    ctx.moveTo(dx, -16);
+    ctx.quadraticCurveTo(dx + sway - 3, -16 - lift * 0.5, dx + sway, -16 - lift);
+    ctx.stroke();
+  }
+  ctx.globalAlpha = 1;
+  grip(ctx, '#eab88a');
+}
+
+/** মোবাইল — smartphone in hand, screen glowing with a chat bubble */
+function drawMobile(ctx: CanvasRenderingContext2D, t: number) {
+  ctx.rotate(Math.sin(t * 1.8) * 2.5 * D - 26 * D);
+  // body
+  ctx.fillStyle = '#334155';
+  ctx.beginPath();
+  ctx.roundRect(-9.5, -26, 19, 38, 4.5);
+  ctx.fill();
+  ctx.strokeStyle = OUTLINE;
+  ctx.lineWidth = 2.4;
+  ctx.stroke();
+  // glowing screen (deterministic pulse — someone texted!)
+  const glow = 0.75 + Math.sin(t * 5) * 0.1 + Math.sin(t * 2.3) * 0.08;
+  ctx.fillStyle = `rgba(186, 230, 253, ${glow})`;
+  ctx.beginPath();
+  ctx.roundRect(-7.5, -23.5, 15, 32, 3);
+  ctx.fill();
+  // chat bubbles on the screen
+  ctx.fillStyle = '#059669';
+  ctx.beginPath();
+  ctx.roundRect(-6, -20, 9, 5, 2.4);
+  ctx.fill();
+  ctx.fillStyle = 'rgba(255, 255, 255, 0.85)';
+  ctx.beginPath();
+  ctx.roundRect(-4, -12, 10, 5, 2.4);
+  ctx.fill();
+  ctx.fillStyle = '#059669';
+  ctx.beginPath();
+  ctx.roundRect(-6, -4, 8, 5, 2.4);
+  ctx.fill();
+  // camera notch
+  ctx.fillStyle = '#0f172a';
+  ctx.beginPath();
+  ctx.arc(0, -22.5, 1.6, 0, Math.PI * 2);
+  ctx.fill();
+  grip(ctx, '#eab88a');
+}
+
+/** ঝোলা — cloth shoulder bag hanging from the hand, jingle at the sway */
+function drawBag(ctx: CanvasRenderingContext2D, t: number) {
+  ctx.rotate(Math.sin(t * 2.5 + 0.9) * 5 * D);
+  // straps (double rope loop)
+  capsule(ctx, 0, 0, 0, 10, 2.4, '#b45309');
+  // cloth body (soft rectangle with sag)
+  ctx.fillStyle = '#e0662a';
+  ctx.beginPath();
+  ctx.moveTo(-12, 10);
+  ctx.quadraticCurveTo(-15, 26, -12, 42);
+  ctx.quadraticCurveTo(0, 48, 12, 42);
+  ctx.quadraticCurveTo(15, 26, 12, 10);
+  ctx.closePath();
+  ctx.fill();
+  ctx.strokeStyle = OUTLINE;
+  ctx.lineWidth = 2.4;
+  ctx.stroke();
+  // woven border stripe
+  ctx.strokeStyle = '#9a3412';
+  ctx.lineWidth = 3;
+  ctx.beginPath();
+  ctx.moveTo(-11.5, 16);
+  ctx.quadraticCurveTo(0, 20, 11.5, 16);
+  ctx.stroke();
+  // tassel
+  ctx.strokeStyle = '#fbbf24';
+  ctx.lineWidth = 2;
+  const sw = Math.sin(t * 6) * 2.2;
+  ctx.beginPath();
+  ctx.moveTo(8, 42);
+  ctx.quadraticCurveTo(9 + sw, 47, 8 + sw, 52);
+  ctx.stroke();
+  grip(ctx, '#eab88a');
+}
+
 // ---------------- entry point ----------------
 
 /**
@@ -532,6 +648,15 @@ export function drawProp(
       break;
     case 'flower':
       drawFlower(ctx, t);
+      break;
+    case 'tea':
+      drawTea(ctx, t);
+      break;
+    case 'mobile':
+      drawMobile(ctx, t);
+      break;
+    case 'bag':
+      drawBag(ctx, t);
       break;
   }
   ctx.restore();

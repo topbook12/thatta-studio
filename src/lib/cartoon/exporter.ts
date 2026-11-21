@@ -114,8 +114,24 @@ export interface ExportOptions {
   fadeInOut: boolean;
   /** optional title card text (Bangla) shown for ~1.8s at the start */
   titleText: string;
+  /**
+   * Phase 6 — বাংলা সাবটাইটেল বার্ন-ইন: dialogue lines on the EPISODE
+   * timeline (seconds, after the title card). When present, the engine's
+   * own speech subtitles are suppressed and this clean cinema-style bar
+   * is burned into every frame instead.
+   */
+  subtitles?: ExportSubtitle[];
   onProgress?: (done: number, total: number, phase: string) => void;
   cancelled?: () => boolean;
+}
+
+/** one burned-in subtitle cue (Phase 6) */
+export interface ExportSubtitle {
+  /** start on the episode timeline (seconds) */
+  start: number;
+  /** end (exclusive) */
+  end: number;
+  text: string;
 }
 
 export interface ExportResult {
@@ -150,6 +166,7 @@ export async function exportVideoWebCodecs(
 
   const fps = Math.max(12, Math.min(60, Math.round(opts.fps)));
   const cardDur = opts.titleText.trim() ? TITLE_CARD_SECONDS : 0;
+  const subs = (opts.subtitles ?? []).filter((c) => c.text.trim().length > 0);
   const sceneFrames = Math.max(1, Math.ceil(totalSeconds * fps) + Math.round(fps * 0.4));
   const cardFrames = Math.round(cardDur * fps);
   const totalFrames = cardFrames + sceneFrames;
@@ -312,17 +329,32 @@ export async function exportVideoWebCodecs(
       // title card over the first frames
       if (cardFrames > 0 && i < cardFrames) {
         drawTitleCard(octx, opts.titleText.trim(), videoTime, cardDur, opts.width, opts.height);
-      } else if (opts.fadeInOut) {
-        let black = 0;
-        if (videoTime < fadeT) black = 1 - videoTime / fadeT;
-        const remain = totalVideoSeconds - videoTime;
-        if (remain < fadeEnd) black = Math.max(black, 1 - remain / fadeEnd);
-        if (black > 0.001) {
-          octx.save();
-          octx.globalAlpha = Math.min(1, black);
-          octx.fillStyle = '#000';
-          octx.fillRect(0, 0, opts.width, opts.height);
-          octx.restore();
+      } else {
+        // Phase 6 — burned-in Bangla subtitle bar (scales with resolution)
+        if (subs.length > 0) {
+          const cue = subs.find((c) => sceneT >= c.start && sceneT < c.end);
+          if (cue) {
+            drawSubtitleBar(
+              octx,
+              cue.text,
+              (sceneT - cue.start) / Math.max(0.001, cue.end - cue.start),
+              opts.width,
+              opts.height,
+            );
+          }
+        }
+        if (opts.fadeInOut) {
+          let black = 0;
+          if (videoTime < fadeT) black = 1 - videoTime / fadeT;
+          const remain = totalVideoSeconds - videoTime;
+          if (remain < fadeEnd) black = Math.max(black, 1 - remain / fadeEnd);
+          if (black > 0.001) {
+            octx.save();
+            octx.globalAlpha = Math.min(1, black);
+            octx.fillStyle = '#000';
+            octx.fillRect(0, 0, opts.width, opts.height);
+            octx.restore();
+          }
         }
       }
 
@@ -444,4 +476,65 @@ function clipText(ctx: CanvasRenderingContext2D, text: string, maxW: number): st
   let s = text;
   while (s.length > 1 && ctx.measureText(s + '…').width > maxW) s = s.slice(0, -1);
   return s + '…';
+}
+
+/** word-wrap for the burned subtitle bar (Bangla-friendly, up to 2 lines) */
+function wrapCue(ctx: CanvasRenderingContext2D, text: string, maxW: number): string[] {
+  if (ctx.measureText(text).width <= maxW) return [text];
+  const words = text.split(/\s+/);
+  const lines: string[] = [];
+  let cur = '';
+  for (const w of words) {
+    const test = cur ? `${cur} ${w}` : w;
+    if (ctx.measureText(test).width > maxW && cur) {
+      lines.push(cur);
+      cur = w;
+    } else {
+      cur = test;
+    }
+  }
+  if (cur) lines.push(cur);
+  if (lines.length > 2) {
+    // squeeze into exactly two ellipsized lines
+    const joined = lines.join(' ');
+    let a = joined;
+    while (a.length > 1 && ctx.measureText(a + '…').width > maxW) a = a.slice(0, -1);
+    return [a + '…'];
+  }
+  return lines;
+}
+
+/**
+ * Phase 6 — clean cinema subtitle bar: translucent black band + white
+ * Bangla text + a subtle 1-frame-in fade. Scales with the render size.
+ */
+function drawSubtitleBar(
+  ctx: CanvasRenderingContext2D,
+  text: string,
+  /** 0..1 progress inside the cue (drives the soft fade) */
+  progress: number,
+  w: number,
+  h: number,
+) {
+  const fade = Math.min(1, Math.min(progress / 0.12, (1 - progress) / 0.12));
+  const fontSize = Math.round(h * 0.045);
+  ctx.save();
+  ctx.globalAlpha = Math.max(0, Math.min(1, fade));
+  ctx.font = `600 ${fontSize}px "Hind Siliguri", sans-serif`;
+  const maxW = w * 0.82;
+  const lines = wrapCue(ctx, text.trim(), maxW);
+  const lh = fontSize * 1.4;
+  const barH = lines.length * lh + h * 0.026;
+  const barY = h - barH - h * 0.024;
+  ctx.fillStyle = 'rgba(8, 6, 4, 0.62)';
+  ctx.beginPath();
+  ctx.roundRect(0, barY, w, barH, Math.min(w * 0.02, 18));
+  ctx.fill();
+  ctx.fillStyle = '#fffdf5';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  lines.forEach((line, i) => {
+    ctx.fillText(line, w / 2, barY + h * 0.013 + lh / 2 + i * lh);
+  });
+  ctx.restore();
 }

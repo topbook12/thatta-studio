@@ -38,3 +38,14 @@ model Project {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 }
+// Phase 7 — কমিউনিটি গ্যালারি: shared episodes viewable by everyone
+model GalleryItem {
+  id        String   @id @default(cuid())
+  name      String
+  author    String
+  data      String   // JSON string: { designs, scenes } (full episode)
+  thumbnail String?  // small JPEG data URL (stage preview frame)
+  duration  Float    @default(0) // seconds (display only)
+  likes     Int      @default(0)
+  createdAt DateTime @default(now())
+}

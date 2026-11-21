@@ -31,6 +31,7 @@ import {
   buildExportAudio,
   episodeTiming,
   locateInEpisode,
+  sceneBeatWindows,
 } from "@/lib/cartoon/episode";
 import SoundStudio from "@/components/studio/sound-studio";
 import {
@@ -56,7 +57,11 @@ import {
   ExportCancelled,
   webCodecsAvailable,
   type ExportBeatAudio,
+  type ExportSubtitle,
 } from "@/lib/cartoon/exporter";
+import { exportGif } from "@/lib/cartoon/gif-exporter";
+import PublishDialog from "@/components/studio/publish-dialog";
+import ThumbnailDialog from "@/components/studio/thumbnail-dialog";
 import {
   deleteLocalProject,
   getLocalProject,
@@ -82,12 +87,16 @@ import GuidedTour, {
 import {
   ACTION_OPTIONS,
   BG_OPTIONS,
+  DECOR_OPTIONS,
   EASING_OPTIONS,
   PATH_STYLE_OPTIONS,
   PROP_OPTIONS,
   SECONDARY_ACTIONS,
   SPEED_OPTIONS,
+  TIME_OF_DAY_OPTIONS,
   VOICE_SPEED_OPTIONS,
+  WEATHER_OPTIONS,
+  makeDesign,
   newId,
   sanitizeCustomEasing,
   sanitizePoseOffset,
@@ -127,18 +136,23 @@ import {
   Cloud,
   Compass,
   Download,
+  FileDown,
   FileText,
+  FileUp,
   Film,
   FolderOpen,
   HardDrive,
+  Image as ImageIcon,
   Keyboard,
   LayoutTemplate,
   Mic,
+  Palette,
   Pause,
   Pencil,
   Play,
   Redo2,
   Save,
+  Share2,
   Square,
   Theater,
   Trash2,
@@ -250,6 +264,10 @@ export default function StudioTab({
     removeCameraShot,
     setCameraShake,
     setSfxEvents,
+    setSceneEnvironment,
+    addDecor,
+    updateDecor,
+    removeDecor,
     undo,
     redo,
     canUndo,
@@ -353,6 +371,17 @@ export default function StudioTab({
   } | null>(null);
   const cancelExportRef = useRef(false);
   const fastExport = webCodecsAvailable();
+
+  // Phase 6 — এক্সপোর্ট ও শেয়ার: subtitles, GIF, thumbnail, share
+  const [exportSubs, setExportSubs] = useState(true);
+  const [thumbOpen, setThumbOpen] = useState(false);
+  const [gifBusy, setGifBusy] = useState(false);
+  const lastMp4Ref = useRef<Blob | null>(null);
+  const [canShareMp4, setCanShareMp4] = useState(false);
+  // Phase 7 — গ্যালারি + project/character file import-export
+  const [publishOpen, setPublishOpen] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const charInputRef = useRef<HTMLInputElement | null>(null);
 
   // ---------- stage lifecycle ----------
   // advanceEpisodeRef: the onFinish callback below is created ONCE, so the
@@ -1128,6 +1157,256 @@ export default function StudioTab({
     setExportOpen(true);
   };
 
+  // ---- Phase 6 — shared deterministic episode frame renderer ----
+  // One factory used by BOTH the MP4 (WebCodecs) and GIF export paths:
+  // walks the scenes, renders each at its local time, and paints the
+  // scene-boundary transitions (fade / circle wipe) exactly like playback.
+  const buildEpisodeRenderer = (
+    exportScenes: EpisodeScene[],
+    episodeDesigns: CharacterDesign[],
+    timing: ReturnType<typeof episodeTiming>,
+    maps: ReturnType<typeof buildAudioMaps>[],
+    hideTags: boolean,
+    hideSubs: boolean,
+  ) => {
+    const stage = stageRef.current;
+    const canvas = canvasRef.current;
+    if (!stage || !canvas) return null;
+    let curIdx = -1;
+    const offA = document.createElement("canvas");
+    const offB = document.createElement("canvas");
+    const TRANS = 0.45;
+    const smooth = (x: number) => x * x * (3 - 2 * x);
+    return (t: number) => {
+      const { index, localT } = locateInEpisode(timing, t);
+      if (index !== curIdx) {
+        curIdx = index;
+        const es = exportScenes[index];
+        stage.prepareExportScene(es.scene, episodeDesigns);
+        stage.setDurations(maps[index].durMap);
+        stage.setEnvelopes(maps[index].envMap, maps[index].wideMap);
+      }
+      const es = exportScenes[index];
+      const dur = timing.scenes[index]?.duration ?? 0;
+      const trans = es.transition ?? "cut";
+      const hasNext = index < exportScenes.length - 1;
+      const prevTrans =
+        index > 0 ? (exportScenes[index - 1].transition ?? "cut") : "cut";
+      const ctx = canvas.getContext("2d");
+      if (!ctx) return;
+
+      // ---- cartoon circle wipe OUT: reveal the next scene in a growing circle
+      if (trans === "circle" && hasNext && localT > dur - TRANS) {
+        stage.renderExportFrame(localT, { hideNameTags: hideTags, hideSubs });
+        const k = smooth(Math.max(0, Math.min(1, (localT - (dur - TRANS)) / TRANS)));
+        offA.width = canvas.width;
+        offA.height = canvas.height;
+        offA.getContext("2d")?.drawImage(canvas, 0, 0);
+        const nxt = exportScenes[index + 1];
+        stage.prepareExportScene(nxt.scene, episodeDesigns);
+        stage.setDurations(maps[index + 1].durMap);
+        stage.setEnvelopes(maps[index + 1].envMap, maps[index + 1].wideMap);
+        stage.renderExportFrame(0, { hideNameTags: hideTags, hideSubs });
+        offB.width = canvas.width;
+        offB.height = canvas.height;
+        offB.getContext("2d")?.drawImage(canvas, 0, 0);
+        ctx.drawImage(offA, 0, 0);
+        ctx.save();
+        ctx.beginPath();
+        ctx.arc(
+          canvas.width / 2,
+          canvas.height / 2,
+          k * Math.hypot(canvas.width, canvas.height) * 0.5,
+          0,
+          Math.PI * 2,
+        );
+        ctx.clip();
+        ctx.drawImage(offB, 0, 0);
+        ctx.restore();
+        // hand the stage back to THIS scene — later frames keep rendering it
+        stage.prepareExportScene(es.scene, episodeDesigns);
+        stage.setDurations(maps[index].durMap);
+        stage.setEnvelopes(maps[index].envMap, maps[index].wideMap);
+        return;
+      }
+
+      stage.renderExportFrame(localT, { hideNameTags: hideTags, hideSubs });
+
+      // ---- fade through black at the boundary (out on this scene, in on next)
+      let black = 0;
+      if (trans === "fade" && hasNext && localT > dur - TRANS) {
+        black = Math.max(black, (localT - (dur - TRANS)) / TRANS);
+      }
+      if (prevTrans === "fade" && localT < TRANS) {
+        black = Math.max(black, 1 - localT / TRANS);
+      }
+      if (black > 0.002) {
+        ctx.save();
+        ctx.globalAlpha = Math.min(1, black);
+        ctx.fillStyle = "#000";
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+        ctx.restore();
+      }
+    };
+  };
+
+  /** Phase 6 — burned subtitle cue list on the episode timeline */
+  const buildSubtitleTrack = (
+    exportScenes: EpisodeScene[],
+    timing: ReturnType<typeof episodeTiming>,
+  ): ExportSubtitle[] => {
+    const audioOf = (id: string) => getCachedAudio(id);
+    const cues: ExportSubtitle[] = [];
+    exportScenes.forEach((es, i) => {
+      const off = timing.scenes[i]?.offset ?? 0;
+      for (const w of sceneBeatWindows(es.scene, audioOf)) {
+        const beat = es.scene.beats.find((b) => b.id === w.id);
+        if (beat && beat.text.trim()) {
+          cues.push({
+            start: off + w.start,
+            end: off + w.end,
+            text: beat.text.trim(),
+          });
+        }
+      }
+    });
+    return cues;
+  };
+
+  /** Phase 6 — one-click social share of the exported MP4 (Web Share API) */
+  const shareLastMp4 = async () => {
+    const blob = lastMp4Ref.current;
+    if (!blob) return;
+    const fileName = `thatta-cartoon-${Date.now()}.mp4`;
+    try {
+      const file = new File([blob], fileName, { type: "video/mp4" });
+      const nav = navigator as Navigator & {
+        canShare?: (d: { files: File[] }) => boolean;
+      };
+      if (nav.canShare?.({ files: [file] }) && nav.share) {
+        await nav.share({
+          files: [file],
+          title: "ঠাট্টা স্টুডিও কার্টুন",
+          text: "আমার বানানো বাংলা কার্টুন দেখুন! 🎬",
+        });
+        return;
+      }
+      toast({
+        title: "এই ব্রাউজারে সরাসরি শেয়ার নেই",
+        description: "ভিডিওটি ডাউনলোড হয়ে আছে — WhatsApp/YouTube-এ আপলোড করুন।",
+      });
+    } catch {
+      /* user cancelled the share sheet — nothing to do */
+    }
+  };
+
+  /** Phase 7 — gallery publish payload (serialized project + stage frame) */
+  const collectPublishPayload = () => {
+    const canvas = canvasRef.current;
+    if (!scenes.some((es) => es.scene.beats.length > 0)) return null;
+    let thumbnail: string | null = null;
+    try {
+      if (canvas) {
+        const t = document.createElement("canvas");
+        t.width = 480;
+        t.height = 270;
+        const tc = t.getContext("2d");
+        if (tc) {
+          tc.drawImage(canvas, 0, 0, 480, 270);
+          thumbnail = t.toDataURL("image/jpeg", 0.72);
+        }
+      }
+    } catch {
+      thumbnail = null; // canvas may be tainted — publish without thumb
+    }
+    const audioOf = (id: string) => getCachedAudio(id);
+    const duration = episodeTiming(scenes, audioOf).total;
+    return { data: serializeProject(), thumbnail, duration };
+  };
+
+  /** Phase 7 — project file (.json) export for backup/sharing */
+  const exportProjectFile = () => {
+    const payload = {
+      app: "thatta-studio",
+      version: 3,
+      exportedAt: new Date().toISOString(),
+      designs,
+      scenes,
+      activeSceneId,
+    };
+    downloadBlob(
+      new Blob([JSON.stringify(payload)], { type: "application/json" }),
+      `thatta-project-${Date.now()}.json`,
+    );
+    toast({
+      title: "প্রজেক্ট ফাইল ডাউনলোড হয়েছে 📁",
+      description: "যেকোনো ডিভাইসে 'ফাইল থেকে আনুন' দিয়ে খুলতে পারবেন।",
+    });
+  };
+
+  /** Phase 7 — project file import (from disk) */
+  const importProjectFile = async (file: File) => {
+    try {
+      const raw = await file.text();
+      const parsed = JSON.parse(raw) as {
+        designs?: unknown;
+        scenes?: unknown;
+        activeSceneId?: unknown;
+      };
+      const imported = parseProject(JSON.stringify(parsed));
+      if (!imported) throw new Error("invalid");
+      loadEpisodes(imported.scenes, imported.designs, imported.activeSceneId);
+      toast({
+        title: "প্রজেক্ট ফাইল খোলা হয়েছে 📁",
+        description: `${bnNum(imported.scenes.length)}টি দৃশ্য লোড হয়েছে — প্লে করে দেখুন।`,
+      });
+    } catch {
+      toast({
+        title: "ফাইল খোলা যায়নি",
+        description: "এটি ঠাট্টা স্টুডিওর .json প্রজেক্ট ফাইল নয়।",
+        variant: "destructive",
+      });
+    }
+  };
+
+  /** Phase 7 — character pack export (cast only, template-friendly) */
+  const exportCharacterPack = () => {
+    const payload = { app: "thatta-studio-characters", version: 1, designs };
+    downloadBlob(
+      new Blob([JSON.stringify(payload)], { type: "application/json" }),
+      `thatta-characters-${Date.now()}.json`,
+    );
+    toast({
+      title: "ক্যারেক্টার প্যাক ডাউনলোড হয়েছে 🎭",
+      description: `${bnNum(designs.length)}জন ক্যারেক্টার ফাইলে সেভ হয়েছে।`,
+    });
+  };
+
+  /** Phase 7 — character pack import (adds to the current cast) */
+  const importCharacterPack = async (file: File) => {
+    try {
+      const raw = await file.text();
+      const parsed = JSON.parse(raw) as { designs?: unknown };
+      const list = Array.isArray(parsed.designs) ? parsed.designs : null;
+      if (!list || list.length === 0) throw new Error("empty");
+      const imported = list
+        .filter((d): d is Partial<CharacterDesign> => !!d && typeof d === "object")
+        .map((d) => makeDesign(d));
+      if (imported.length === 0) throw new Error("empty");
+      setDesigns([...designs, ...imported]);
+      toast({
+        title: "ক্যারেক্টার যোগ হয়েছে 🎭",
+        description: `${bnNum(imported.length)}জন নতুন ক্যারেক্টার কাস্টে ঢুকেছে।`,
+      });
+    } catch {
+      toast({
+        title: "ক্যারেক্টার ফাইল খোলা যায়নি",
+        description: "এটি ঠাট্টা স্টুডিওর ক্যারেক্টার প্যাক নয়।",
+        variant: "destructive",
+      });
+    }
+  };
+
   /** deterministic frame-by-frame MP4 (WebCodecs) — fast & flawless */
   const runFastExport = async () => {
     const stage = stageRef.current;
@@ -1164,85 +1443,19 @@ export default function StudioTab({
       // per-scene engine maps: correct walk timing + lip-sync while rendering
       const maps = exportScenes.map((es) => buildAudioMaps(es.scene));
       const hi = exportQuality === "1080";
-      let curIdx = -1;
-      // Phase 2 — scene-boundary transitions (fade / circle wipe), 0.45 s
-      const TRANS = 0.45;
-      const smooth = (x: number) => x * x * (3 - 2 * x);
-      const offA = document.createElement("canvas");
-      const offB = document.createElement("canvas");
+      // Phase 6 — shared renderer (transitions included), used by GIF too
+      const renderFrame = buildEpisodeRenderer(
+        exportScenes,
+        st.designs,
+        timing,
+        maps,
+        !exportTags,
+        exportSubs,
+      );
+      if (!renderFrame) return;
       const result = await exportVideoWebCodecs(
         canvas,
-        (t) => {
-          const { index, localT } = locateInEpisode(timing, t);
-          if (index !== curIdx) {
-            curIdx = index;
-            const es = exportScenes[index];
-            stage.prepareExportScene(es.scene, st.designs);
-            stage.setDurations(maps[index].durMap);
-            stage.setEnvelopes(maps[index].envMap, maps[index].wideMap);
-          }
-          const es = exportScenes[index];
-          const dur = timing.scenes[index]?.duration ?? 0;
-          const trans = es.transition ?? "cut";
-          const hasNext = index < exportScenes.length - 1;
-          const prevTrans =
-            index > 0 ? (exportScenes[index - 1].transition ?? "cut") : "cut";
-          const ctx = canvas.getContext("2d");
-          if (!ctx) return;
-
-          // ---- cartoon circle wipe OUT: reveal the next scene in a growing circle
-          if (trans === "circle" && hasNext && localT > dur - TRANS) {
-            stage.renderExportFrame(localT, { hideNameTags: !exportTags });
-            const k = smooth(Math.max(0, Math.min(1, (localT - (dur - TRANS)) / TRANS)));
-            offA.width = canvas.width;
-            offA.height = canvas.height;
-            offA.getContext("2d")?.drawImage(canvas, 0, 0);
-            const nxt = exportScenes[index + 1];
-            stage.prepareExportScene(nxt.scene, st.designs);
-            stage.setDurations(maps[index + 1].durMap);
-            stage.setEnvelopes(maps[index + 1].envMap, maps[index + 1].wideMap);
-            stage.renderExportFrame(0, { hideNameTags: !exportTags });
-            offB.width = canvas.width;
-            offB.height = canvas.height;
-            offB.getContext("2d")?.drawImage(canvas, 0, 0);
-            ctx.drawImage(offA, 0, 0);
-            ctx.save();
-            ctx.beginPath();
-            ctx.arc(
-              canvas.width / 2,
-              canvas.height / 2,
-              k * Math.hypot(canvas.width, canvas.height) * 0.5,
-              0,
-              Math.PI * 2,
-            );
-            ctx.clip();
-            ctx.drawImage(offB, 0, 0);
-            ctx.restore();
-            // hand the stage back to THIS scene — later frames keep rendering it
-            stage.prepareExportScene(es.scene, st.designs);
-            stage.setDurations(maps[index].durMap);
-            stage.setEnvelopes(maps[index].envMap, maps[index].wideMap);
-            return;
-          }
-
-          stage.renderExportFrame(localT, { hideNameTags: !exportTags });
-
-          // ---- fade through black at the boundary (out on this scene, in on next)
-          let black = 0;
-          if (trans === "fade" && hasNext && localT > dur - TRANS) {
-            black = Math.max(black, (localT - (dur - TRANS)) / TRANS);
-          }
-          if (prevTrans === "fade" && localT < TRANS) {
-            black = Math.max(black, 1 - localT / TRANS);
-          }
-          if (black > 0.002) {
-            ctx.save();
-            ctx.globalAlpha = Math.min(1, black);
-            ctx.fillStyle = "#000";
-            ctx.fillRect(0, 0, canvas.width, canvas.height);
-            ctx.restore();
-          }
-        },
+        renderFrame,
         timing.total,
         buses,
         {
@@ -1253,11 +1466,15 @@ export default function StudioTab({
           hideNameTags: !exportTags,
           fadeInOut: exportFade,
           titleText: exportTitle,
+          subtitles: exportSubs ? buildSubtitleTrack(exportScenes, timing) : undefined,
           onProgress: (done, total, phase) =>
             setExportProgress({ done, total, phase }),
           cancelled: () => cancelExportRef.current,
         },
       );
+      // Phase 6 — keep the blob around for one-click social share
+      lastMp4Ref.current = result.blob;
+      setCanShareMp4(true);
       downloadBlob(result.blob, `thatta-cartoon-${Date.now()}.mp4`);
       toast({
         title: "MP4 ভিডিও তৈরি! 🎬",
@@ -1288,6 +1505,78 @@ export default function StudioTab({
       stage.setDurations(active.durMap);
       stage.setEnvelopes(active.envMap, active.wideMap);
       setExporting(false);
+      setExportProgress(null);
+    }
+  };
+
+  /** Phase 6 — সোশ্যাল মিডিয়া GIF export (480×270 @12fps, ≤10s) */
+  const runGifExport = async () => {
+    const stage = stageRef.current;
+    const canvas = canvasRef.current;
+    if (!stage || !canvas) return;
+    if (gifBusy) return;
+    const st = useStudio.getState();
+    const isEpisode = exportScope === "episode" && st.scenes.length > 1;
+    const exportScenes: EpisodeScene[] = isEpisode
+      ? st.scenes
+      : [
+          {
+            id: st.activeSceneId,
+            name: st.scenes.find((es) => es.id === st.activeSceneId)?.name ?? "দৃশ্য",
+            scene,
+          },
+        ];
+    if (exportScenes.every((es) => es.scene.beats.length === 0)) {
+      toast({ title: "কোনো দৃশ্য নেই", variant: "destructive" });
+      return;
+    }
+    cancelExportRef.current = false;
+    setGifBusy(true);
+    setExportProgress({ done: 0, total: 1, phase: "শুরু হচ্ছে" });
+    stage.stop();
+    try {
+      const audioOf = (id: string) => getCachedAudio(id);
+      const timing = episodeTiming(exportScenes, audioOf);
+      const maps = exportScenes.map((es) => buildAudioMaps(es.scene));
+      const renderFrame = buildEpisodeRenderer(
+        exportScenes,
+        st.designs,
+        timing,
+        maps,
+        true,
+        true,
+      );
+      if (!renderFrame) return;
+      const MAXS = 10;
+      const blob = await exportGif(canvas, renderFrame, timing.total, {
+        fps: 12,
+        width: 480,
+        maxSeconds: MAXS,
+        onProgress: (done, total, phase) =>
+          setExportProgress({ done, total, phase }),
+        cancelled: () => cancelExportRef.current,
+      });
+      downloadBlob(blob, `thatta-cartoon-${Date.now()}.gif`);
+      toast({
+        title: "GIF তৈরি! 🎞️",
+        description:
+          timing.total > MAXS
+            ? `দীর্ঘ এপিসোড — প্রথম ${bnNum(MAXS)} সেকেন্ড GIF হয়েছে (480×270, সোশ্যাল মিডিয়া রেডি)।`
+            : "480×270 GIF সেভ হয়েছে — WhatsApp/Facebook-এ পাঠান!",
+      });
+      setExportOpen(false);
+    } catch {
+      toast({
+        title: "GIF তৈরি করা যায়নি",
+        description: "আবার চেষ্টা করুন বা MP4 এক্সপোর্ট ব্যবহার করুন।",
+        variant: "destructive",
+      });
+    } finally {
+      stage.setScene(scene, designsRef.current);
+      const active = buildAudioMaps(scene);
+      stage.setDurations(active.durMap);
+      stage.setEnvelopes(active.envMap, active.wideMap);
+      setGifBusy(false);
       setExportProgress(null);
     }
   };
@@ -1879,6 +2168,23 @@ export default function StudioTab({
               <Button variant="outline" onClick={openLoad} className="border-amber-300">
                 <FolderOpen className="mr-2 h-4 w-4" /> লোড
               </Button>
+              {/* Phase 6 — থাম্বনেইল ডিজাইনার */}
+              <Button
+                variant="outline"
+                onClick={() => setThumbOpen(true)}
+                title="YouTube/Facebook থাম্বনেইল ডিজাইনার"
+                className="border-amber-300"
+              >
+                <Palette className="mr-2 h-4 w-4" /> থাম্বনেইল
+              </Button>
+              {/* Phase 7 — গ্যালারিতে পাবলিশ */}
+              <Button
+                onClick={() => setPublishOpen(true)}
+                title="কমিউনিটি গ্যালারিতে পাবলিশ করুন"
+                className="bg-orange-600 text-white hover:bg-orange-700"
+              >
+                <Share2 className="mr-2 h-4 w-4" /> পাবলিশ
+              </Button>
             </div>
           </div>
 
@@ -1976,6 +2282,198 @@ export default function StudioTab({
                   </button>
                 ))}
               </div>
+
+              {/* ---------- Phase 5 — ব্যাকগ্রাউন্ড এডিটর ---------- */}
+              <div className="mt-4 space-y-3 rounded-xl border border-amber-200 bg-amber-50/60 p-3">
+                <p className="text-xs font-bold text-orange-800">
+                  🎛️ ব্যাকগ্রাউন্ড এডিটর — সময়, আবহাওয়া, রঙ
+                </p>
+                <div>
+                  <p className="mb-1 text-[11px] font-semibold text-amber-700">সময়</p>
+                  <div className="flex flex-wrap gap-1.5">
+                    {TIME_OF_DAY_OPTIONS.map((t) => (
+                      <button
+                        key={t.id}
+                        type="button"
+                        onClick={() => setSceneEnvironment({ timeOfDay: t.id })}
+                        className={`rounded-full border px-2.5 py-1 text-[11px] font-medium transition-colors ${
+                          (scene.environment?.timeOfDay ?? "day") === t.id
+                            ? "border-orange-600 bg-orange-600 text-white"
+                            : "border-amber-200 bg-white text-amber-900 hover:bg-amber-100"
+                        }`}
+                        aria-pressed={(scene.environment?.timeOfDay ?? "day") === t.id}
+                      >
+                        {t.emoji} {t.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+                <div>
+                  <p className="mb-1 text-[11px] font-semibold text-amber-700">আবহাওয়া</p>
+                  <div className="flex flex-wrap gap-1.5">
+                    {WEATHER_OPTIONS.map((w) => (
+                      <button
+                        key={w.id}
+                        type="button"
+                        onClick={() => setSceneEnvironment({ weather: w.id })}
+                        className={`rounded-full border px-2.5 py-1 text-[11px] font-medium transition-colors ${
+                          (scene.environment?.weather ?? "none") === w.id
+                            ? "border-teal-600 bg-teal-600 text-white"
+                            : "border-amber-200 bg-white text-amber-900 hover:bg-amber-100"
+                        }`}
+                        aria-pressed={(scene.environment?.weather ?? "none") === w.id}
+                      >
+                        {w.emoji} {w.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+                {(scene.environment?.weather ?? "none") !== "none" && (
+                  <div>
+                    <div className="mb-1 flex items-center justify-between">
+                      <p className="text-[11px] font-semibold text-amber-700">আবহাওয়ার মাত্রা</p>
+                      <span className="text-[11px] text-amber-600">
+                        {bnNum(Math.round((scene.environment?.intensity ?? 0.6) * 100))}%
+                      </span>
+                    </div>
+                    <Slider
+                      value={[(scene.environment?.intensity ?? 0.6) * 100]}
+                      min={0}
+                      max={100}
+                      step={5}
+                      onValueChange={(v) =>
+                        setSceneEnvironment({ intensity: (v[0] ?? 60) / 100 })
+                      }
+                      aria-label="আবহাওয়ার মাত্রা"
+                    />
+                  </div>
+                )}
+                <div>
+                  <div className="mb-1 flex items-center justify-between">
+                    <p className="text-[11px] font-semibold text-amber-700">রঙের উষ্ণতা</p>
+                    <span className="text-[11px] text-amber-600">
+                      {(scene.environment?.warmth ?? 0) > 0
+                        ? "গরম"
+                        : (scene.environment?.warmth ?? 0) < 0
+                          ? "ঠান্ডা"
+                          : "স্বাভাবিক"}
+                    </span>
+                  </div>
+                  <Slider
+                    value={[(scene.environment?.warmth ?? 0) * 100]}
+                    min={-100}
+                    max={100}
+                    step={10}
+                    onValueChange={(v) => setSceneEnvironment({ warmth: (v[0] ?? 0) / 100 })}
+                    aria-label="রঙের উষ্ণতা"
+                  />
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+
+          {/* ---------- Phase 5 — ডেকোর লেয়ার ---------- */}
+          <Card className="border-amber-200">
+            <CardHeader className="pb-3">
+              <CardTitle className="text-orange-800">
+                🌳 ডেকোর ({bnNum(scene.decor?.length ?? 0)})
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              <div className="flex flex-wrap gap-1.5">
+                {DECOR_OPTIONS.map((d) => (
+                  <button
+                    key={d.id}
+                    type="button"
+                    onClick={() => addDecor(d.id)}
+                    className="rounded-full border border-amber-200 bg-white px-3 py-1.5 text-xs font-medium text-amber-900 transition-colors hover:bg-amber-100"
+                  >
+                    {d.emoji} + {d.label}
+                  </button>
+                ))}
+              </div>
+              <p className="text-[11px] text-amber-600">
+                গাছ, রিকশা, চেয়ার, মেলার দোকান — যেখানে খুশি বসান। &quot;দূরত্ব&quot;
+                কমালে সামনে আসবে (ক্যারেক্টারের আগে আঁকা হবে)।
+              </p>
+              {(scene.decor?.length ?? 0) === 0 ? (
+                <div className="rounded-lg border border-dashed border-amber-300 p-3 text-center text-xs text-amber-700">
+                  এখনো কোনো ডেকোর নেই — উপরের বোতাম থেকে যোগ করুন।
+                </div>
+              ) : (
+                <div className="thatta-scroll max-h-80 space-y-3 overflow-y-auto pr-1">
+                  {(scene.decor ?? []).map((d) => {
+                    const meta = DECOR_OPTIONS.find((o) => o.id === d.decorId);
+                    return (
+                      <div
+                        key={d.uid}
+                        className="space-y-2 rounded-xl border border-amber-200 bg-amber-50/60 p-3"
+                      >
+                        <div className="flex items-center justify-between">
+                          <span className="text-sm font-semibold text-amber-950">
+                            {meta?.emoji} {meta?.label}
+                          </span>
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            className="h-8 border-rose-200 px-2 text-rose-600 hover:bg-rose-50"
+                            onClick={() => removeDecor(d.uid)}
+                            aria-label="ডেকোর মুছুন"
+                          >
+                            <Trash2 className="h-3.5 w-3.5" />
+                          </Button>
+                        </div>
+                        <div>
+                          <div className="mb-0.5 flex items-center justify-between">
+                            <span className="text-[11px] font-medium text-amber-700">জায়গা</span>
+                            <span className="text-[11px] text-amber-600">{bnNum(Math.round(d.x))}%</span>
+                          </div>
+                          <Slider
+                            value={[d.x]}
+                            min={0}
+                            max={100}
+                            step={1}
+                            onValueChange={(v) => updateDecor(d.uid, { x: v[0] ?? 50 })}
+                            aria-label="ডেকোরের জায়গা"
+                          />
+                        </div>
+                        <div>
+                          <div className="mb-0.5 flex items-center justify-between">
+                            <span className="text-[11px] font-medium text-amber-700">সাইজ</span>
+                            <span className="text-[11px] text-amber-600">
+                              {bnNum(d.scale.toFixed(1))}×
+                            </span>
+                          </div>
+                          <Slider
+                            value={[d.scale]}
+                            min={0.4}
+                            max={2.5}
+                            step={0.1}
+                            onValueChange={(v) => updateDecor(d.uid, { scale: v[0] ?? 1 })}
+                            aria-label="ডেকোরের সাইজ"
+                          />
+                        </div>
+                        <div>
+                          <div className="mb-0.5 flex items-center justify-between">
+                            <span className="text-[11px] font-medium text-amber-700">দূরত্ব (3D)</span>
+                            <span className="text-[11px] text-amber-600">
+                              {(d.z ?? 0) > 0 ? "দূরে" : (d.z ?? 0) < 0 ? "সামনে" : "মঞ্চে"}
+                            </span>
+                          </div>
+                          <Slider
+                            value={[d.z ?? 0]}
+                            min={-120}
+                            max={480}
+                            step={10}
+                            onValueChange={(v) => updateDecor(d.uid, { z: v[0] ?? 0 })}
+                            aria-label="ডেকোরের দূরত্ব"
+                          />
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
             </CardContent>
           </Card>
 
@@ -2825,6 +3323,44 @@ export default function StudioTab({
             <p className="text-center text-xs text-amber-600">
               ডিভাইসে সেভ = ইন্টারনেট ছাড়াই (PWA অফলাইন মোড) • ক্লাউডে সেভ = সার্ভারে নিরাপদ
             </p>
+
+            {/* ---------- Phase 7 — ফাইল ব্যাকআপ ও টেমপ্লেট বিনিময় ---------- */}
+            <div className="space-y-2 rounded-xl border border-amber-200 bg-amber-50/60 p-3">
+              <p className="text-xs font-bold text-orange-800">📁 ফাইল ব্যাকআপ ও বিনিময়</p>
+              <div className="grid grid-cols-2 gap-2">
+                <Button
+                  variant="outline"
+                  onClick={exportProjectFile}
+                  className="border-amber-300 text-amber-900 hover:bg-amber-100"
+                >
+                  <FileDown className="mr-1.5 h-4 w-4" /> ফাইলে নিন
+                </Button>
+                <Button
+                  variant="outline"
+                  onClick={() => fileInputRef.current?.click()}
+                  className="border-amber-300 text-amber-900 hover:bg-amber-100"
+                >
+                  <FileUp className="mr-1.5 h-4 w-4" /> ফাইল থেকে আনুন
+                </Button>
+                <Button
+                  variant="outline"
+                  onClick={exportCharacterPack}
+                  className="border-amber-300 text-amber-900 hover:bg-amber-100"
+                >
+                  <UserPlus className="mr-1.5 h-4 w-4" /> ক্যারেক্টার নিন
+                </Button>
+                <Button
+                  variant="outline"
+                  onClick={() => charInputRef.current?.click()}
+                  className="border-amber-300 text-amber-900 hover:bg-amber-100"
+                >
+                  <UserPlus className="mr-1.5 h-4 w-4" /> ক্যারেক্টার আনুন
+                </Button>
+              </div>
+              <p className="text-[11px] text-amber-600">
+                .json ফাইল — বন্ধুকে পাঠালে সে-ও নিজের ডিভাইসে খুলতে পারবে (টেমপ্লেট বিনিময়)।
+              </p>
+            </div>
           </div>
         </DialogContent>
       </Dialog>
@@ -3021,6 +3557,7 @@ export default function StudioTab({
                     <SelectContent>
                       <SelectItem value="24">২৪fps (সিনেমা)</SelectItem>
                       <SelectItem value="30">৩০fps (স্মুথ)</SelectItem>
+                      <SelectItem value="60">৬০fps (অতি-মসৃণ)</SelectItem>
                     </SelectContent>
                   </Select>
                 </div>
@@ -3095,6 +3632,21 @@ export default function StudioTab({
                 />
               </div>
 
+              {/* Phase 6 — বাংলা সাবটাইটেল বার্ন-ইন */}
+              <div className="flex items-center justify-between rounded-xl border border-amber-200 bg-amber-50/60 p-3">
+                <div className="space-y-0.5">
+                  <p className="text-sm font-semibold text-amber-900">বাংলা সাবটাইটেল বার্ন-ইন</p>
+                  <p className="text-xs text-amber-700">
+                    সিনেমা-স্টাইল সাবটাইটেল বার ভিডিওতে বসবে (ইউটিউব-রেডি)
+                  </p>
+                </div>
+                <Switch
+                  checked={exportSubs}
+                  onCheckedChange={setExportSubs}
+                  aria-label="সাবটাইটেল বার্ন-ইন চালু/বন্ধ"
+                />
+              </div>
+
               <div className="space-y-1.5">
                 <Label className="text-xs font-semibold text-amber-900">
                   টাইটেল কার্ড (ঐচ্ছিক)
@@ -3123,12 +3675,39 @@ export default function StudioTab({
               </div>
 
               {fastExport ? (
-                <Button
-                  onClick={runFastExport}
-                  className="w-full bg-orange-600 text-white hover:bg-orange-700"
-                >
-                  <Film className="mr-2 h-4 w-4" /> MP4 এক্সপোর্ট শুরু করুন
-                </Button>
+                <div className="space-y-2">
+                  <Button
+                    onClick={runFastExport}
+                    className="w-full bg-orange-600 text-white hover:bg-orange-700"
+                  >
+                    <Film className="mr-2 h-4 w-4" /> MP4 এক্সপোর্ট শুরু করুন
+                  </Button>
+                  <div className="grid grid-cols-2 gap-2">
+                    {/* Phase 6 — সোশ্যাল মিডিয়া GIF */}
+                    <Button
+                      variant="outline"
+                      onClick={runGifExport}
+                      disabled={gifBusy || exporting}
+                      className="border-teal-300 text-teal-800 hover:bg-teal-50"
+                    >
+                      <ImageIcon className="mr-2 h-4 w-4" />
+                      {gifBusy ? "GIF হচ্ছে..." : "GIF (সোশ্যাল)"}
+                    </Button>
+                    {/* Phase 6 — এক ক্লিকে শেয়ার */}
+                    <Button
+                      variant="outline"
+                      onClick={() => void shareLastMp4()}
+                      disabled={!canShareMp4 || exporting}
+                      className="border-emerald-300 text-emerald-800 hover:bg-emerald-50"
+                      title={canShareMp4 ? "এক্সপোর্ট করা ভিডিও শেয়ার করুন" : "আগে MP4 এক্সপোর্ট করুন"}
+                    >
+                      <Share2 className="mr-2 h-4 w-4" /> শেয়ার
+                    </Button>
+                  </div>
+                  <p className="text-center text-[11px] text-amber-600">
+                    GIF = 480×270 • প্রথম ১০ সেকেন্ড • এক্সপোর্টের পর "শেয়ার" চাপলে সরাসরি WhatsApp ইত্যাদিতে যাবে
+                  </p>
+                </div>
               ) : (
                 <Button
                   onClick={() => {
@@ -3265,6 +3844,55 @@ export default function StudioTab({
       />
 
       <InteractionDialog open={interactionsOpen} onOpenChange={setInteractionsOpen} />
+
+      {/* ---------- Phase 7 — hidden file inputs (project / character packs) ---------- */}
+      <input
+        ref={fileInputRef}
+        type="file"
+        accept="application/json,.json"
+        className="hidden"
+        onChange={(e) => {
+          const f = e.target.files?.[0];
+          if (f) void importProjectFile(f);
+          e.target.value = "";
+        }}
+        aria-hidden
+      />
+      <input
+        ref={charInputRef}
+        type="file"
+        accept="application/json,.json"
+        className="hidden"
+        onChange={(e) => {
+          const f = e.target.files?.[0];
+          if (f) void importCharacterPack(f);
+          e.target.value = "";
+        }}
+        aria-hidden
+      />
+
+      {/* ---------- Phase 7 — গ্যালারিতে পাবলিশ ---------- */}
+      <PublishDialog
+        open={publishOpen}
+        onOpenChange={setPublishOpen}
+        collectPayload={collectPublishPayload}
+      />
+
+      {/* ---------- Phase 6 — থাম্বনেইল ডিজাইনার ---------- */}
+      <ThumbnailDialog
+        open={thumbOpen}
+        onOpenChange={setThumbOpen}
+        defaultTitle={projectName || ""}
+        getStageFrame={() => {
+          const canvas = canvasRef.current;
+          if (!canvas) return null;
+          try {
+            return canvas.toDataURL("image/jpeg", 0.8);
+          } catch {
+            return null;
+          }
+        }}
+      />
 
       {/* ---------- Guided tour (Phase 1) ---------- */}
       <GuidedTour

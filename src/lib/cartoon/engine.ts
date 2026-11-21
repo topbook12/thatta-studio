@@ -19,6 +19,7 @@ import {
 } from './backgrounds';
 import { depthAlpha, depthScale, groundYAt, worldXAt } from './depth';
 import { drawCharacter } from './draw';
+import { drawDecor } from './decor';
 import {
   applyPoseOffsets,
   basePose,
@@ -170,6 +171,9 @@ function drawDust(ctx: CanvasRenderingContext2D, x: number, y: number, age: numb
  * night, candle-warm interiors). Cached gradients; pure screen-space fill.
  */
 const GRADE: Partial<Record<Scene['background'], [string, string, string]>> = {
+  station: ['rgba(255, 236, 200, 0.16)', 'rgba(214, 226, 238, 0.10)', 'rgba(96, 74, 48, 0.20)'],
+  cinema: ['rgba(120, 30, 46, 0.20)', 'rgba(80, 22, 34, 0.10)', 'rgba(30, 8, 12, 0.28)'],
+  mela: ['rgba(255, 190, 120, 0.18)', 'rgba(226, 138, 160, 0.10)', 'rgba(112, 66, 30, 0.20)'],
   village: ['rgba(255,196,110,0.16)', 'rgba(255,222,150,0.05)', 'rgba(96,44,84,0.12)'],
   field: ['rgba(255,202,120,0.14)', 'rgba(255,228,160,0.04)', 'rgba(70,90,40,0.10)'],
   bazaar: ['rgba(255,178,96,0.14)', 'rgba(255,214,140,0.05)', 'rgba(120,52,30,0.10)'],
@@ -281,7 +285,7 @@ export class CartoonStage {
   private dragMoved = false;
   private flagDrag = false;
   /** Sprint 7 — while exporting, deterministic shake + overlay switches */
-  private exportOpts: { shake: boolean; hideNameTags: boolean } | null = null;
+  private exportOpts: { shake: boolean; hideNameTags: boolean; hideSubs?: boolean } | null = null;
   /** cached cinematic vignette (depends only on stage size) */
   private vignette: CanvasGradient | null = null;
   /** cached scene colour-grade gradients (per background name) */
@@ -331,7 +335,10 @@ export class CartoonStage {
    * for the video exporter: no selection ring, no edit flag, shake on,
    * idle/ambient animations derived from `t` (identical output every run).
    */
-  renderExportFrame(t: number, opts?: { hideNameTags?: boolean }) {
+  renderExportFrame(
+    t: number,
+    opts?: { hideNameTags?: boolean; hideSubs?: boolean },
+  ) {
     // NOTE: empty scenes still render (background + characters) — an episode
     // may contain a pure establishing shot with zero beats.
     if (!this.scene) return;
@@ -341,7 +348,11 @@ export class CartoonStage {
     const prevTime = this.sceneTime;
     this.selectedUid = null;
     this.editBeatId = null;
-    this.exportOpts = { shake: true, hideNameTags: !!opts?.hideNameTags };
+    this.exportOpts = {
+      shake: true,
+      hideNameTags: !!opts?.hideNameTags,
+      hideSubs: !!opts?.hideSubs,
+    };
     this.sceneTime = clamp(t, 0, Math.max(0.001, this.totalDuration() - 0.001));
     this.render();
     this.selectedUid = prevSelected;
@@ -869,6 +880,10 @@ export class CartoonStage {
       /* ambient is decorative — never break the stage */
     }
 
+    // Phase 5 — decor layer BEHIND the actors (z >= 0), depth-projected
+    const et = this.exportOpts ? t : this.animT;
+    this.drawDecorLayer(ctx, et, true);
+
     const rendered: RenderedChar[] = [];
     /** Sprint 10 — queued ground-dust puffs this frame */
     const dusts: { x: number; y: number; age: number; s: number }[] = [];
@@ -1002,6 +1017,9 @@ export class CartoonStage {
     // impact dust — under the foreground frame, right on the ground plane
     for (const d of dusts) drawDust(ctx, d.x, d.y, d.age, d.s);
 
+    // Phase 5 — decor layer IN FRONT of the actors (z < 0)
+    this.drawDecorLayer(ctx, et, false);
+
     // Sprint 10 — foreground silhouette frame: drawn 1:1 with a baked-in
     // overscan margin and a 0.3× counter-parallax drift, so it reads as
     // standing in FRONT of the actors and never shows empty edges
@@ -1040,6 +1058,10 @@ export class CartoonStage {
       ctx.fillRect(0, 0, STAGE_W, STAGE_H);
       ctx.restore();
     }
+
+    // Phase 5 — ব্যাকগ্রাউন্ড এডিটর: time-of-day light, warmth grade and
+    // weather FX all apply over the graded frame (screen space)
+    this.drawEnvironmentFx(ctx, this.exportOpts ? t : this.animT);
 
     // selection ring (screen space — stays crisp under any camera)
     for (const r of rendered) {
@@ -1092,11 +1114,12 @@ export class CartoonStage {
     }
 
     // subtitle: the most recently started active beat with dialogue
+    // (export can suppress it — the dedicated burned-in bar takes over)
     let sub: BeatWindow | null = null;
     for (const w of active) {
       if (w.beat.text.trim() && (!sub || w.start > sub.start)) sub = w;
     }
-    if (sub) {
+    if (sub && !this.exportOpts?.hideSubs) {
       this.drawSubtitle(sub.beat.text);
     }
 
@@ -1193,6 +1216,177 @@ export class CartoonStage {
     ctx.fill();
     ctx.fillStyle = '#fff7ed';
     ctx.fillText(name, cx, screenY + 1);
+  }
+
+  /**
+   * Phase 5 — ডেকোর লেয়ার: ground-anchored set pieces. `behind=true`
+   * renders items on/behind the stage plane (z >= 0) BEFORE the actors,
+   * `behind=false` renders the negative-z items in front of them.
+   * Depth projection mirrors the character pipeline exactly.
+   */
+  private drawDecorLayer(
+    ctx: CanvasRenderingContext2D,
+    t: number,
+    behind: boolean,
+  ) {
+    const decor = this.scene?.decor ?? [];
+    if (decor.length === 0) return;
+    for (const d of decor) {
+      const z = d.z ?? 0;
+      if (behind ? z < 0 : z >= 0) continue;
+      const dz = depthScale(z);
+      const gy = groundYAt(z);
+      const wx = worldXAt((d.x / 100) * STAGE_W, z);
+      const s = d.scale * dz;
+      ctx.save();
+      ctx.globalAlpha = depthAlpha(z);
+      ctx.translate(wx, gy);
+      ctx.scale(s, s);
+      try {
+        drawDecor(ctx, d.decorId, t);
+      } catch {
+        /* decor is decorative — never break the stage */
+      }
+      ctx.restore();
+    }
+  }
+
+  /**
+   * Phase 5 — ব্যাকগ্রাউন্ড এডিটর overlays (screen space, deterministic):
+   *  • time-of-day light pass (dawn / dusk / night gradients)
+   *  • warmth grade (soft-light amber ↔ teal)
+   *  • weather FX (rain streaks / drifting fog bands / dust haze)
+   * Every particle is a pure function of `t` → identical exports.
+   */
+  private drawEnvironmentFx(ctx: CanvasRenderingContext2D, t: number) {
+    const env = this.scene?.environment;
+    if (!env) return;
+
+    // ---- 1. time-of-day lighting pass ----
+    const tod = env.timeOfDay ?? 'day';
+    if (tod === 'dawn') {
+      const g = ctx.createLinearGradient(0, 0, 0, STAGE_H);
+      g.addColorStop(0, 'rgba(255, 183, 130, 0.30)');
+      g.addColorStop(0.5, 'rgba(255, 214, 170, 0.14)');
+      g.addColorStop(1, 'rgba(120, 90, 130, 0.12)');
+      ctx.fillStyle = g;
+      ctx.fillRect(0, 0, STAGE_W, STAGE_H);
+    } else if (tod === 'dusk') {
+      const g = ctx.createLinearGradient(0, 0, 0, STAGE_H);
+      g.addColorStop(0, 'rgba(212, 100, 80, 0.34)');
+      g.addColorStop(0.55, 'rgba(180, 92, 90, 0.16)');
+      g.addColorStop(1, 'rgba(66, 44, 92, 0.24)');
+      ctx.fillStyle = g;
+      ctx.fillRect(0, 0, STAGE_W, STAGE_H);
+    } else if (tod === 'night') {
+      const g = ctx.createLinearGradient(0, 0, 0, STAGE_H);
+      g.addColorStop(0, 'rgba(16, 28, 68, 0.52)');
+      g.addColorStop(0.6, 'rgba(18, 30, 66, 0.38)');
+      g.addColorStop(1, 'rgba(8, 14, 40, 0.30)');
+      ctx.fillStyle = g;
+      ctx.fillRect(0, 0, STAGE_W, STAGE_H);
+      // a few deterministic stars so night reads instantly
+      ctx.fillStyle = 'rgba(226, 236, 255, 0.85)';
+      for (let i = 0; i < 26; i++) {
+        const sx = ((i * 127.3 + 41) % 1) * STAGE_W;
+        const sy = ((i * 311.7 + 17) % 1) * STAGE_H * 0.5;
+        const tw = 0.5 + 0.5 * Math.abs(Math.sin(t * 1.6 + i));
+        ctx.globalAlpha = tw;
+        ctx.beginPath();
+        ctx.arc(sx, sy, 1.8, 0, Math.PI * 2);
+        ctx.fill();
+      }
+      ctx.globalAlpha = 1;
+    }
+
+    // ---- 2. warmth grade ----
+    const warmth = clamp(env.warmth ?? 0, -1, 1);
+    if (Math.abs(warmth) > 0.02) {
+      ctx.save();
+      ctx.globalCompositeOperation = 'soft-light';
+      ctx.fillStyle =
+        warmth > 0
+          ? `rgba(255, 166, 60, ${0.34 * warmth})`
+          : `rgba(64, 170, 190, ${0.34 * -warmth})`;
+      ctx.fillRect(0, 0, STAGE_W, STAGE_H);
+      ctx.restore();
+    }
+
+    // ---- 3. weather particles ----
+    const weather = env.weather ?? 'none';
+    if (weather === 'none') return;
+    const k = clamp(env.intensity ?? 0.6, 0, 1);
+    if (k < 0.02) return;
+    // deterministic pseudo-random (no Math.random → identical exports)
+    const rnd = (n: number) => {
+      const x = Math.sin(n * 127.1 + 311.7) * 43758.5453;
+      return x - Math.floor(x);
+    };
+
+    if (weather === 'rain') {
+      // slate-blue wash
+      ctx.fillStyle = `rgba(52, 68, 92, ${0.20 * k})`;
+      ctx.fillRect(0, 0, STAGE_W, STAGE_H);
+      ctx.lineCap = 'round';
+      const N = Math.round(90 * k);
+      for (let i = 0; i < N; i++) {
+        const speed = 520 + rnd(i + 7) * 260;
+        const x0 = rnd(i) * (STAGE_W + 140) - 70;
+        const drift = 74;
+        const y = ((rnd(i + 3) * STAGE_H + t * speed) % (STAGE_H + 60)) - 30;
+        const len = 15 + rnd(i + 11) * 16;
+        ctx.strokeStyle = `rgba(190, 208, 236, ${0.30 + rnd(i + 5) * 0.24})`;
+        ctx.lineWidth = 1.9;
+        ctx.beginPath();
+        ctx.moveTo(x0, y);
+        ctx.lineTo(x0 + (drift / speed) * len * 3.2, y + len);
+        ctx.stroke();
+      }
+    } else if (weather === 'fog') {
+      // three drifting translucent bands + milky wash
+      ctx.fillStyle = `rgba(232, 238, 244, ${0.16 * k})`;
+      ctx.fillRect(0, 0, STAGE_W, STAGE_H);
+      for (let b = 0; b < 3; b++) {
+        const by = 210 + b * 160 + Math.sin(t * 0.5 + b * 2) * 26;
+        const x = ((t * (14 + b * 9) + b * 420) % (STAGE_W + 620)) - 310;
+        const g = ctx.createRadialGradient(
+          x,
+          by,
+          30,
+          x,
+          by,
+          430 + b * 60,
+        );
+        g.addColorStop(0, `rgba(240, 246, 252, ${0.34 * k})`);
+        g.addColorStop(1, 'rgba(240, 246, 252, 0)');
+        ctx.fillStyle = g;
+        ctx.save();
+        ctx.translate(x, by);
+        ctx.scale(1.35, 0.42);
+        ctx.beginPath();
+        ctx.arc(0, 0, 430 + b * 60, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.restore();
+      }
+    } else if (weather === 'dust') {
+      // warm haze + drifting motes
+      ctx.fillStyle = `rgba(214, 168, 102, ${0.20 * k})`;
+      ctx.fillRect(0, 0, STAGE_W, STAGE_H);
+      const N = Math.round(46 * k);
+      for (let i = 0; i < N; i++) {
+        const speed = 26 + rnd(i + 3) * 44;
+        const x = ((rnd(i) * STAGE_W + t * speed) % (STAGE_W + 80)) - 40;
+        const y =
+          140 +
+          rnd(i + 9) * 470 +
+          Math.sin(t * 0.8 + i * 1.7) * 34;
+        const r = 2 + rnd(i + 5) * 4.4;
+        ctx.fillStyle = `rgba(238, 214, 168, ${0.14 + rnd(i + 13) * 0.20})`;
+        ctx.beginPath();
+        ctx.arc(x, y, r, 0, Math.PI * 2);
+        ctx.fill();
+      }
+    }
   }
 
   private drawSubtitle(text: string) {

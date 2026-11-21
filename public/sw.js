@@ -1,5 +1,5 @@
 /* ঠাট্টা স্টুডিও — service worker v2 (Sprint 8: self-hosted fonts, full offline) */
-const CACHE = 'thatta-v10'
+const CACHE = 'thatta-v11'
 
 const FONT_FILES = [
   '/fonts/hind-siliguri-400-bengali.woff2',

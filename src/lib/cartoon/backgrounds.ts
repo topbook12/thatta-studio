@@ -1936,6 +1936,443 @@ function drawJungle(ctx: CanvasRenderingContext2D) {
  * Draws the living layer of a background: drifting clouds, twinkling stars,
  * fireflies, water shimmer, dust motes. Called every frame with scene time.
  */
+// ---------------- Phase 5 — জগৎ তৈরি ----------------
+
+/** রেলস্টেশন — village rail platform: building, signboard, tracks, signal */
+function drawStation(ctx: CanvasRenderingContext2D) {
+  skyGradient(ctx, '#a7c4d4', '#f2e3c2', 500);
+  // far treeline + haze
+  for (let i = 0; i < 9; i++) {
+    const bx = i * 150 - 40;
+    bush(ctx, bx, 452 + (i % 3) * 14, 1.5 + (i % 2) * 0.5, '#4d7c4f');
+  }
+  haze(ctx, 0, 380, STAGE_W, 130, '226,238,244', 0.5);
+
+  // ---- tracks beyond the platform edge ----
+  ctx.fillStyle = '#6b5a48';
+  ctx.fillRect(0, 470, STAGE_W, 60);
+  ctx.fillStyle = '#575044';
+  for (let i = 0; i < 14; i++) {
+    ctx.fillRect(i * 96 - 30, 478, 44, 10);
+  }
+  ctx.fillStyle = '#8f8577';
+  ctx.fillRect(0, 486, STAGE_W, 7);
+  ctx.fillRect(0, 516, STAGE_W, 7);
+
+  // ---- platform slab ----
+  const plat = ctx.createLinearGradient(0, 520, 0, STAGE_H);
+  plat.addColorStop(0, '#c9b18f');
+  plat.addColorStop(0.35, '#d8c49f');
+  plat.addColorStop(1, '#b39a76');
+  ctx.fillStyle = plat;
+  ctx.fillRect(0, 520, STAGE_W, STAGE_H - 520);
+  // platform edge kerb
+  ctx.fillStyle = '#e7d7b3';
+  ctx.fillRect(0, 520, STAGE_W, 12);
+  ctx.fillStyle = '#a18863';
+  ctx.fillRect(0, 532, STAGE_W, 4);
+  // slab joints
+  ctx.strokeStyle = 'rgba(120, 96, 64, 0.4)';
+  ctx.lineWidth = 2;
+  for (let i = 0; i < 8; i++) {
+    ctx.beginPath();
+    ctx.moveTo(i * 170 + 40, 548);
+    ctx.lineTo(i * 170 + 10, STAGE_H);
+    ctx.stroke();
+  }
+  // yellow warning line
+  ctx.fillStyle = '#e2b203';
+  ctx.fillRect(0, 560, STAGE_W, 13);
+
+  // ---- station building (behind, upper-left band) ----
+  ctx.fillStyle = '#b5533c';
+  ctx.fillRect(60, 300, 520, 172);
+  ctx.fillStyle = '#8f3a2a';
+  ctx.fillRect(40, 282, 560, 26); // roof band
+  ctx.fillStyle = '#703022';
+  ctx.fillRect(40, 274, 560, 12); // roof ridge
+  // white trim + windows
+  ctx.fillStyle = '#f3e0c0';
+  ctx.fillRect(60, 352, 520, 10);
+  for (let i = 0; i < 5; i++) {
+    const wx = 100 + i * 104;
+    ctx.fillStyle = '#2e4a5a';
+    ctx.beginPath();
+    ctx.roundRect(wx, 310, 58, 40, 5);
+    ctx.fill();
+    ctx.strokeStyle = '#f3e0c0';
+    ctx.lineWidth = 4;
+    ctx.stroke();
+    ctx.fillStyle = 'rgba(253, 224, 71, 0.35)';
+    ctx.beginPath();
+    ctx.roundRect(wx + 6, 316, 46, 28, 3);
+    ctx.fill();
+  }
+  // door arch
+  ctx.fillStyle = '#3a2a1c';
+  ctx.beginPath();
+  ctx.roundRect(300, 396, 76, 76, [30, 30, 0, 0]);
+  ctx.fill();
+  // signboard
+  ctx.fillStyle = '#0f4c5c';
+  ctx.beginPath();
+  ctx.roundRect(150, 226, 340, 46, 8);
+  ctx.fill();
+  ctx.strokeStyle = '#f3e0c0';
+  ctx.lineWidth = 3;
+  ctx.stroke();
+  ctx.fillStyle = '#fef3c7';
+  ctx.font = '700 26px "Hind Siliguri", sans-serif';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText('ঠাট্টা রেলস্টেশন', 320, 250);
+  // sign posts
+  ctx.fillStyle = '#5c4632';
+  ctx.fillRect(180, 272, 8, 30);
+  ctx.fillRect(452, 272, 8, 30);
+
+  // ---- signal post + lamp ----
+  ctx.strokeStyle = '#3f3f46';
+  ctx.lineWidth = 8;
+  ctx.beginPath();
+  ctx.moveTo(1010, 620);
+  ctx.lineTo(1010, 300);
+  ctx.stroke();
+  ctx.beginPath();
+  ctx.moveTo(1010, 330);
+  ctx.lineTo(1076, 330);
+  ctx.stroke();
+  const armA = -0.5; // clear (arm up)
+  ctx.save();
+  ctx.translate(1076, 330);
+  ctx.rotate(armA);
+  ctx.fillStyle = '#16a34a';
+  ctx.beginPath();
+  ctx.roundRect(0, -7, 58, 14, 6);
+  ctx.fill();
+  ctx.restore();
+  // lamp (red/green aspect)
+  ctx.fillStyle = '#1f2937';
+  ctx.beginPath();
+  ctx.roundRect(998, 268, 24, 40, 6);
+  ctx.fill();
+  ctx.fillStyle = '#22c55e';
+  ctx.beginPath();
+  ctx.arc(1010, 282, 7, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.fillStyle = '#ef4444';
+  ctx.beginPath();
+  ctx.arc(1010, 300, 7, 0, Math.PI * 2);
+  ctx.fill();
+  lightPool(ctx, 1010, 636, 220, 90, 0.16);
+  softShadow(ctx, 1010, 628, 60, 16, 0.2);
+
+  // ---- platform bench + tea stall crate ----
+  ctx.fillStyle = '#7c2d12';
+  ctx.beginPath();
+  ctx.roundRect(120, 600, 190, 16, 5);
+  ctx.fill();
+  ctx.beginPath();
+  ctx.roundRect(120, 574, 190, 12, 5);
+  ctx.fill();
+  for (const bx of [140, 282]) {
+    ctx.fillRect(bx, 570, 10, 66);
+  }
+  softShadow(ctx, 215, 640, 110, 16, 0.18);
+}
+
+/** সিনেমা হল — velvet curtains, glowing screen, seat rows, projector beam */
+function drawCinema(ctx: CanvasRenderingContext2D) {
+  // hall walls
+  const wall = ctx.createLinearGradient(0, 0, 0, STAGE_H);
+  wall.addColorStop(0, '#2b0f14');
+  wall.addColorStop(0.6, '#451820');
+  wall.addColorStop(1, '#2e1218');
+  ctx.fillStyle = wall;
+  ctx.fillRect(0, 0, STAGE_W, STAGE_H);
+
+  // glowing screen
+  const scr = ctx.createLinearGradient(0, 150, 0, 470);
+  scr.addColorStop(0, '#e8f4ff');
+  scr.addColorStop(0.5, '#cfe8ff');
+  scr.addColorStop(1, '#9fc4e8');
+  ctx.fillStyle = scr;
+  ctx.beginPath();
+  ctx.roundRect(240, 150, 800, 320, 8);
+  ctx.fill();
+  // on-screen landscape hint (village film!)
+  ctx.save();
+  ctx.beginPath();
+  ctx.roundRect(240, 150, 800, 320, 8);
+  ctx.clip();
+  ctx.fillStyle = '#7fb8dd';
+  ctx.fillRect(240, 150, 800, 120);
+  ctx.fillStyle = '#5f9d4e';
+  ctx.beginPath();
+  ctx.moveTo(240, 400);
+  ctx.quadraticCurveTo(440, 300, 640, 380);
+  ctx.quadraticCurveTo(760, 420, 1040, 360);
+  ctx.lineTo(1040, 470);
+  ctx.lineTo(240, 470);
+  ctx.closePath();
+  ctx.fill();
+  ctx.fillStyle = '#f8de7c';
+  ctx.beginPath();
+  ctx.arc(880, 220, 40, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.restore();
+  ctx.strokeStyle = '#120a0c';
+  ctx.lineWidth = 10;
+  ctx.beginPath();
+  ctx.roundRect(240, 150, 800, 320, 8);
+  ctx.stroke();
+  lightPool(ctx, 640, 470, 420, 140, 0.22);
+
+  // velvet curtains (heavy folds, tied open)
+  const curtain = (x0: number, w: number) => {
+    ctx.fillStyle = '#8c1d2c';
+    ctx.beginPath();
+    ctx.moveTo(x0, 90);
+    ctx.quadraticCurveTo(x0 + w * 0.6, 130, x0 + w, 480);
+    ctx.quadraticCurveTo(x0 + w * 0.8, 560, x0 + w * 0.55, 545);
+    ctx.quadraticCurveTo(x0 + w * 0.3, 600, x0, 520);
+    ctx.closePath();
+    ctx.fill();
+    // folds
+    for (let i = 1; i < 5; i++) {
+      ctx.strokeStyle = 'rgba(0,0,0,0.28)';
+      ctx.lineWidth = 6;
+      ctx.beginPath();
+      ctx.moveTo(x0 + (w / 5) * i, 120);
+      ctx.quadraticCurveTo(x0 + (w / 5) * i + 10, 320, x0 + (w / 5) * i + 4, 540 - i * 14);
+      ctx.stroke();
+    }
+    ctx.strokeStyle = '#5c101c';
+    ctx.lineWidth = 5;
+    ctx.beginPath();
+    ctx.moveTo(x0, 90);
+    ctx.quadraticCurveTo(x0 + w * 0.6, 130, x0 + w, 480);
+    ctx.stroke();
+  };
+  curtain(150, 130);
+  curtain(1000, 130);
+  // top valance with scallops
+  ctx.fillStyle = '#6d1522';
+  ctx.fillRect(0, 0, STAGE_W, 96);
+  for (let i = 0; i < 9; i++) {
+    const cx = i * 148 + 74;
+    ctx.beginPath();
+    ctx.arc(cx, 96, 66, 0, Math.PI);
+    ctx.fill();
+  }
+  ctx.fillStyle = 'rgba(253, 224, 71, 0.5)';
+  ctx.fillRect(0, 88, STAGE_W, 5);
+
+  // ceiling lamps glow
+  for (const lx of [320, 640, 960]) {
+    ctx.fillStyle = 'rgba(253, 224, 71, 0.16)';
+    ctx.beginPath();
+    ctx.arc(lx, 60, 46, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = '#fde68a';
+    ctx.beginPath();
+    ctx.arc(lx, 58, 9, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  // projector beam from the back top-right
+  const beam = ctx.createLinearGradient(1180, 60, 640, 320);
+  beam.addColorStop(0, 'rgba(255, 244, 214, 0.22)');
+  beam.addColorStop(1, 'rgba(255, 244, 214, 0)');
+  ctx.fillStyle = beam;
+  ctx.beginPath();
+  ctx.moveTo(1186, 40);
+  ctx.lineTo(1290, 96);
+  ctx.lineTo(700, 400);
+  ctx.lineTo(560, 380);
+  ctx.closePath();
+  ctx.fill();
+
+  // floor + seat rows
+  const floor = ctx.createLinearGradient(0, 520, 0, STAGE_H);
+  floor.addColorStop(0, '#3a1620');
+  floor.addColorStop(1, '#1e0a10');
+  ctx.fillStyle = floor;
+  ctx.fillRect(0, 500, STAGE_W, STAGE_H - 500);
+  const seatRow = (y: number, n: number, s: number) => {
+    for (let i = 0; i < n; i++) {
+      const sx = 90 + i * 118 + (y % 7);
+      softShadow(ctx, sx + 40, y + 26 * s, 66 * s, 12 * s, 0.3);
+      ctx.fillStyle = '#701a26';
+      ctx.beginPath();
+      ctx.roundRect(sx, y - 40 * s, 84 * s, 62 * s, 12 * s);
+      ctx.fill();
+      ctx.fillStyle = '#8c2333';
+      ctx.beginPath();
+      ctx.roundRect(sx + 6 * s, y - 52 * s, 72 * s, 26 * s, 10 * s);
+      ctx.fill();
+    }
+  };
+  seatRow(600, 9, 0.92);
+}
+
+/** মেলা — village fair at dusk: ferris wheel, striped tents, bunting */
+function drawMela(ctx: CanvasRenderingContext2D) {
+  skyGradient(ctx, '#7e5aa2', '#f2a65e', 470);
+  sun(ctx, 1090, 430);
+  // ferris wheel (right side)
+  const fx = 1010;
+  const fy = 300;
+  const fr = 175;
+  ctx.strokeStyle = '#4a352b';
+  ctx.lineWidth = 9;
+  ctx.beginPath();
+  ctx.arc(fx, fy, fr, 0, Math.PI * 2);
+  ctx.stroke();
+  ctx.lineWidth = 3.4;
+  for (let i = 0; i < 10; i++) {
+    const a = (i / 10) * Math.PI * 2 + 0.2;
+    ctx.beginPath();
+    ctx.moveTo(fx, fy);
+    ctx.lineTo(fx + Math.cos(a) * fr, fy + Math.sin(a) * fr);
+    ctx.stroke();
+    // cabins
+    const cx = fx + Math.cos(a) * (fr - 16);
+    const cy = fy + Math.sin(a) * (fr - 16);
+    ctx.fillStyle = ['#e11d48', '#f59e0b', '#16a34a', '#0ea5e9', '#f97316'][i % 5];
+    ctx.beginPath();
+    ctx.roundRect(cx - 13, cy - 4, 26, 20, 5);
+    ctx.fill();
+    ctx.strokeStyle = '#3f2d20';
+    ctx.lineWidth = 2;
+    ctx.stroke();
+  }
+  // A-frame legs + hub
+  ctx.strokeStyle = '#4a352b';
+  ctx.lineWidth = 11;
+  ctx.beginPath();
+  ctx.moveTo(fx - 90, 620);
+  ctx.lineTo(fx, fy);
+  ctx.lineTo(fx + 90, 620);
+  ctx.stroke();
+  ctx.fillStyle = '#fbbf24';
+  ctx.beginPath();
+  ctx.arc(fx, fy, 15, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.strokeStyle = '#3f2d20';
+  ctx.lineWidth = 3;
+  ctx.stroke();
+
+  // distant tent silhouettes
+  for (const [tx, tw, tc] of [[90, 200, '#5d3a8e'], [330, 150, '#8e3a5e'], [560, 180, '#3a6e8e']] as const) {
+    ctx.fillStyle = tc;
+    ctx.beginPath();
+    ctx.moveTo(tx, 470);
+    ctx.lineTo(tx + tw / 2, 330);
+    ctx.lineTo(tx + tw, 470);
+    ctx.closePath();
+    ctx.fill();
+  }
+  haze(ctx, 0, 350, STAGE_W, 140, '242,166,94', 0.4);
+
+  // main striped tent (center-left)
+  const tent = (cx: number, baseY: number, w: number, h: number, c1: string, c2: string) => {
+    ctx.fillStyle = c1;
+    ctx.beginPath();
+    ctx.moveTo(cx - w / 2, baseY);
+    ctx.lineTo(cx, baseY - h);
+    ctx.lineTo(cx + w / 2, baseY);
+    ctx.closePath();
+    ctx.fill();
+    ctx.strokeStyle = '#3f2d20';
+    ctx.lineWidth = 3;
+    ctx.stroke();
+    // scalloped bottom + stripes
+    for (let i = 0; i < 4; i++) {
+      const x0 = cx - w / 2 + (w / 4) * i;
+      ctx.fillStyle = i % 2 ? c2 : c1;
+      ctx.beginPath();
+      ctx.moveTo(x0, baseY);
+      ctx.lineTo(x0 + w / 8, baseY - h * 0.62);
+      ctx.lineTo(x0 + w / 4, baseY);
+      ctx.closePath();
+      ctx.fill();
+    }
+    // flag on top
+    ctx.strokeStyle = '#3f2d20';
+    ctx.lineWidth = 3;
+    ctx.beginPath();
+    ctx.moveTo(cx, baseY - h);
+    ctx.lineTo(cx, baseY - h - 26);
+    ctx.stroke();
+    ctx.fillStyle = '#fbbf24';
+    ctx.beginPath();
+    ctx.moveTo(cx, baseY - h - 26);
+    ctx.lineTo(cx + 20, baseY - h - 19);
+    ctx.lineTo(cx, baseY - h - 12);
+    ctx.closePath();
+    ctx.fill();
+  };
+  tent(220, 620, 300, 210, '#dc2626', '#fef3c7');
+  tent(560, 640, 240, 170, '#0e7490', '#fef3c7');
+
+  // stall counters
+  ctx.fillStyle = '#8a5a2b';
+  ctx.beginPath();
+  ctx.roundRect(120, 600, 200, 46, 6);
+  ctx.fill();
+  ctx.strokeStyle = '#3f2d20';
+  ctx.lineWidth = 2.6;
+  ctx.stroke();
+  for (let i = 0; i < 4; i++) {
+    ctx.fillStyle = ['#f59e0b', '#dc2626', '#16a34a', '#e11d48'][i];
+    ctx.beginPath();
+    ctx.arc(150 + i * 46, 594, 11, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.stroke();
+  }
+
+  // bunting across the top
+  const flagCols = ['#e11d48', '#f59e0b', '#16a34a', '#0ea5e9', '#f97316', '#8b5cf6'];
+  ctx.strokeStyle = 'rgba(63, 45, 32, 0.8)';
+  ctx.lineWidth = 2.6;
+  ctx.beginPath();
+  ctx.moveTo(-10, 40);
+  ctx.quadraticCurveTo(360, 130, 700, 60);
+  ctx.quadraticCurveTo(980, 10, 1290, 70);
+  ctx.stroke();
+  for (let i = 0; i < 16; i++) {
+    const q = (i + 0.5) / 16;
+    // sample the bunting curve approximately
+    const bx = q * 1300;
+    const sag = Math.sin(q * Math.PI) * 66 + Math.sin(q * Math.PI * 2) * 22;
+    const by = 40 + sag * 0.6 + 12;
+    ctx.fillStyle = flagCols[i % flagCols.length];
+    ctx.beginPath();
+    ctx.moveTo(bx - 11, by);
+    ctx.lineTo(bx + 11, by);
+    ctx.lineTo(bx, by + 22);
+    ctx.closePath();
+    ctx.fill();
+  }
+
+  // dirt ground with trampled patches
+  const gnd = ctx.createLinearGradient(0, 620, 0, STAGE_H);
+  gnd.addColorStop(0, '#c78d4f');
+  gnd.addColorStop(1, '#a86f38');
+  ctx.fillStyle = gnd;
+  ctx.fillRect(0, 620, STAGE_W, STAGE_H - 620);
+  ctx.fillStyle = 'rgba(120, 78, 36, 0.35)';
+  for (let i = 0; i < 12; i++) {
+    ctx.beginPath();
+    ctx.ellipse(70 + i * 108, 655 + (i % 4) * 18, 40, 9, 0, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  // stall warm light pools
+  lightPool(ctx, 220, 640, 240, 80, 0.2);
+  lightPool(ctx, 560, 655, 200, 70, 0.16);
+}
+
 export function drawAmbient(
   ctx: CanvasRenderingContext2D,
   name: BgName,
@@ -2142,6 +2579,37 @@ export function drawAmbient(
       ctx.globalAlpha = 1;
       break;
     }
+    case 'station':
+      // a slow cloud of steam drifting from the far end of the platform
+      drift(5, 200, 0.5, 0.35, 900);
+      break;
+    case 'cinema':
+      // dust motes twinkling inside the projector beam
+      for (let i = 0; i < 9; i++) {
+        const mx = 560 + ((i * 167 + t * 10) % 620);
+        const my = 90 + ((i * 97 + t * 26) % 320);
+        ctx.globalAlpha = 0.16 + 0.2 * Math.abs(Math.sin(t * 2.4 + i));
+        ctx.fillStyle = '#fff7d6';
+        ctx.beginPath();
+        ctx.arc(mx, my, 2.2, 0, Math.PI * 2);
+        ctx.fill();
+      }
+      ctx.globalAlpha = 1;
+      break;
+    case 'mela':
+      // ferris wheel turning slowly + fair lights twinkling
+      // (the wheel itself is baked; here we only add sparkle near the tents)
+      for (let i = 0; i < 8; i++) {
+        const lx = 130 + i * 55;
+        const tw = 0.4 + 0.6 * Math.abs(Math.sin(t * 3.2 + i * 1.3));
+        ctx.globalAlpha = tw;
+        ctx.fillStyle = ['#fde047', '#f87171', '#4ade80', '#fdba74'][i % 4];
+        ctx.beginPath();
+        ctx.arc(lx, 592 + (i % 3) * 6, 3.4, 0, Math.PI * 2);
+        ctx.fill();
+      }
+      ctx.globalAlpha = 1;
+      break;
   }
 }
 
@@ -2464,6 +2932,49 @@ const FG_RENDERERS: Record<BgName, (ctx: CanvasRenderingContext2D) => void> = {
     fgLeaf(ctx, 1296, 340, 1.6, '#123318', 2.2);
     fgVine(ctx, '#1d451f');
   },
+  station(ctx) {
+    fgPillar(ctx, -8, '#3d2c1e');
+    fgPillar(ctx, 1274, '#3d2c1e');
+    fgSack(ctx, 1226, 764, 1.3, '#6b4a26');
+    fgStone(ctx, 1050, 748, 34, 13, '#3a3430');
+    fgStone(ctx, 1130, 770, 26, 10, '#332e2a');
+  },
+  cinema(ctx) {
+    // dark seat-back silhouettes framing the bottom edge
+    ctx.fillStyle = '#160608';
+    for (let i = -1; i < 12; i++) {
+      const sx = 24 + i * 118;
+      ctx.beginPath();
+      ctx.roundRect(sx, 700, 96, 96, 18);
+      ctx.fill();
+      ctx.beginPath();
+      ctx.roundRect(sx + 8, 664, 80, 52, 16);
+      ctx.fill();
+    }
+    fgDrape(ctx, '#230a0e');
+  },
+  mela(ctx) {
+    fgTuft(ctx, 8, 782, 1.8, '#6e4a22');
+    fgTuft(ctx, 460, 770, 1.4, '#6e4a22');
+    fgTuft(ctx, 900, 788, 1.7, '#5d3d1d');
+    // balloon-seller silhouette on the left edge
+    ctx.fillStyle = '#241505';
+    ctx.beginPath();
+    ctx.ellipse(36, 700, 34, 60, 0.15, 0, Math.PI * 2);
+    ctx.fill();
+    for (const [bx, by, bc] of [[-6, 596, '#1f2937'], [30, 570, '#1f2937'], [66, 600, '#1f2937']] as const) {
+      ctx.strokeStyle = '#241505';
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.moveTo(36, 660);
+      ctx.lineTo(bx, by + 22);
+      ctx.stroke();
+      ctx.fillStyle = bc;
+      ctx.beginPath();
+      ctx.ellipse(bx, by, 20, 25, 0, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  },
 };
 
 const fgCache = new Map<string, HTMLCanvasElement>();
@@ -2510,6 +3021,12 @@ export function shadowTintFor(name: BgName): string {
     case 'jungle':
     case 'temple':
       return '22,42,22';
+    case 'station':
+      return '62,50,34';
+    case 'cinema':
+      return '44,16,20';
+    case 'mela':
+      return '58,38,20';
     case 'bazaar':
     case 'kitchen':
       return '62,40,18';
@@ -2543,6 +3060,9 @@ const RENDERERS: Record<BgName, (ctx: CanvasRenderingContext2D) => void> = {
   river: drawRiver,
   kitchen: drawKitchen,
   jungle: drawJungle,
+  station: drawStation,
+  cinema: drawCinema,
+  mela: drawMela,
 };
 
 /** Get (or build) the cached background canvas. Client-side only. */
