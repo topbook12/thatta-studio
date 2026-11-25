@@ -52,6 +52,8 @@ import InteractionDialog from "@/components/studio/interaction-dialog";
 import EasingCurvePicker from "@/components/studio/easing-curve-picker";
 import PoseEditor from "@/components/studio/pose-editor";
 import VoiceMapping from "@/components/studio/voice-mapping";
+import { QualityPicker } from "@/components/studio/quality-picker";
+import { StorageManager } from "@/components/studio/storage-manager";
 import {
   exportVideoWebCodecs,
   ExportCancelled,
@@ -145,6 +147,7 @@ import {
   Image as ImageIcon,
   Keyboard,
   LayoutTemplate,
+  Maximize2,
   Mic,
   Palette,
   Pause,
@@ -382,6 +385,10 @@ export default function StudioTab({
   const [publishOpen, setPublishOpen] = useState(false);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const charInputRef = useRef<HTMLInputElement | null>(null);
+  // Phase 8 — অফলাইন স্টোরেজ ম্যানেজার + স্টেজ pinch-zoom
+  const [storageOpen, setStorageOpen] = useState(false);
+  const [stageZoom, setStageZoom] = useState({ zoom: 1, panX: 0, panY: 0 });
+  const stageZoomRef = useRef({ zoom: 1, panX: 0, panY: 0 });
 
   // ---------- stage lifecycle ----------
   // advanceEpisodeRef: the onFinish callback below is created ONCE, so the
@@ -607,8 +614,32 @@ export default function StudioTab({
           });
         }
       },
+      // Phase 8 — two-finger pinch-zoom: zoom is cumulative from the engine,
+      // pan arrives as per-move deltas that we accumulate (clamped later)
+      onPinch: (g) => {
+        const prev = stageZoomRef.current;
+        const next = {
+          zoom: g.zoom,
+          panX: prev.panX + g.panX,
+          panY: prev.panY + g.panY,
+        };
+        // keep the scaled canvas covering its frame: max pan ≈ (z-1)/2z of view
+        const maxX = ((next.zoom - 1) * 1280) / (2 * next.zoom);
+        const maxY = ((next.zoom - 1) * 720) / (2 * next.zoom);
+        next.panX = Math.max(-maxX, Math.min(maxX, next.panX));
+        next.panY = Math.max(-maxY, Math.min(maxY, next.panY));
+        stageZoomRef.current = next;
+        setStageZoom(next);
+      },
     });
   }, [updatePlaced, updateBeat]);
+
+  /** Phase 8 — floating chip: return the stage to fit-view (১:১) */
+  const resetStageZoom = () => {
+    stageRef.current?.resetStageZoom();
+    stageZoomRef.current = { zoom: 1, panX: 0, panY: 0 };
+    setStageZoom({ zoom: 1, panX: 0, panY: 0 });
+  };
 
   // keyboard shortcuts: Space play/pause • Ctrl+Z undo • Ctrl+Shift+Z / Ctrl+Y redo
   useEffect(() => {
@@ -2005,14 +2036,33 @@ export default function StudioTab({
 
           <div
             id="tour-stage"
-            className="overflow-hidden rounded-xl border border-amber-300 shadow-inner"
+            className="relative overflow-hidden rounded-xl border border-amber-300 shadow-inner"
           >
             <canvas
               ref={canvasRef}
               className="block w-full bg-amber-100"
-              style={{ aspectRatio: "16 / 9" }}
+              style={{
+                aspectRatio: "16 / 9",
+                transform:
+                  stageZoom.zoom !== 1
+                    ? `scale(${stageZoom.zoom}) translate(${stageZoom.panX}px, ${stageZoom.panY}px)`
+                    : undefined,
+                transformOrigin: "center center",
+              }}
               aria-label="কার্টুন স্টেজ"
             />
+            {/* Phase 8 — zoom reset chip (দুই আঙুলে জুম করার পরে ১:১-এ ফেরা) */}
+            {stageZoom.zoom !== 1 && (
+              <button
+                type="button"
+                onClick={resetStageZoom}
+                className="absolute right-3 top-3 flex items-center gap-1.5 rounded-full bg-black/60 px-3 py-1.5 text-xs font-semibold text-white backdrop-blur transition hover:bg-black/75"
+                aria-label="স্টেজ জুম রিসেট করুন"
+              >
+                <Maximize2 className="h-3.5 w-3.5" aria-hidden />
+                {bnNum(Math.round(stageZoom.zoom * 10) / 10)}× — ১:১ ফিরুন
+              </button>
+            )}
           </div>
 
           <div className="flex flex-wrap items-center gap-2.5">
@@ -2093,6 +2143,8 @@ export default function StudioTab({
                 </SelectContent>
               </Select>
             </div>
+            {/* Phase 8 — রেন্ডার মান (অটো/উচ্চ/ব্যাটারি) */}
+            <QualityPicker />
             <Button
               id="tour-export"
               onClick={openExportDialog}
@@ -2157,6 +2209,16 @@ export default function StudioTab({
                 className="border-amber-300 px-2.5"
               >
                 <Keyboard className="h-4 w-4" />
+              </Button>
+              {/* Phase 8 — অফলাইন স্টোরেজ ম্যানেজার */}
+              <Button
+                variant="outline"
+                onClick={() => setStorageOpen(true)}
+                title="অফলাইন স্টোরেজ ম্যানেজার — জায়গার হিসাব ও পরিষ্কার"
+                aria-label="অফলাইন স্টোরেজ ম্যানেজার খুলুন"
+                className="border-amber-300"
+              >
+                <HardDrive className="mr-2 h-4 w-4" /> স্টোরেজ
               </Button>
               <Button
                 variant="outline"
@@ -3844,6 +3906,8 @@ export default function StudioTab({
       />
 
       <InteractionDialog open={interactionsOpen} onOpenChange={setInteractionsOpen} />
+      {/* Phase 8 — অফলাইন স্টোরেজ ম্যানেজার */}
+      <StorageManager open={storageOpen} onOpenChange={setStorageOpen} />
 
       {/* ---------- Phase 7 — hidden file inputs (project / character packs) ---------- */}
       <input

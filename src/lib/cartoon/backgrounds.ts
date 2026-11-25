@@ -4,6 +4,7 @@
 // ============================================================
 
 import { GROUND_Y, STAGE_H, STAGE_W, type BgName } from './types';
+import { bgScale, densityCount } from '../render-quality';
 
 const cache = new Map<string, HTMLCanvasElement>();
 
@@ -15,16 +16,32 @@ const cache = new Map<string, HTMLCanvasElement>();
 const CACHE_VERSION = 'v10';
 
 /**
- * Sprint 7 — backgrounds are painted once at 2× resolution (supersampled).
- * The stage then draws them downscaled, so they stay razor sharp on HiDPI
- * screens and in 1080p video exports.
+ * Phase 8 — memory audit: each 2× canvas is ≈15 MB of GPU/heap, so the
+ * 16 backgrounds × (bg + fg) could silently hold ≈450 MB. Simple LRU
+ * (Map insertion order) caps both caches; re-paint is cheap (~few ms).
  */
-const BG_SS = 2;
+const MAX_BG_CACHED = 10;
+const MAX_FG_CACHED = 8;
 
+function lruPut(store: Map<string, HTMLCanvasElement>, key: string, c: HTMLCanvasElement, max: number) {
+  store.set(key, c);
+  if (store.size > max) {
+    const oldest = store.keys().next().value;
+    if (oldest != null) store.delete(oldest);
+  }
+}
+
+/**
+ * Sprint 7 — backgrounds are painted once at a supersampled resolution
+ * (2× on high-end, 1.25× in battery/low-end mode — Phase 8). The stage
+ * then draws them downscaled, so they stay sharp on HiDPI screens and in
+ * 1080p video exports.
+ */
 function baseCanvas(): HTMLCanvasElement {
+  const ss = bgScale();
   const c = document.createElement('canvas');
-  c.width = STAGE_W * BG_SS;
-  c.height = STAGE_H * BG_SS;
+  c.width = Math.round(STAGE_W * ss);
+  c.height = Math.round(STAGE_H * ss);
   return c;
 }
 
@@ -2393,7 +2410,7 @@ export function drawAmbient(
       ctx.strokeStyle = 'rgba(60, 50, 40, 0.7)';
       ctx.lineWidth = 2.4;
       ctx.lineCap = 'round';
-      for (let i = 0; i < 3; i++) {
+      for (let i = 0; i < densityCount(3); i++) {
         const bx = ((t * 26 + i * 340) % (STAGE_W + 200)) - 100;
         const by = 130 + Math.sin(t * 2 + i) * 14 + i * 36;
         const flap = Math.sin(t * 7 + i * 2) * 5;
@@ -2453,7 +2470,7 @@ export function drawAmbient(
     }
     case 'night': {
       // twinkling stars
-      for (let i = 0; i < 12; i++) {
+      for (let i = 0; i < densityCount(12); i++) {
         const x = (i * 397 + 60) % STAGE_W;
         const y = 40 + ((i * 149) % 330);
         ctx.globalAlpha = 0.35 + 0.6 * Math.abs(Math.sin(t * 1.8 + i * 1.7));
@@ -2461,7 +2478,7 @@ export function drawAmbient(
       }
       ctx.globalAlpha = 1;
       // fireflies
-      for (let i = 0; i < 8; i++) {
+      for (let i = 0; i < densityCount(8); i++) {
         const fx = 200 + ((i * 351 + t * 22) % 900);
         const fy = 480 + Math.sin(t * 1.4 + i * 2.1) * 60 + (i % 3) * 40;
         const glow = 0.4 + 0.6 * Math.abs(Math.sin(t * 2.6 + i));
@@ -2483,7 +2500,7 @@ export function drawAmbient(
     case 'rajcourt':
     case 'kitchen': {
       // floating dust motes in warm light
-      for (let i = 0; i < 10; i++) {
+      for (let i = 0; i < densityCount(10); i++) {
         const x = 200 + ((i * 263 + t * 9) % 880);
         const y = 180 + Math.sin(t * 0.9 + i * 1.3) * 120 + ((i * 53) % 160);
         ctx.globalAlpha = 0.12 + 0.1 * Math.sin(t * 1.6 + i);
@@ -2535,7 +2552,7 @@ export function drawAmbient(
       ctx.strokeStyle = 'rgba(255, 255, 255, 0.5)';
       ctx.lineWidth = 3;
       ctx.lineCap = 'round';
-      for (let i = 0; i < 9; i++) {
+      for (let i = 0; i < densityCount(9); i++) {
         const y = 470 + i * 26;
         const x = 100 + ((i * 300 + t * 34) % 1100);
         ctx.globalAlpha = 0.25 + 0.3 * Math.sin(t * 3 + i * 1.3);
@@ -2550,7 +2567,7 @@ export function drawAmbient(
     }
     case 'jungle': {
       // drifting fireflies + falling leaves
-      for (let i = 0; i < 7; i++) {
+      for (let i = 0; i < densityCount(7); i++) {
         const fx = 160 + ((i * 401 + t * 18) % 950);
         const fy = 300 + Math.sin(t * 1.5 + i * 2.3) * 110 + (i % 3) * 60;
         const glow = 0.35 + 0.55 * Math.abs(Math.sin(t * 2.2 + i));
@@ -2562,7 +2579,7 @@ export function drawAmbient(
       }
       ctx.globalAlpha = 1;
       // falling leaves
-      for (let i = 0; i < 5; i++) {
+      for (let i = 0; i < densityCount(5); i++) {
         const p = ((t * 0.12 + i * 0.21) % 1);
         const lx = 220 + i * 210 + Math.sin(t * 1.4 + i * 2) * 46;
         const ly = 130 + p * 430;
@@ -2585,7 +2602,7 @@ export function drawAmbient(
       break;
     case 'cinema':
       // dust motes twinkling inside the projector beam
-      for (let i = 0; i < 9; i++) {
+      for (let i = 0; i < densityCount(9); i++) {
         const mx = 560 + ((i * 167 + t * 10) % 620);
         const my = 90 + ((i * 97 + t * 26) % 320);
         ctx.globalAlpha = 0.16 + 0.2 * Math.abs(Math.sin(t * 2.4 + i));
@@ -2599,7 +2616,7 @@ export function drawAmbient(
     case 'mela':
       // ferris wheel turning slowly + fair lights twinkling
       // (the wheel itself is baked; here we only add sparkle near the tents)
-      for (let i = 0; i < 8; i++) {
+      for (let i = 0; i < densityCount(8); i++) {
         const lx = 130 + i * 55;
         const tw = 0.4 + 0.6 * Math.abs(Math.sin(t * 3.2 + i * 1.3));
         ctx.globalAlpha = tw;
@@ -2989,17 +3006,18 @@ const FG_MARGIN = 130;
 /** Get (or build) the cached foreground silhouette overlay for a scene. */
 export function getForegroundLayer(name: BgName): HTMLCanvasElement {
   if (typeof document === 'undefined') throw new Error('backgrounds require a browser');
-  const key = `fg:${name}:${CACHE_VERSION}`;
+  const ss = bgScale();
+  const key = `fg:${name}:${CACHE_VERSION}:s${ss}`;
   let c = fgCache.get(key);
   if (!c) {
     c = document.createElement('canvas');
-    c.width = (STAGE_W + FG_MARGIN * 2) * BG_SS;
-    c.height = (STAGE_H + FG_MARGIN * 2) * BG_SS;
+    c.width = Math.round((STAGE_W + FG_MARGIN * 2) * ss);
+    c.height = Math.round((STAGE_H + FG_MARGIN * 2) * ss);
     const ctx = c.getContext('2d')!;
-    ctx.setTransform(BG_SS, 0, 0, BG_SS, 0, 0);
+    ctx.setTransform(ss, 0, 0, ss, 0, 0);
     ctx.translate(FG_MARGIN, FG_MARGIN);
     FG_RENDERERS[name](ctx);
-    fgCache.set(key, c);
+    lruPut(fgCache, key, c, MAX_FG_CACHED);
   }
   return c;
 }
@@ -3068,15 +3086,17 @@ const RENDERERS: Record<BgName, (ctx: CanvasRenderingContext2D) => void> = {
 /** Get (or build) the cached background canvas. Client-side only. */
 export function getBackgroundCanvas(name: BgName): HTMLCanvasElement {
   if (typeof document === 'undefined') throw new Error('backgrounds require a browser');
-  // Sprint 8 — versioned cache key: painting changes never reuse stale canvases
-  const key = `${name}:${CACHE_VERSION}`;
+  // Sprint 8 — versioned cache key: painting changes never reuse stale canvases.
+  // Phase 8 — scale in the key: switching quality rebuilds at the new sharpness.
+  const ss = bgScale();
+  const key = `${name}:${CACHE_VERSION}:s${ss}`;
   let c = cache.get(key);
   if (!c) {
     c = baseCanvas();
     const ctx = c.getContext('2d')!;
-    ctx.setTransform(BG_SS, 0, 0, BG_SS, 0, 0);
+    ctx.setTransform(ss, 0, 0, ss, 0, 0);
     RENDERERS[name](ctx);
-    cache.set(key, c);
+    lruPut(cache, key, c, MAX_BG_CACHED);
   }
   return c;
 }

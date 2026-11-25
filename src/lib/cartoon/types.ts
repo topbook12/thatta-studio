@@ -413,6 +413,8 @@ export interface StageInteractions {
   /** the walk-target flag of the edited beat is being dragged */
   onDragTarget?: (xPct: number) => void;
   onDragTargetEnd?: (xPct: number) => void;
+  /** Phase 8 — two-finger pinch-zoom on the stage (zoom 1..3, pan in stage px) */
+  onPinch?: (g: { zoom: number; panX: number; panY: number }) => void;
 }
 
 export const STAGE_W = 1280;

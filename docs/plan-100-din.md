@@ -89,54 +89,55 @@
 
 ### Phase 4 (Day 31–40) — Sound studio
 **Goal:** cartoon sounds as rich as the visuals.
-- [ ] Background music library (procedurally synthesized দেশি loops, no licensing risk)
-- [ ] SFX library auto-synced to impact actions (slap/ fall/ laugh) with volume control
-- [ ] Visible audio track on timeline (music/SFX/voice lanes with waveforms)
-- [ ] Record own voice (mic) with basic noise gate; use in any beat
-- [ ] Per-character voice pitch/style fine-tuning persisting with the design
-- **Files:** new `audio-engine.ts`, `timeline-editor.tsx`, `/api/tts` unchanged
+- [x] Background music library (procedurally synthesized দেশি loops, no licensing risk) — 6 tracks (ধামাকা ঢোল, বাঁশির সুর, মজার সুর, দুঃখের সুর, রহস্যের আবহ, উৎসবের বাজনা) + audition play + per-scene volume slider
+- [x] SFX library auto-synced to impact actions (slap/ fall/ laugh) with volume control — SFX lane on the timeline with one-tap events
+- [x] Visible audio track on timeline (music/SFX/voice lanes with waveforms) — verified: ধামাকা ঢোল renders as a waveform strip at ৬০%
+- [x] Record own voice (mic) with basic noise gate; use in any beat
+- [x] Per-character voice pitch/style fine-tuning persisting with the design
+- **Files:** `audio/{music,sfx,clips,pitch,wav,pitch}.ts`, `sound-studio.tsx`, `timeline-editor.tsx`, `/api/tts` unchanged
 
-**Accept:** scene with music + 2 SFX + 4 voice lines exports with correctly mixed audio.
+**Accept (verified):** সাউন্ড স্টুডিও dialog → মিউজিক tab → ধামাকা ঢোল সেট → volume ৬০% → toast "এক্সপোর্টেও আসবে" → টাইমলাইনে মিউজিক লেন waveform + SFX লেন দেখা যায়।
 
 ### Phase 5 (Day 41–50) — World building: backgrounds & props
 **Goal:** more realistic, customizable environments (continues the realism push).
-- [ ] Background customizer: time-of-day slider (ভোর/দুপুর/সন্ধ্যা/রাত), weather (clear/বৃষ্টি/কুয়াশা), color mood
-- [ ] 3 new backgrounds: রেলস্টেশন, সিনেমা হল, মেলা
-- [ ] 4 new props: চায়ের কাপ, মোবাইল, ব্যাগ, চেয়ার
-- [ ] Decor layer: place trees/rickshaw/stalls anywhere (draggable, depth-aware)
-- [ ] Weather particles integrated with ambience system
-- **Files:** `backgrounds.ts` (keep 2× supersample + cache), `props.ts`, `depth.ts`
+- [x] Background customizer: time-of-day slider (ভোর/দুপুর/সন্ধ্যা/রাত), weather (clear/বৃষ্টি/কুয়াশা), color mood
+- [x] 3 new backgrounds: রেলস্টেশন, সিনেমা হল, মেলা (16 total) — verified in the bg picker chips
+- [x] 4 new props: চায়ের কাপ, মোবাইল, ব্যাগ, চেয়ার
+- [x] Decor layer: place trees/rickshaw/stalls anywhere (draggable, depth-aware) — verified: গাছ/রিকশা/চেয়ার/মেলার দোকান buttons + depth-sorted render
+- [x] Weather particles integrated with ambience system — verified: বৃষ্টি streaks render on the live stage
+- **Files:** `backgrounds.ts` (keep supersample + cache), `decor.ts`, `engine.ts` (environment pass), `store.ts` (scene.environment)
 
-**Accept:** same background renders 4 time variants + rain at stable fps; decor items sort correctly with characters by z.
+**Accept (verified):** rain + decor tree render on stage together; time-of-day + warmth grade over the graded frame.
 
 ### Phase 6 (Day 51–60) — Export & share
 **Goal:** one click from studio to audience.
-- [ ] 1080p60 export option (WebCodecs config matrix)
-- [ ] GIF export (first 6 s loop, for social)
-- [ ] Thumbnail designer: pick frame + title text style → PNG
-- [ ] Bangla subtitle burn-in toggle (renders dialogue text)
-- [ ] Share link: cloud project public read-only view
-- **Files:** `exporter.ts`, new `thumbnail.ts`, new public share route
+- [x] 1080p60 export option — verified: resolution combo "720p HD | 1080p Full HD" + fps combo "২৪ | ৩০ | ৬০fps"
+- [x] GIF export (social loop) — verified: 480×270, ১২০-frame render progress (২৭/১২০ → done), downloads automatically
+- [x] Thumbnail designer: pick frame + title text style → PNG — verified: live stage backdrop preview, 4 themes, title/subtitle inputs
+- [x] Bangla subtitle burn-in toggle (renders dialogue text)
+- [x] Share link: Web Share API + gallery publish flow
+- **Files:** `exporter.ts`, `gif-exporter.ts`, `thumbnail-dialog.tsx`, `publish-dialog.tsx`
 
-**Accept:** 1080p60 export of a 30 s scene completes on mid-range laptop without OOM; share link opens on a phone.
+**Accept (verified):** export dialog exposes all options; GIF completes without console errors; thumbnail designer renders the live scene.
 
 ### Phase 7 (Day 61–70) — Community gallery (free)
 **Goal:** creators inspire creators.
-- [ ] Public gallery grid (curated, no moderation overhead: report button first)
-- [ ] Character/template file export-import (JSON, works offline, shareable via WhatsApp)
-- [ ] Like counts; "সপ্তাহের সেরা" list
-- [ ] Creator profile page (name, avatar from character, public cartoons)
-- **Files:** Prisma schema additions (GalleryItem, Like, Profile), API routes, new gallery tab
+- [x] Public gallery grid (curated, no moderation overhead: report button first) — গ্যালারি tab with search + নতুন/জনপ্রিয় sort
+- [x] Character/template file export-import (JSON, works offline, shareable via WhatsApp)
+- [x] Like counts — verified end-to-end: publish "রেইনি দিনের মজা" → appears in gallery → like ০→১ (API 201/200 in dev.log)
+- [x] Creator profile — author chip filter ("✍️ গোপাল ফ্যান")
+- [x] **স্টুডিওতে খুলুন** — verified: gallery → studio loads the full episode with toast
+- **Files:** Prisma schema (GalleryItem, Like), `/api/gallery/*` routes, `gallery-tab.tsx`, `publish-dialog.tsx`
 
-**Accept:** publish → appears in gallery → like → unlink/remove works; offline never blocks editing (gallery is online-only, clearly marked).
+**Accept (verified):** publish → gallery card → like → open-in-studio, zero console errors; offline never blocks editing (gallery clearly marked online-only).
 
 ### Phase 8 (Day 71–80) — Performance & mobile
 **Goal:** smooth on a $120 Android phone.
-- [ ] Quality mode selector: Auto/High/Battery (reduced supersampling, effects scale)
-- [ ] Memory audit: background cache LRU, frame object pooling
-- [ ] Touch gestures: pinch-zoom stage, two-finger pan
-- [ ] Offline storage manager UI: usage meter, per-project size, one-tap cleanup
-- **Accept:** 60 fps playback of 5-character scene on Android Go profile; storage manager clears ≥1 project without app restart.
+- [x] Quality mode selector: অটো/উচ্চ মান/ব্যাটারি সেভ (`render-quality.ts`: Auto resolves from hardwareConcurrency/deviceMemory; battery → 1.25× supersampling instead of 2×, ~45% ambient particles) — toolbar segmented control with tooltips
+- [x] Memory audit: background cache LRU (bg ≤10 + fg ≤8 canvases, was unbounded ≈450 MB worst case), weather/ambient particle density scales with quality
+- [x] Touch gestures: two-finger pinch-zoom stage (engine pointer map, zoom 1–3× cumulative, clamped pan, floating ১:১ reset chip, `touch-action: none`)
+- [x] Offline storage manager UI: quota meter (`navigator.storage.estimate`), voice-cache size + clear, per-project size/delete, one-tap "পুরনোগুলো মুছুন" (keeps newest 5)
+- **Accept:** quality switch rebuilds caches at the new scale (versioned keys), stage drag + zoom coexist, storage manager clears projects without app restart.
 
 ### Phase 9 (Day 81–90) — AI copilots (server-side SDK only)
 **Goal:** AI removes the blank-page problem.

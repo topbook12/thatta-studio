@@ -37,6 +37,7 @@ import {
   type StageCallbacks,
   type StageInteractions,
 } from './types';
+import { densityCount } from '../render-quality';
 
 const D = Math.PI / 180;
 
@@ -284,6 +285,13 @@ export class CartoonStage {
   private dragUid: string | null = null;
   private dragMoved = false;
   private flagDrag = false;
+  /** Phase 8 — active pointers for the two-finger pinch-zoom gesture */
+  private pointers = new Map<number, { x: number; y: number }>();
+  /** pinch session: start distance + gesture-start zoom, mid point of the fingers */
+  private pinch: { d0: number; zoom: number } | null = null;
+  private pinchMid: { x: number; y: number } | null = null;
+  /** zoom level carried across gestures (persists until reset) */
+  private pinchAccZoom = 1;
   /** Sprint 7 — while exporting, deterministic shake + overlay switches */
   private exportOpts: { shake: boolean; hideNameTags: boolean; hideSubs?: boolean } | null = null;
   /** cached cinematic vignette (depends only on stage size) */
@@ -295,6 +303,9 @@ export class CartoonStage {
     this.canvas = canvas;
     canvas.width = Math.round(STAGE_W * RENDER_SCALE);
     canvas.height = Math.round(STAGE_H * RENDER_SCALE);
+    // Phase 8 — the canvas runs its own two-finger pinch-zoom; without this
+    // the browser would take the gesture for page zoom and send pointercancel
+    this.canvas.style.touchAction = 'none';
     const ctx = canvas.getContext('2d');
     if (!ctx) throw new Error('Canvas 2D context unavailable');
     this.ctx = ctx;
@@ -367,6 +378,14 @@ export class CartoonStage {
 
   setInteractions(it: StageInteractions) {
     this.interactions = it;
+  }
+
+  /** Phase 8 — app-side zoom reset (the "১:১" chip): back to fit-view. */
+  resetStageZoom() {
+    this.pinchAccZoom = 1;
+    this.pinch = null;
+    this.pinchMid = null;
+    this.pointers.clear();
   }
 
   setScene(scene: Scene, designs: CharacterDesign[]) {
@@ -697,6 +716,21 @@ export class CartoonStage {
   private onPointerDown = (e: PointerEvent) => {
     const x = this.canvasX(e);
     const y = this.canvasY(e);
+    this.pointers.set(e.pointerId, { x, y });
+    // Phase 8 — second finger → pinch-zoom takes over (cancels any drag)
+    if (this.pointers.size >= 2) {
+      const pts = [...this.pointers.values()];
+      const [a, b] = pts;
+      const d = Math.hypot(a.x - b.x, a.y - b.y) || 1;
+      this.pinch = { d0: d, zoom: this.pinchAccZoom };
+      this.pinchMid = {
+        x: (a.x + b.x) / 2,
+        y: (a.y + b.y) / 2,
+      };
+      this.dragUid = null;
+      this.flagDrag = false;
+      return;
+    }
     // walk-target flag has priority
     if (this.overFlag(x, y)) {
       this.flagDrag = true;
@@ -721,6 +755,24 @@ export class CartoonStage {
   private onPointerMove = (e: PointerEvent) => {
     const x = this.canvasX(e);
     const y = this.canvasY(e);
+    if (this.pointers.has(e.pointerId)) {
+      this.pointers.set(e.pointerId, { x, y });
+    }
+    // Phase 8 — pinch-zoom: report cumulative zoom + midpoint pan to the app
+    if (this.pinch && this.pointers.size >= 2 && this.pinchMid) {
+      const pts = [...this.pointers.values()];
+      const [a, b] = pts;
+      const d = Math.hypot(a.x - b.x, a.y - b.y);
+      const zoom = clamp((this.pinch.zoom * (d / this.pinch.d0)) || 1, 1, 3);
+      this.pinchAccZoom = zoom;
+      const mid = { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 };
+      this.interactions.onPinch?.({
+        zoom,
+        panX: mid.x - this.pinchMid.x,
+        panY: mid.y - this.pinchMid.y,
+      });
+      return;
+    }
     if (this.flagDrag) {
       this.interactions.onDragTarget?.(clamp((x / STAGE_W) * 100, 4, 96));
       this.canvas.style.cursor = 'ew-resize';
@@ -742,6 +794,13 @@ export class CartoonStage {
   };
 
   private onPointerUp = (e: PointerEvent) => {
+    this.pointers.delete(e.pointerId);
+    if (this.pinch && this.pointers.size < 2) {
+      this.pinch = null;
+      this.pinchMid = null;
+      this.canvas.style.cursor = 'default';
+      return;
+    }
     if (this.flagDrag) {
       try {
         this.canvas.releasePointerCapture(e.pointerId);
@@ -1328,7 +1387,7 @@ export class CartoonStage {
       ctx.fillStyle = `rgba(52, 68, 92, ${0.20 * k})`;
       ctx.fillRect(0, 0, STAGE_W, STAGE_H);
       ctx.lineCap = 'round';
-      const N = Math.round(90 * k);
+      const N = Math.round(densityCount(90) * k);
       for (let i = 0; i < N; i++) {
         const speed = 520 + rnd(i + 7) * 260;
         const x0 = rnd(i) * (STAGE_W + 140) - 70;
@@ -1372,7 +1431,7 @@ export class CartoonStage {
       // warm haze + drifting motes
       ctx.fillStyle = `rgba(214, 168, 102, ${0.20 * k})`;
       ctx.fillRect(0, 0, STAGE_W, STAGE_H);
-      const N = Math.round(46 * k);
+      const N = Math.round(densityCount(46) * k);
       for (let i = 0; i < N; i++) {
         const speed = 26 + rnd(i + 3) * 44;
         const x = ((rnd(i) * STAGE_W + t * speed) % (STAGE_W + 80)) - 40;

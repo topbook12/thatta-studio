@@ -144,3 +144,20 @@ export async function voiceStoreUsage(): Promise<{ bytes: number; count: number 
     }
   });
 }
+
+/** Phase 8 — storage manager: wipe the whole cached-voice store. */
+export async function clearVoiceStore(): Promise<boolean> {
+  const db = await openDb();
+  if (!db) return false;
+  return new Promise((resolve) => {
+    try {
+      const tx = db.transaction(STORE, 'readwrite');
+      tx.objectStore(STORE).clear();
+      tx.oncomplete = () => resolve(true);
+      tx.onerror = () => resolve(false);
+      tx.onabort = () => resolve(false);
+    } catch {
+      resolve(false);
+    }
+  });
+}
