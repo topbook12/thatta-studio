@@ -56,9 +56,12 @@ interface SceneBlock {
 export default function ScriptDialog({
   open,
   onOpenChange,
+  /** Phase 9 — AI copilot hands its draft over through this prop */
+  initialText,
 }: {
   open: boolean;
   onOpenChange: (o: boolean) => void;
+  initialText?: string;
 }) {
   const designs = useStudio((s) => s.designs);
   const scenes = useStudio((s) => s.scenes);
@@ -67,6 +70,18 @@ export default function ScriptDialog({
 
   const [raw, setRaw] = useState("");
   const [blocks, setBlocks] = useState<SceneBlock[] | null>(null);
+
+  // Phase 9 — when the AI copilot sends a new draft, pre-fill the editor.
+  // React docs pattern: adjust state when a prop changes (render time,
+  // guarded by a prev-value snapshot — no effect needed).
+  const [prevInitial, setPrevInitial] = useState<string | null>(initialText ?? null);
+  if ((initialText ?? null) !== prevInitial) {
+    setPrevInitial(initialText ?? null);
+    if (initialText && initialText.trim()) {
+      setRaw(initialText);
+      setBlocks(null);
+    }
+  }
 
   const parsed = useMemo(() => (raw.trim() ? parseScript(raw) : null), [raw]);
 

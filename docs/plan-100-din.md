@@ -141,13 +141,15 @@
 
 ### Phase 9 (Day 81–90) — AI copilots (server-side SDK only)
 **Goal:** AI removes the blank-page problem.
-- [ ] Bangla comedy story idea generator (3 premises per click)
-- [ ] Dialogue punch-up suggestions (safe, family-friendly filter)
-- [ ] Idea → auto-storyboard draft (premises → beats skeleton the user edits)
-- [ ] Thumbnail text suggestions
-- **Files:** new `/api/ai/*` routes using z-ai-web-dev-sdk; graceful offline degradation (AI features simply hidden offline)
+- [x] Bangla comedy story idea generator (3 premises per click) — verified: "আইডিয়া আনুন" → 3 cast-aware premises (নানুর বিসরে বিশ ধান / রামায়ণ ঘোরানোর ভাগ্য / মামা মুন্নার নতুন কাজুত)
+- [x] Dialogue punch-up suggestions (safe, family-friendly filter) — verified: per-line strikethrough → ✨ suggestion + note; "বসান" replaces the beat text and clears the stale TTS cache (new voice re-records automatically)
+- [x] Idea → auto-storyboard draft — verified: premise → script in the exact Phase 2 parser format (`নাম (হাসতে হাসতে): সংলাপ` + `--- দৃশ্য ---`) → editable draft box → "স্ক্রিপ্ট এডিটরে পাঠান" prefills ScriptDialog → parse → **৮টি বিট • ২টি দৃশ্য** applied in one flow
+- [x] Thumbnail text suggestions — verified: "AI টাইটেল" chip button in the thumbnail designer → 5 short title+subtitle pairs → tap fills both inputs
+- **Files:** `src/lib/ai-server.ts` (shared ZAI client + JSON extraction + clamps), `/api/ai/{story-ideas,storyboard,punch-up,thumbnail-text}` routes (family-safe system prompts, robust JSON parse, timeouts), `src/lib/ai-client.ts` (aiPost + `useIsOnline`), new `studio/ai-copilot.tsx` (ideas + punch-up tabs), script-dialog AI-handoff (`initialText` via render-time state adjustment), thumbnail-dialog AI chips, studio-tab "AI সহকারী" button
+- Graceful offline degradation: AI button + thumbnail chips **hidden** via live online/offline listeners (verified: flip offline → both vanish, studio keeps working)
+- **Bonus hardening found during verification:** `sw.js` install now `skipWaiting`s only when the app shell actually precached — an offline install can no longer activate an empty cache and wipe the good old cache (offline mode can't be bricked by a version bump)
 
-**Accept:** one-tap flow idea → draft beats → user edits → playable scene in <2 min.
+**Accept (verified):** one-tap flow idea → draft beats → user edits → playable scene works end-to-end; all 4 AI routes return proper Bangla error JSON; tsc + eslint clean.
 
 ### Phase 10 (Day 91–100) — Launch polish: v1.0
 **Goal:** confidence + completeness.

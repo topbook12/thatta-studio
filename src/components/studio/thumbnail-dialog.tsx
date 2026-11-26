@@ -19,7 +19,10 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Download, ImageIcon, Palette } from "lucide-react";
+import { toast } from "@/hooks/use-toast";
+import { aiPost, useIsOnline } from "@/lib/ai-client";
+import { useStudio } from "@/lib/store";
+import { Download, ImageIcon, Loader2, Palette, Sparkles } from "lucide-react";
 
 interface ThumbnailDialogProps {
   open: boolean;
@@ -84,6 +87,11 @@ const THEMES: Theme[] = [
 const W = 1280;
 const H = 720;
 
+interface ThumbSuggestion {
+  title: string;
+  subtitle: string;
+}
+
 export default function ThumbnailDialog({
   open,
   onOpenChange,
@@ -96,6 +104,47 @@ export default function ThumbnailDialog({
   const [theme, setTheme] = useState<ThemeId>("golden");
   const [useFrame, setUseFrame] = useState(true);
   const frameImg = useRef<HTMLImageElement | null>(null);
+
+  // ---- Phase 9 — AI title suggestions ----
+  const online = useIsOnline();
+  const scenes = useStudio((s) => s.scenes);
+  const [thumbIdeas, setThumbIdeas] = useState<ThumbSuggestion[] | null>(null);
+  const [loadingThumbIdeas, setLoadingThumbIdeas] = useState(false);
+
+  /** first few dialogue lines of the episode → AI context */
+  const episodeContext = useMemo(() => {
+    const lines: string[] = [];
+    for (const es of scenes) {
+      for (const b of es.scene.beats) {
+        if (b.text.trim()) lines.push(b.text.trim());
+        if (lines.length >= 4) return lines.join(" / ");
+      }
+    }
+    return "";
+  }, [scenes]);
+
+  const fetchThumbIdeas = async () => {
+    setLoadingThumbIdeas(true);
+    setThumbIdeas(null);
+    try {
+      const out = await aiPost<{ items: ThumbSuggestion[] }>(
+        "/api/ai/thumbnail-text",
+        {
+          title: defaultTitle || title,
+          premise: episodeContext || undefined,
+        },
+      );
+      setThumbIdeas(out.items);
+    } catch (e) {
+      toast({
+        title: "সাজেশন আনা গেল না",
+        description: e instanceof Error ? e.message : "অজানা সমস্যা",
+        variant: "destructive",
+      });
+    } finally {
+      setLoadingThumbIdeas(false);
+    }
+  };
 
   useEffect(() => {
     if (open) setTitle(defaultTitle);
@@ -322,7 +371,25 @@ export default function ThumbnailDialog({
           </div>
           <div className="space-y-3">
             <div className="space-y-1.5">
-              <Label className="text-xs font-semibold text-amber-900">মেইন টাইটেল</Label>
+              <div className="flex items-center justify-between">
+                <Label className="text-xs font-semibold text-amber-900">মেইন টাইটেল</Label>
+                {online && (
+                  <button
+                    type="button"
+                    onClick={fetchThumbIdeas}
+                    disabled={loadingThumbIdeas}
+                    className="inline-flex items-center gap-1 rounded-full border border-orange-300 bg-orange-50 px-2 py-0.5 text-[11px] font-semibold text-orange-700 transition-colors hover:bg-orange-100 disabled:opacity-50"
+                    title="AI ছোট ঝাঁঝালো টাইটেল বানিয়ে দেবে"
+                  >
+                    {loadingThumbIdeas ? (
+                      <Loader2 className="h-3 w-3 animate-spin" />
+                    ) : (
+                      <Sparkles className="h-3 w-3" />
+                    )}
+                    AI টাইটেল
+                  </button>
+                )}
+              </div>
               <Input
                 value={title}
                 onChange={(e) => setTitle(e.target.value)}
@@ -330,6 +397,28 @@ export default function ThumbnailDialog({
                 className="border-amber-300"
                 maxLength={48}
               />
+              {thumbIdeas && (
+                <div className="thatta-scroll max-h-44 space-y-1.5 overflow-y-auto pr-1">
+                  {thumbIdeas.map((it, i) => (
+                    <button
+                      key={i}
+                      type="button"
+                      onClick={() => {
+                        setTitle(it.title);
+                        setSubtitle(it.subtitle);
+                      }}
+                      className="w-full rounded-lg border border-amber-200 bg-white px-2 py-1.5 text-left transition-colors hover:border-orange-400 hover:bg-orange-50"
+                    >
+                      <span className="block truncate text-xs font-bold text-amber-950">
+                        {it.title}
+                      </span>
+                      <span className="block truncate text-[11px] text-amber-600">
+                        {it.subtitle}
+                      </span>
+                    </button>
+                  ))}
+                </div>
+              )}
             </div>
             <div className="space-y-1.5">
               <Label className="text-xs font-semibold text-amber-900">সাব-টাইটেল</Label>

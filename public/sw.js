@@ -1,5 +1,5 @@
 /* ঠাট্টা স্টুডিও — service worker v2 (Sprint 8: self-hosted fonts, full offline) */
-const CACHE = 'thatta-v12'
+const CACHE = 'thatta-v13'
 
 const FONT_FILES = [
   '/fonts/hind-siliguri-400-bengali.woff2',
@@ -38,7 +38,14 @@ self.addEventListener('install', (event) => {
         // one missing asset must not break the whole install
         Promise.allSettled(PRECACHE_URLS.map((u) => cache.add(u)))
       )
-      .then(() => self.skipWaiting())
+      .then(() =>
+        // Hardening (Phase 9): if the install ran OFFLINE the new cache is
+        // empty — taking over would delete the good old cache and brick
+        // offline mode (dino page). Only take control when the app shell
+        // actually precached; otherwise the old SW keeps serving until the
+        // next online visit completes the update.
+        caches.match('/').then((shell) => (shell ? self.skipWaiting() : undefined))
+      )
   )
 })
 

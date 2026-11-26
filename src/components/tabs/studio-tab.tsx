@@ -48,6 +48,8 @@ import {
 } from "@/lib/audio/sfx";
 import SceneStrip from "@/components/studio/scene-strip";
 import ScriptDialog from "@/components/studio/script-dialog";
+import AiCopilot from "@/components/studio/ai-copilot";
+import { useIsOnline } from "@/lib/ai-client";
 import InteractionDialog from "@/components/studio/interaction-dialog";
 import EasingCurvePicker from "@/components/studio/easing-curve-picker";
 import PoseEditor from "@/components/studio/pose-editor";
@@ -135,6 +137,7 @@ import {
   ArrowUp,
   AudioLines,
   BadgeCheck,
+  Bot,
   Cloud,
   Compass,
   Download,
@@ -355,6 +358,10 @@ export default function StudioTab({
   // Phase 2/3 — script importer + two-character interactions
   const [scriptOpen, setScriptOpen] = useState(false);
   const [interactionsOpen, setInteractionsOpen] = useState(false);
+  // Phase 9 — AI সহকারী (ideas/storyboard/punch-up), offline হলে লুকানো
+  const online = useIsOnline();
+  const [aiOpen, setAiOpen] = useState(false);
+  const [aiScriptDraft, setAiScriptDraft] = useState("");
   const [tourOpen, setTourOpen] = useState(false);
   const [recoverAt, setRecoverAt] = useState<number | null>(null);
   const [lastSaved, setLastSaved] = useState<number | null>(null);
@@ -2891,6 +2898,17 @@ export default function StudioTab({
                   >
                     <FileText className="mr-1.5 h-3.5 w-3.5" /> স্ক্রিপ্ট পেস্ট
                   </Button>
+                  {online && (
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() => setAiOpen(true)}
+                      className="border-orange-400 bg-orange-50 text-xs font-semibold text-orange-700 hover:bg-orange-100"
+                      title="AI আইডিয়া, স্টোরিবোর্ড ও সংলাপ পাঞ্চ-আপ"
+                    >
+                      <Bot className="mr-1.5 h-3.5 w-3.5" /> AI সহকারী
+                    </Button>
+                  )}
                   <Button
                     size="sm"
                     variant="outline"
@@ -3892,8 +3910,25 @@ export default function StudioTab({
         </DialogContent>
       </Dialog>
 
-      {/* ---------- Phase 2: script importer ---------- */}
-      <ScriptDialog open={scriptOpen} onOpenChange={setScriptOpen} />
+      {/* ---------- Phase 2: script importer (Phase 9: AI draft handoff) ---------- */}
+      <ScriptDialog
+        open={scriptOpen}
+        onOpenChange={(o) => {
+          setScriptOpen(o);
+          if (!o) setAiScriptDraft(""); // AI draft has been consumed — reset
+        }}
+        initialText={aiScriptDraft || undefined}
+      />
+
+      {/* ---------- Phase 9: AI সহকারী ---------- */}
+      <AiCopilot
+        open={aiOpen}
+        onOpenChange={setAiOpen}
+        onSendToScript={(script) => {
+          setAiScriptDraft(script);
+          setScriptOpen(true);
+        }}
+      />
 
       {/* ---------- Phase 3: two-character interactions ---------- */}
       {/* ---------- Phase 4: সাউন্ড স্টুডিও ---------- */}
